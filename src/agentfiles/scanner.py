@@ -650,6 +650,41 @@ def _scan_platform_plugins_dir(
     return items
 
 
+def _scan_config_dirs(
+    dir_path: Path,
+    gitignore: GitIgnoreMatcher | None = None,
+) -> list[Item]:
+    """Scan *dir_path* for config files (``.json``).
+
+    Config items are flat files (e.g. ``opencode.json``, ``settings.json``)
+    that live directly in the platform config root.
+
+    Args:
+        dir_path: Directory containing config definitions.
+        gitignore: Optional gitignore matcher to exclude ignored paths.
+
+    Returns:
+        List of discovered config :class:`Item` instances.
+    """
+    items: list[Item] = []
+
+    for entry in _scandir_sorted(dir_path):
+        if _should_skip(entry.name) or not entry.is_file():
+            continue
+        child = Path(entry.path)
+        if gitignore and gitignore.is_ignored(child):
+            continue
+        if child.suffix != ".json":
+            continue
+        try:
+            item = item_from_file(child, ItemType.CONFIG)
+            items.append(_apply_platforms(item))
+        except (AgentfilesError, OSError) as exc:
+            logger.warning("Skipping config file %s: %s", child.name, exc, exc_info=True)
+
+    return items
+
+
 # Populate the registry once all scanner functions are defined.
 #
 # Summary of registered scanners and their platform support:
@@ -681,6 +716,11 @@ _register_scanner(
     ItemType.PLUGIN,
     _scan_plugins_dir,
     (Platform.OPENCODE,),
+)
+_register_scanner(
+    ItemType.CONFIG,
+    _scan_config_dirs,
+    (Platform.OPENCODE, Platform.CLAUDE_CODE),
 )
 
 

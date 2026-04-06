@@ -60,20 +60,24 @@ def get_installed_item_path(
 ) -> Path:
     """Return the filesystem path for an installed item by type and name.
 
+    Config items use the filename as-is (e.g. ``opencode.json``).
     File-based items (agents, commands) get a ``.md`` extension appended.
-    Directory-based items (skills, plugins) use the name as-is.
+    Directory-based items (skills) and plugin directories use the name as-is.
 
     Args:
         target_dir: Platform configuration directory.
         item_type: The :class:`ItemType` that determines whether a
             ``.md`` extension is appended.
-        name: Item name without extension.
+        name: Item name without extension (or full filename for configs).
 
     Returns:
         Path under *target_dir* for the installed item.
 
     """
-    if item_type.is_file_based:
+    if item_type == ItemType.CONFIG:
+        # Config items are .json files; ensure the extension is present.
+        return target_dir / f"{name}.json"
+    if item_type in (ItemType.AGENT, ItemType.COMMAND):
         return target_dir / f"{name}.md"
     return target_dir / name
 
@@ -81,8 +85,10 @@ def get_installed_item_path(
 def get_push_dest_path(source_dir: Path, item: Item) -> Path:
     """Compute the destination path in the source repo for a push.
 
-    File-based items land at ``source_dir/<plural>/<name>/<filename>.md``.
-    Directory-based items land at ``source_dir/<plural>/<name>/``.
+    Markdown file items (agents, commands) land at
+    ``source_dir/<plural>/<name>/<filename>.md``.
+    All other items (skills, plugins, configs) land at
+    ``source_dir/<plural>/<name>/``.
 
     Args:
         source_dir: Root of the source repository.
@@ -92,7 +98,7 @@ def get_push_dest_path(source_dir: Path, item: Item) -> Path:
         Absolute path where the item should be written in the repo.
 
     """
-    if item.item_type.is_file_based:
+    if item.item_type in (ItemType.AGENT, ItemType.COMMAND):
         return source_dir / item.item_type.plural / item.name / item.source_path.name
     return source_dir / item.item_type.plural / item.name
 

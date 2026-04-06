@@ -228,7 +228,16 @@ class MenuRenderer:
                 src = item.source_path
                 # Show parent directory for concise output
                 location = src.parent if src.is_absolute() and src.parent != src else src
-                buf.append(f"    [{counter}] {item.name}  {self._c(str(location), Colors.DIM)}")
+                # Show token count for agents and skills (fast, size-based estimate)
+                token_str = ""
+                if item.item_type in (ItemType.AGENT, ItemType.SKILL):
+                    from agentfiles.tokens import count_item_tokens
+
+                    tokens = count_item_tokens(item.source_path)
+                    token_str = f"  ~{tokens:,} tokens"
+                buf.append(
+                    f"    [{counter}] {item.name}{token_str}  {self._c(str(location), Colors.DIM)}"
+                )
                 index_map[counter] = item
                 counter += 1
             buf.append("")

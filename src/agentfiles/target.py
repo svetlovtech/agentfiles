@@ -68,6 +68,20 @@ _IGNORED_NAMES: frozenset[str] = frozenset(
     }
 )
 
+# Files that are NOT agentfiles configs — skip them during CONFIG scanning.
+# These are common tool/IDE config files that happen to live in the same
+# directory but are unrelated to agentfiles.
+_NON_CONFIG_FILES: frozenset[str] = frozenset(
+    {
+        "package.json",
+        "package-lock.json",
+        "tsconfig.json",
+        "settings.json",
+        "settings.local.json",
+        "stats-cache.json",
+    }
+)
+
 
 # ---------------------------------------------------------------------------
 # Convenience factory
@@ -558,6 +572,11 @@ class TargetManager:
 
         """
         target_paths = self._require_platform(platform)
+        # Config files live directly in the platform config root, not a
+        # subdirectory.  Return the config root so callers can compute the
+        # full path as ``config_root / filename``.
+        if item_type == ItemType.CONFIG:
+            return target_paths.config_dir
         if item_type.plural in target_paths.subdirs:
             return target_paths.subdir_for(item_type)
         return None
@@ -663,18 +682,38 @@ class TargetManager:
                 if item_type.is_file_based:
                     if not is_file:
                         continue
+                    # Plugins: only accept known extensions to skip
+                    # extensionless duplicates (e.g. "memory-compact"
+                    # alongside "memory-compact.ts").
+                    if item_type == ItemType.PLUGIN:
+                        if entry.suffix not in (".ts", ".yaml", ".yml", ".py", ".js"):
+                            continue
                     name = entry.stem
                 else:
                     if not is_dir:
                         continue
                     name = entry.name
 
-                # Skip well-known non-item names that may appear in platform
-                # directories (e.g. node_modules in OpenCode's plugin dir).
-                if name in _IGNORED_NAMES:
-                    continue
-
                 items.append((item_type, name))
+
+        # Config items: .json files directly in the platform config root.
+        config_dir = target_paths.config_dir
+        config_entries = self._safe_iterdir(config_dir, "configs")
+        if config_entries is not None:
+            for entry in config_entries:
+                if entry.name.startswith("."):
+                    continue
+                if entry.suffix != ".json":
+                    continue
+                if entry.name in _NON_CONFIG_FILES:
+                    continue
+                try:
+                    if not entry.is_file():
+                        continue
+                except OSError:
+                    continue
+                name = entry.stem
+                items.append((ItemType.CONFIG, name))
 
         return items
 

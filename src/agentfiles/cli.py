@@ -651,11 +651,15 @@ def _run_pull_interactive(
     return items, platforms
 
 
-def _print_token_summary(estimates: list[TokenEstimate]) -> None:
+def _print_token_summary(
+    estimates: list[TokenEstimate],
+    name_desc_total: int = 0,
+) -> None:
     """Print an aggregate token-count summary table to stdout.
 
     Args:
         estimates: List of ``TokenEstimate`` objects to aggregate.
+        name_desc_total: Aggregate name+description token count.
 
     """
     from agentfiles.output import bold
@@ -669,14 +673,17 @@ def _print_token_summary(estimates: list[TokenEstimate]) -> None:
     print(f"  Content tokens: ~{content_total:,}")
     print(f"  Overhead tokens: ~{overhead_total:,}")
     print(f"  Total tokens: ~{total:,}")
+    if name_desc_total > 0:
+        print(f"  Name + Description tokens: ~{name_desc_total:,}")
 
 
 def _format_list_text(items: list[Any], show_tokens: bool) -> int:
     """Format items as grouped, colourised text and print to stdout.
 
     Items are grouped by type (agents, skills, …) and sorted alphabetically
-    within each group.  An aggregate token summary is printed at the end
-    when *show_tokens* is ``True``.
+    within each group.  Token estimates are computed only for agents and
+    skills.  An aggregate token summary is printed at the end when
+    *show_tokens* is ``True`` and at least one agent or skill exists.
 
     Args:
         items: Items to display.
@@ -685,20 +692,23 @@ def _format_list_text(items: list[Any], show_tokens: bool) -> int:
     Returns:
         Exit code (always ``0``).
     """
+    from agentfiles.models import ItemType
     from agentfiles.output import Colors, bold, colorize
-    from agentfiles.tokens import token_estimate
+    from agentfiles.tokens import estimate_name_description_tokens, token_estimate
 
     current_type: ItemType | None = None
     estimates: list[TokenEstimate] = []
+    name_desc_total = 0
 
     for item in sorted(items, key=lambda i: i.sort_key):
         if item.item_type != current_type:
             current_type = item.item_type
             print()
             bold(f"{current_type.plural}:")
-        if show_tokens:
+        if show_tokens and item.item_type in (ItemType.AGENT, ItemType.SKILL):
             est = token_estimate(item)
             estimates.append(est)
+            name_desc_total += estimate_name_description_tokens(item)
             print(
                 f"  {colorize(item.name, Colors.GREEN)}  "
                 f"v{item.version}  "
@@ -711,7 +721,7 @@ def _format_list_text(items: list[Any], show_tokens: bool) -> int:
             )
 
     if show_tokens and estimates:
-        _print_token_summary(estimates)
+        _print_token_summary(estimates, name_desc_total)
 
     return 0
 
@@ -901,6 +911,74 @@ def cmd_pull(args: argparse.Namespace) -> int:
     return 0 if report.is_success else 1
 
 
+def _print_push_report(report: object, dry_run: bool) -> None:
+    """Display a detailed push report grouped by diff status.
+
+    Args:
+        report: The SyncReport containing push results.
+        dry_run: Whether this was a dry-run operation.
+    """
+    from agentfiles.output import bold, error, success, warning
+
+    all_results = report.installed + report.updated + report.skipped + report.failed  # type: ignore[attr-defined]
+
+    # Group by push_status.
+    new_items: list[str] = []
+    changed_items: list[tuple[str, str]] = []
+    unchanged_count = 0
+    failed_items: list[tuple[str, str]] = []
+
+    for result in all_results:
+        key = result.plan.item.item_key
+        status = getattr(result, "push_status", "")
+        detail = getattr(result, "push_detail", "")
+        if not result.is_success:
+            failed_items.append((key, result.message))
+        elif status == "new":
+            new_items.append(key)
+        elif status == "changed":
+            changed_items.append((key, detail))
+        elif status == "unchanged":
+            unchanged_count += 1
+        else:
+            # Fallback: treat successful items without a status as updated.
+            new_items.append(key)
+
+    bold("Push Summary:")
+    if new_items:
+        success(f"  + New ({len(new_items)})")
+        for name in sorted(new_items):
+            print(f"    {name}")
+    if changed_items:
+        success(f"  ~ Changed ({len(changed_items)})")
+        for name, detail in sorted(changed_items):
+            line = f"    {name}"
+            if detail:
+                line += f"  {detail}"
+            print(line)
+    if unchanged_count:
+        print(f"  = Unchanged ({unchanged_count})")
+    if failed_items:
+        error(f"  x Failed ({len(failed_items)})")
+        for name, msg in sorted(failed_items):
+            print(f"    {name}: {msg}")
+
+    # Custom summary based on push status, not SyncReport action.
+    parts: list[str] = []
+    if new_items:
+        parts.append(f"New {len(new_items)}")
+    if changed_items:
+        parts.append(f"Changed {len(changed_items)}")
+    if unchanged_count:
+        parts.append(f"Unchanged {unchanged_count}")
+    if failed_items:
+        parts.append(f"Failed {len(failed_items)}")
+    if parts:
+        bold(f"  {', '.join(parts)}")
+    if dry_run:
+        warning("Dry-run mode: no changes were made.")
+
+
 def cmd_push(args: argparse.Namespace) -> int:
     """Push locally-installed items back into the source repository.
 
@@ -975,11 +1053,7 @@ def cmd_push(args: argparse.Namespace) -> int:
         return _format_results_json(all_results, report, dry_run=False)
 
     print()
-    bold("Push Summary:")
-    print(f"  {report.summary()}")
-
-    if args.dry_run:
-        warning("Dry-run mode: no changes were made.")
+    _print_push_report(report, args.dry_run)
 
     return 0 if report.is_success else 1
 
@@ -1029,6 +1103,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     # --diff mode: show differences
     if getattr(args, "show_diff", False):
         from agentfiles.differ import Differ, compute_content_diff
+        from agentfiles.models import DiffStatus
         from agentfiles.output import format_diff, format_diff_json
         from agentfiles.scanner import SourceScanner
 
@@ -1051,11 +1126,27 @@ def cmd_status(args: argparse.Namespace) -> int:
             print(json.dumps(format_diff_json(diff_results), indent=2))
             return 0
         verbose = getattr(args, "verbose_diff", False)
+        # Build content_diffs dict keyed by (item_key, platform_value) only
+        # for UPDATED entries so format_diff can render inline diffs.
+        content_diffs = None
+        if verbose:
+            content_diffs = {}
+            for _platform, entries in diff_results.items():
+                for _entry in entries:
+                    if _entry.status == DiffStatus.UPDATED:
+                        diff_lines = compute_content_diff(
+                            _entry,
+                            _platform,
+                            target_manager,
+                        )
+                        if diff_lines:
+                            key = (_entry.item.item_key, _platform.value)
+                            content_diffs[key] = diff_lines
         output = format_diff(
             diff_results,
             use_colors=False,
             verbose=verbose,
-            compute_content_diff=compute_content_diff if verbose else None,
+            content_diffs=content_diffs,
         )
         print(output)
         return 0
@@ -1410,7 +1501,7 @@ def _add_common_args(
     )
     filter_group.add_argument(
         "--type",
-        choices=["agent", "skill", "command", "plugin", "all"],
+        choices=["agent", "skill", "command", "plugin", "config", "all"],
         default=None,
         dest="item_type",
         help="Filter by item type",

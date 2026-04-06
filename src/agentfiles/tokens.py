@@ -15,6 +15,7 @@ Public API
 :func:`estimate_tokens_from_files`    Token count across file contents.
 :func:`token_estimate`                Full :class:`TokenEstimate` for an item.
 :func:`count_item_tokens`             Fast size-based estimate for an item.
+:func:`estimate_name_description_tokens`  Token count for name + description only.
 :func:`format_token_count`            Human-readable token display (``1.2k``).
 """
 
@@ -239,6 +240,25 @@ def token_estimate(item: Item) -> TokenEstimate:
         overhead_tokens=overhead,
         total_tokens=content_tokens + overhead,
     )
+
+
+def estimate_name_description_tokens(item: Item) -> int:
+    """Estimate tokens consumed by just the item's name and description.
+
+    This represents the "always loaded" cost — even when the full item
+    content is not injected, platforms typically load name+description
+    for agent/skill selection.
+
+    Args:
+        item: The item whose name+description tokens to estimate.
+
+    Returns:
+        Estimated token count for name + description text.
+    """
+    parts = [item.name]
+    if item.meta is not None and item.meta.description:
+        parts.append(item.meta.description)
+    return estimate_tokens_from_content(" ".join(parts))
 
 
 # ---------------------------------------------------------------------------

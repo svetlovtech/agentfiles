@@ -6,11 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from agentfiles.frontmatter import (
-    _is_quoted,
-    _quote_colon_values,
-    _validate_field_type,
-)
 from agentfiles.models import (
     CHARS_PER_TOKEN,
     PLATFORM_ALIASES,
@@ -45,6 +40,11 @@ from agentfiles.models import (
     parse_frontmatter,
     resolve_platform,
     resolve_target_name,
+)
+from agentfiles.frontmatter import (
+    _is_quoted,
+    _quote_colon_values,
+    _validate_field_type,
 )
 from agentfiles.scanner import GitIgnoreMatcher, parse_gitignore
 
@@ -108,23 +108,28 @@ class TestItemType:
         assert ItemType.SKILL.value == "skill"
         assert ItemType.COMMAND.value == "command"
         assert ItemType.PLUGIN.value == "plugin"
+        assert ItemType.CONFIG.value == "config"
 
     def test_plural_property(self) -> None:
         assert ItemType.AGENT.plural == "agents"
         assert ItemType.SKILL.plural == "skills"
         assert ItemType.COMMAND.plural == "commands"
         assert ItemType.PLUGIN.plural == "plugins"
+        assert ItemType.CONFIG.plural == "configs"
 
     def test_is_file_based_true_for_agents_and_commands(self) -> None:
         assert ItemType.AGENT.is_file_based is True
         assert ItemType.COMMAND.is_file_based is True
 
-    def test_is_file_based_false_for_skills_and_plugins(self) -> None:
+    def test_is_file_based_true_for_plugins_and_configs(self) -> None:
+        assert ItemType.PLUGIN.is_file_based is True
+        assert ItemType.CONFIG.is_file_based is True
+
+    def test_is_file_based_false_only_for_skills(self) -> None:
         assert ItemType.SKILL.is_file_based is False
-        assert ItemType.PLUGIN.is_file_based is False
 
     def test_member_count(self) -> None:
-        assert len(ItemType) == 4
+        assert len(ItemType) == 5
 
 
 class TestPlatform:

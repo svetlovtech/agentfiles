@@ -168,6 +168,7 @@ class ItemType(Enum):
     SKILL = "skill"
     COMMAND = "command"
     PLUGIN = "plugin"
+    CONFIG = "config"
 
     @property
     def plural(self) -> str:
@@ -177,18 +178,19 @@ class ItemType(Enum):
             ItemType.SKILL: "skills",
             ItemType.COMMAND: "commands",
             ItemType.PLUGIN: "plugins",
+            ItemType.CONFIG: "configs",
         }
         return _plurals[self]
 
     @property
     def is_file_based(self) -> bool:
-        """``True`` for item types stored as flat files (agents, commands).
+        """``True`` for item types stored as flat files (agents, commands, plugins, configs).
 
         File-based items retain their source filename (including extension)
-        when installed.  Directory-based items (skills, plugins) are installed
+        when installed.  Directory-based items (skills) are installed
         by name only.
         """
-        return self in (ItemType.AGENT, ItemType.COMMAND)
+        return self in (ItemType.AGENT, ItemType.COMMAND, ItemType.PLUGIN, ItemType.CONFIG)
 
 
 class Platform(Enum):
@@ -546,6 +548,8 @@ class SyncResult:
     message: str = ""
     files_copied: int = 0
     files_skipped: int = 0
+    push_status: str = ""
+    push_detail: str = ""
 
 
 @dataclass(frozen=True)

@@ -337,7 +337,7 @@ class TestTargetManager:
         (fake_home.claude / "agents" / "c1.md").write_text("# agent")
         (fake_home.claude / "skills" / "c2").mkdir()
         (fake_home.claude / "skills" / "c3").mkdir()
-        (fake_home.claude / "plugins" / "p1").mkdir()
+        (fake_home.claude / "plugins" / "p1.ts").write_text("export {};")
 
         with (
             mock.patch.object(Path, "home", return_value=fake_home.home),

@@ -19,6 +19,7 @@ from agentfiles.models import (
     estimate_tokens_from_files,
     token_estimate,
 )
+from agentfiles.tokens import estimate_name_description_tokens
 
 # ---------------------------------------------------------------------------
 # estimate_tokens_from_content
@@ -572,3 +573,82 @@ class TestTokenEstimateFunction:
         assert est.content_tokens == 4000  # 2000 + 1000 + 1000
         assert est.source_size_bytes == 16_000
         assert est.total_tokens == est.content_tokens + est.overhead_tokens
+
+
+# ---------------------------------------------------------------------------
+# estimate_name_description_tokens
+# ---------------------------------------------------------------------------
+
+
+class TestEstimateNameDescriptionTokens:
+    """Tests for estimate_name_description_tokens function."""
+
+    def test_item_without_meta(self) -> None:
+        """Returns tokens for the item name only when no meta is present."""
+        item = Item(
+            item_type=ItemType.AGENT,
+            name="coder",
+            source_path=Path("/fake"),
+            files=("coder.md",),
+        )
+        result = estimate_name_description_tokens(item)
+        assert result == estimate_tokens_from_content("coder")
+
+    def test_item_with_description(self) -> None:
+        """Returns tokens for name + description combined."""
+        meta = ItemMeta(name="coder", description="A helpful coding assistant")
+        item = Item(
+            item_type=ItemType.AGENT,
+            name="coder",
+            source_path=Path("/fake"),
+            meta=meta,
+            files=("coder.md",),
+        )
+        result = estimate_name_description_tokens(item)
+        expected = estimate_tokens_from_content("coder A helpful coding assistant")
+        assert result == expected
+
+    def test_item_with_empty_description(self) -> None:
+        """Empty description is excluded, only name is counted."""
+        meta = ItemMeta(name="x", description="")
+        item = Item(
+            item_type=ItemType.SKILL,
+            name="x",
+            source_path=Path("/fake"),
+            meta=meta,
+            files=("x.md",),
+        )
+        result = estimate_name_description_tokens(item)
+        assert result == estimate_tokens_from_content("x")
+
+    def test_returns_at_least_one_for_name(self) -> None:
+        """Any non-empty name yields at least 1 token."""
+        item = Item(
+            item_type=ItemType.AGENT,
+            name="a",
+            source_path=Path("/fake"),
+            files=("a.md",),
+        )
+        assert estimate_name_description_tokens(item) >= 1
+
+    def test_long_description_increases_count(self) -> None:
+        """A longer description produces more tokens."""
+        meta_short = ItemMeta(name="x", description="short")
+        meta_long = ItemMeta(name="x", description="a" * 200)
+        item_short = Item(
+            item_type=ItemType.AGENT,
+            name="x",
+            source_path=Path("/fake"),
+            meta=meta_short,
+            files=("x.md",),
+        )
+        item_long = Item(
+            item_type=ItemType.AGENT,
+            name="x",
+            source_path=Path("/fake"),
+            meta=meta_long,
+            files=("x.md",),
+        )
+        assert estimate_name_description_tokens(item_long) > estimate_name_description_tokens(
+            item_short
+        )

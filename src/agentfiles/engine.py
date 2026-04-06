@@ -37,6 +37,7 @@ Usage::
 
 from __future__ import annotations
 
+import filecmp
 import logging
 import os
 import shutil
@@ -228,6 +229,68 @@ def _remove_item(dest: Path) -> tuple[bool, str | None]:
         msg = f"Cannot remove {dest}: {exc}"
         logger.error(msg)
         return False, msg
+
+
+# ---------------------------------------------------------------------------
+# Push diff helpers
+# ---------------------------------------------------------------------------
+
+
+def _human_size(size_bytes: int) -> str:
+    """Format bytes as human-readable size."""
+    for unit in ("B", "KB", "MB", "GB"):
+        if abs(size_bytes) < 1024:
+            return f"{size_bytes:.1f} {unit}" if unit != "B" else f"{size_bytes} {unit}"
+        size_bytes /= 1024  # type: ignore[assignment]
+    return f"{size_bytes:.1f} TB"
+
+
+def _compare_push_item(local_path: Path, dest_path: Path) -> str:
+    """Compare local (target) item with destination (source repo) item.
+
+    Returns "new", "unchanged", or "changed".
+    """
+    if not dest_path.exists():
+        return "new"
+    try:
+        if local_path.is_file() and dest_path.is_file():
+            if filecmp.cmp(local_path, dest_path, shallow=False):
+                return "unchanged"
+            return "changed"
+        if local_path.is_dir() and dest_path.is_dir():
+            dcmp = filecmp.dircmp(local_path, dest_path)
+            if _dir_differs(dcmp):
+                return "changed"
+            return "unchanged"
+    except OSError:
+        pass
+    return "changed"
+
+
+def _dir_differs(dcmp: filecmp.dircmp) -> bool:
+    """Recursively check if dircmp shows any differences."""
+    if dcmp.left_only or dcmp.right_only or dcmp.diff_files:
+        return True
+    for sub_dcmp in dcmp.subdirs.values():
+        if _dir_differs(sub_dcmp):
+            return True
+    return False
+
+
+def _format_size_diff(local_path: Path, dest_path: Path) -> str:
+    """Return human-readable size diff string."""
+    try:
+        if local_path.is_file() and dest_path.is_file():
+            local_size = local_path.stat().st_size
+            dest_size = dest_path.stat().st_size
+            return f"({_human_size(dest_size)} -> {_human_size(local_size)})"
+        if local_path.is_dir() and dest_path.is_dir():
+            local_count = sum(1 for _ in local_path.rglob("*") if _.is_file())
+            dest_count = sum(1 for _ in dest_path.rglob("*") if _.is_file())
+            return f"({dest_count} files -> {local_count} files)"
+    except OSError:
+        pass
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -822,6 +885,8 @@ class SyncEngine:
         """Push a single item from target back to source.
 
         Uses the same atomic copy pattern as sync (temp → backup → rename).
+        Compares local (target) with destination (source repo) to classify
+        the push as "new", "changed", or "unchanged".
         """
         local_path = get_item_dest_path(target_dir, item)
         dest_path = get_push_dest_path(source_dir, item)
@@ -840,10 +905,29 @@ class SyncEngine:
                 message=f"Item not found at target: {local_path}",
             )
 
+        # Compute diff status before any early returns.
+        push_status = _compare_push_item(local_path, dest_path)
+        push_detail = _format_size_diff(local_path, dest_path) if push_status == "changed" else ""
+
+        if push_status == "unchanged":
+            return SyncResult(
+                plan=plan,
+                is_success=True,
+                message=f"Unchanged {item.name}",
+                push_status="unchanged",
+                push_detail=push_detail,
+            )
+
         if dry_run:
             msg = f"dry-run: would push {item.name} to {dest_path}"
             logger.info(msg)
-            return SyncResult(plan=plan, is_success=True, message=msg)
+            return SyncResult(
+                plan=plan,
+                is_success=True,
+                message=msg,
+                push_status=push_status,
+                push_detail=push_detail,
+            )
 
         dest_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -853,13 +937,21 @@ class SyncEngine:
             use_symlinks=False,
         )
         if err:
-            return SyncResult(plan=plan, is_success=False, message=err)
+            return SyncResult(
+                plan=plan,
+                is_success=False,
+                message=err,
+                push_status=push_status,
+                push_detail=push_detail,
+            )
 
         return SyncResult(
             plan=plan,
             is_success=True,
             message=f"Pushed {item.name}",
             files_copied=files_copied,
+            push_status=push_status,
+            push_detail=push_detail,
         )
 
     def _update_sync_state(

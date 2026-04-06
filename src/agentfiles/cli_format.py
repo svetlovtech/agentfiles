@@ -21,18 +21,25 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 def _format_list_json(items: list[Item], show_tokens: bool) -> int:
-    """Format items as a JSON array and print to stdout.
+    """Format items as a JSON object and print to stdout.
+
+    Token estimates are computed only for agents and skills.  The output
+    is an object with ``items`` (array) and optionally ``token_summary``
+    (aggregate totals for agents and skills).
 
     Args:
         items: Items to display.
-        show_tokens: If ``True``, include a ``token_estimate`` block per item.
+        show_tokens: If ``True``, include a ``token_estimate`` block per
+            agent/skill item and an aggregate ``token_summary``.
 
     Returns:
         Exit code (always ``0``).
     """
-    from agentfiles.tokens import token_estimate
+    from agentfiles.models import ItemType
+    from agentfiles.tokens import estimate_name_description_tokens, token_estimate
 
     data: list[dict[str, Any]] = []
+    token_items: list[dict[str, Any]] = []
     for item in sorted(items, key=lambda i: i.sort_key):
         entry: dict[str, Any] = {
             "name": item.name,
@@ -41,16 +48,30 @@ def _format_list_json(items: list[Item], show_tokens: bool) -> int:
             "files": len(item.files),
             "platforms": item.platform_values,
         }
-        if show_tokens:
+        if show_tokens and item.item_type in (ItemType.AGENT, ItemType.SKILL):
             est = token_estimate(item)
+            nd_tokens = estimate_name_description_tokens(item)
             entry["token_estimate"] = {
                 "content_tokens": est.content_tokens,
                 "overhead_tokens": est.overhead_tokens,
                 "total_tokens": est.total_tokens,
                 "source_size_bytes": est.source_size_bytes,
+                "name_desc_tokens": nd_tokens,
             }
+            token_items.append(entry["token_estimate"])
         data.append(entry)
-    print(json.dumps(data, indent=2))
+
+    output: dict[str, Any] = {"items": data}
+    if show_tokens and token_items:
+        output["token_summary"] = {
+            "items": len(token_items),
+            "content_tokens": sum(t["content_tokens"] for t in token_items),
+            "overhead_tokens": sum(t["overhead_tokens"] for t in token_items),
+            "total_tokens": sum(t["total_tokens"] for t in token_items),
+            "name_desc_tokens": sum(t["name_desc_tokens"] for t in token_items),
+        }
+
+    print(json.dumps(output, indent=2))
     return 0
 
 
@@ -163,16 +184,20 @@ def _format_results_json(
     Returns:
         ``0`` when all operations succeeded, ``1`` otherwise.
     """
-    result_entries = [
-        {
+    result_entries = []
+    for r in results:
+        entry: dict[str, Any] = {
             "item": r.plan.item.item_key,
             "action": r.plan.action.value,
             "status": "success" if r.is_success else "failed",
             "message": r.message,
             "files_copied": r.files_copied,
         }
-        for r in results
-    ]
+        if r.push_status:
+            entry["push_status"] = r.push_status
+        if r.push_detail:
+            entry["push_detail"] = r.push_detail
+        result_entries.append(entry)
     output = {
         "results": result_entries,
         "summary": {

@@ -44,7 +44,16 @@ Thumbs.db
 
 # agentfiles runtime state
 .agentfiles/
+.agentfiles.yaml
 .agentfiles.state.yaml
 agentfiles-output-*
 .opencode/
+
+# Push artefacts — local content directories
+agents/
+skills/
+commands/
+plugins/
+configs/
+
 uv.lock

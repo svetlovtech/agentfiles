@@ -508,16 +508,17 @@ class TestFormatListJson:
         result = _format_list_json(items, show_tokens=False)
         captured = capsys.readouterr()
         assert result == 0
-        data = json.loads(captured.out)
-        assert len(data) == 1
-        assert data[0]["name"] == "my-agent"
-        assert data[0]["type"] == "agent"
+        output = json.loads(captured.out)
+        assert "items" in output
+        assert len(output["items"]) == 1
+        assert output["items"][0]["name"] == "my-agent"
+        assert output["items"][0]["type"] == "agent"
 
     def test_json_includes_expected_fields(self, capsys: pytest.CaptureFixture[str]) -> None:
         items = [_make_item("my-skill", ItemType.SKILL, version="2.0.0")]
         _format_list_json(items, show_tokens=False)
-        data = json.loads(capsys.readouterr().out)
-        entry = data[0]
+        output = json.loads(capsys.readouterr().out)
+        entry = output["items"][0]
         assert "name" in entry
         assert "type" in entry
         assert "version" in entry
@@ -528,8 +529,8 @@ class TestFormatListJson:
     def test_json_without_tokens_has_no_estimate(self, capsys: pytest.CaptureFixture[str]) -> None:
         items = [_make_item()]
         _format_list_json(items, show_tokens=False)
-        data = json.loads(capsys.readouterr().out)
-        assert "token_estimate" not in data[0]
+        output = json.loads(capsys.readouterr().out)
+        assert "token_estimate" not in output["items"][0]
 
     def test_json_with_tokens_includes_estimate(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Token estimation requires real files; mock token_estimate."""
@@ -543,17 +544,61 @@ class TestFormatListJson:
             overhead_tokens=10,
             total_tokens=60,
         )
+        with (
+            patch("agentfiles.tokens.token_estimate", return_value=estimate),
+            patch("agentfiles.tokens.estimate_name_description_tokens", return_value=15),
+        ):
+            _format_list_json(items, show_tokens=True)
+        output = json.loads(capsys.readouterr().out)
+        assert "token_estimate" in output["items"][0]
+        assert output["items"][0]["token_estimate"]["total_tokens"] == 60
+        assert output["items"][0]["token_estimate"]["name_desc_tokens"] == 15
+
+    def test_json_with_tokens_excludes_non_agent_skill(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Token estimates are only computed for agents and skills."""
+        items = [_make_item("my-cmd", ItemType.COMMAND)]
+        estimate = TokenEstimate(
+            name="my-cmd",
+            item_type=ItemType.COMMAND,
+            files=("my-cmd.md",),
+            source_size_bytes=50,
+            content_tokens=25,
+            overhead_tokens=5,
+            total_tokens=30,
+        )
         with patch("agentfiles.tokens.token_estimate", return_value=estimate):
             _format_list_json(items, show_tokens=True)
-        data = json.loads(capsys.readouterr().out)
-        assert "token_estimate" in data[0]
-        assert data[0]["token_estimate"]["total_tokens"] == 60
+        output = json.loads(capsys.readouterr().out)
+        assert "token_estimate" not in output["items"][0]
 
-    def test_empty_items_outputs_empty_list(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_json_token_summary_aggregate(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Token summary aggregates across agents and skills."""
+        items = [
+            _make_item("a1", ItemType.AGENT),
+            _make_item("s1", ItemType.SKILL),
+        ]
+        est_agent = TokenEstimate("a1", ItemType.AGENT, (), 100, 50, 10, 60)
+        est_skill = TokenEstimate("s1", ItemType.SKILL, (), 200, 80, 20, 100)
+
+        with (
+            patch("agentfiles.tokens.token_estimate", side_effect=[est_agent, est_skill]),
+            patch("agentfiles.tokens.estimate_name_description_tokens", return_value=5),
+        ):
+            _format_list_json(items, show_tokens=True)
+        output = json.loads(capsys.readouterr().out)
+        assert "token_summary" in output
+        assert output["token_summary"]["items"] == 2
+        assert output["token_summary"]["total_tokens"] == 160
+        assert output["token_summary"]["name_desc_tokens"] == 10
+
+    def test_empty_items_outputs_empty_object(self, capsys: pytest.CaptureFixture[str]) -> None:
         result = _format_list_json([], show_tokens=False)
         captured = capsys.readouterr()
         assert result == 0
-        assert json.loads(captured.out) == []
+        output = json.loads(captured.out)
+        assert output == {"items": []}
 
     def test_items_sorted_by_type_then_name(self, capsys: pytest.CaptureFixture[str]) -> None:
         items = [
@@ -562,8 +607,8 @@ class TestFormatListJson:
             _make_item("beta", ItemType.AGENT),
         ]
         _format_list_json(items, show_tokens=False)
-        data = json.loads(capsys.readouterr().out)
-        names = [d["name"] for d in data]
+        output = json.loads(capsys.readouterr().out)
+        names = [d["name"] for d in output["items"]]
         # agent/alpha < agent/beta < skill/zebra
         assert names == ["alpha", "beta", "zebra"]
 
@@ -609,12 +654,35 @@ class TestFormatListText:
             overhead_tokens=20,
             total_tokens=120,
         )
-        with patch("agentfiles.tokens.token_estimate", return_value=estimate):
+        with (
+            patch("agentfiles.tokens.token_estimate", return_value=estimate),
+            patch("agentfiles.tokens.estimate_name_description_tokens", return_value=10),
+        ):
             result = _format_list_text(items, show_tokens=True)
         output = capsys.readouterr().out
         assert result == 0
         assert "120" in output
         assert "Token Summary" in output
+        assert "Name + Description tokens" in output
+
+    def test_non_agent_skill_items_skip_tokens(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Commands and plugins never show per-item token counts."""
+        items = [_make_item("build", ItemType.COMMAND)]
+        estimate = TokenEstimate(
+            name="build",
+            item_type=ItemType.COMMAND,
+            files=("build.md",),
+            source_size_bytes=50,
+            content_tokens=25,
+            overhead_tokens=5,
+            total_tokens=30,
+        )
+        with patch("agentfiles.tokens.token_estimate", return_value=estimate):
+            result = _format_list_text(items, show_tokens=True)
+        output = capsys.readouterr().out
+        assert result == 0
+        assert "30" not in output
+        assert "Token Summary" not in output
 
 
 # ---------------------------------------------------------------------------
