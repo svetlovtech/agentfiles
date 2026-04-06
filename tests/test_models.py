@@ -15,6 +15,7 @@ from agentfiles.models import (
     CHARS_PER_TOKEN,
     PLATFORM_ALIASES,
     PLATFORM_NAMES,
+    AgentfilesError,
     ConfigError,
     DiffEntry,
     DiffStatus,
@@ -28,7 +29,6 @@ from agentfiles.models import (
     SourceInfo,
     SourceType,
     SyncAction,
-    SyncodeError,
     SyncPlan,
     SyncResult,
     SyncState,
@@ -59,10 +59,10 @@ class TestExceptions:
     @pytest.mark.parametrize(
         "exc_class, parent_class",
         [
-            (SyncodeError, Exception),
-            (SourceError, SyncodeError),
-            (TargetError, SyncodeError),
-            (ConfigError, SyncodeError),
+            (AgentfilesError, Exception),
+            (SourceError, AgentfilesError),
+            (TargetError, AgentfilesError),
+            (ConfigError, AgentfilesError),
         ],
         ids=["agentfiles-base", "source", "target", "config"],
     )
@@ -518,22 +518,22 @@ class TestParseFrontmatter:
 
     def test_non_mapping_yaml_raises(self) -> None:
         content = "---\n- item1\n- item2\n---"
-        with pytest.raises(SyncodeError, match="must be a YAML mapping"):
+        with pytest.raises(AgentfilesError, match="must be a YAML mapping"):
             parse_frontmatter(content)
 
     def test_non_mapping_yaml_error_suggests_fix(self) -> None:
         content = "---\n- item1\n- item2\n---"
-        with pytest.raises(SyncodeError, match="Fix: use 'key: value' syntax"):
+        with pytest.raises(AgentfilesError, match="Fix: use 'key: value' syntax"):
             parse_frontmatter(content)
 
     def test_malformed_yaml_raises(self) -> None:
         content = "---\nname: [unclosed\n---"
-        with pytest.raises(SyncodeError, match="malformed YAML frontmatter"):
+        with pytest.raises(AgentfilesError, match="malformed YAML frontmatter"):
             parse_frontmatter(content)
 
     def test_malformed_yaml_error_suggests_fix(self) -> None:
         content = "---\nname: [unclosed\n---"
-        with pytest.raises(SyncodeError, match="Fix: check for unquoted"):
+        with pytest.raises(AgentfilesError, match="Fix: check for unquoted"):
             parse_frontmatter(content)
 
     def test_colon_in_value_automatically_quoted(self) -> None:
@@ -620,7 +620,7 @@ class TestMetaFromFrontmatter:
 
     def test_tools_non_dict_raises(self) -> None:
         raw = {"name": "x", "tools": "invalid"}
-        with pytest.raises(SyncodeError, match="frontmatter field 'tools' must be dict"):
+        with pytest.raises(AgentfilesError, match="frontmatter field 'tools' must be dict"):
             _meta_from_frontmatter(raw)
 
     def test_unknown_keys_go_to_extra(self) -> None:
@@ -640,32 +640,32 @@ class TestMetaFromFrontmatter:
 
     def test_name_non_string_raises(self) -> None:
         raw = {"name": 123}
-        with pytest.raises(SyncodeError, match="frontmatter field 'name' must be str"):
+        with pytest.raises(AgentfilesError, match="frontmatter field 'name' must be str"):
             _meta_from_frontmatter(raw)
 
     def test_name_list_raises(self) -> None:
         raw = {"name": ["a", "b"]}
-        with pytest.raises(SyncodeError, match="frontmatter field 'name' must be str"):
+        with pytest.raises(AgentfilesError, match="frontmatter field 'name' must be str"):
             _meta_from_frontmatter(raw)
 
     def test_description_non_string_raises(self) -> None:
         raw = {"name": "x", "description": ["list", "of", "strings"]}
-        with pytest.raises(SyncodeError, match="frontmatter field 'description' must be str"):
+        with pytest.raises(AgentfilesError, match="frontmatter field 'description' must be str"):
             _meta_from_frontmatter(raw)
 
     def test_version_non_string_raises(self) -> None:
         raw = {"name": "x", "version": 2.0}
-        with pytest.raises(SyncodeError, match="frontmatter field 'version' must be str"):
+        with pytest.raises(AgentfilesError, match="frontmatter field 'version' must be str"):
             _meta_from_frontmatter(raw)
 
     def test_priority_non_string_raises(self) -> None:
         raw = {"name": "x", "priority": 42}
-        with pytest.raises(SyncodeError, match="frontmatter field 'priority' must be str"):
+        with pytest.raises(AgentfilesError, match="frontmatter field 'priority' must be str"):
             _meta_from_frontmatter(raw)
 
     def test_validation_error_includes_fix_guidance(self) -> None:
         raw = {"name": True}
-        with pytest.raises(SyncodeError, match="Fix: set 'name' to a str value or remove it"):
+        with pytest.raises(AgentfilesError, match="Fix: set 'name' to a str value or remove it"):
             _meta_from_frontmatter(raw)
 
     def test_none_values_are_allowed(self) -> None:
@@ -676,7 +676,7 @@ class TestMetaFromFrontmatter:
 
     def test_tools_with_list_raises(self) -> None:
         raw = {"name": "x", "tools": ["bash", "read"]}
-        with pytest.raises(SyncodeError, match="frontmatter field 'tools' must be dict"):
+        with pytest.raises(AgentfilesError, match="frontmatter field 'tools' must be dict"):
             _meta_from_frontmatter(raw)
 
 
@@ -1320,8 +1320,8 @@ class TestValidateFieldType:
         _validate_field_type({"name": "test"}, "name", str)
 
     def test_wrong_type_raises(self) -> None:
-        """Field with wrong type raises SyncodeError."""
-        with pytest.raises(SyncodeError, match="must be str"):
+        """Field with wrong type raises AgentfilesError."""
+        with pytest.raises(AgentfilesError, match="must be str"):
             _validate_field_type({"name": 123}, "name", str)
 
     def test_tuple_expected_type(self) -> None:
@@ -1331,7 +1331,7 @@ class TestValidateFieldType:
 
     def test_tuple_expected_type_wrong_raises(self) -> None:
         """Wrong type with tuple expected raises with all type names."""
-        with pytest.raises(SyncodeError, match="must be str or int"):
+        with pytest.raises(AgentfilesError, match="must be str or int"):
             _validate_field_type({"val": [1, 2]}, "val", (str, int))
 
 

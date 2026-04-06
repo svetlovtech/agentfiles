@@ -59,6 +59,8 @@ _GIT_URL_PREFIXES: Final = (
     "ssh://",
 )
 
+_AGENTFILES_CONFIG_NAMES: Final = (".agentfiles.yaml", ".agentfiles.yml")
+
 # ---------------------------------------------------------------------------
 # Git error classification — maps known stderr patterns to actionable hints
 # ---------------------------------------------------------------------------
@@ -629,8 +631,30 @@ class SourceResolver:
     # -- private helpers ----------------------------------------------------
 
     def _detect_auto(self) -> SourceInfo:
-        """Auto-detect source by walking up from CWD."""
+        """Auto-detect source by walking up from CWD.
+
+        Detection priority:
+
+        1. If CWD contains ``.agentfiles.yaml`` / ``.agentfiles.yml``,
+           treat CWD itself as the source root — unless CWD is the
+           agentfiles *project* repository (detected by the presence
+           of ``pyproject.toml`` with ``name = "agentfiles"``).
+        2. Otherwise, walk upward from CWD looking for a directory
+           with at least two recognised source subdirectories.
+        """
         cwd = Path.cwd()
+
+        # Check for local .agentfiles.yaml in CWD first.
+        has_local_config = any((cwd / name).is_file() for name in _AGENTFILES_CONFIG_NAMES)
+        if has_local_config:
+            # Guard: skip if this is the agentfiles project repo itself.
+            pyproject = cwd / "pyproject.toml"
+            if not pyproject.is_file() or 'name = "agentfiles"' not in pyproject.read_text(
+                errors="ignore"
+            ):
+                logger.info("Found local config in CWD: %s", cwd)
+                return self._classify_dir(cwd, original_input="")
+
         found = _find_source_dir(cwd)
 
         if found is None:

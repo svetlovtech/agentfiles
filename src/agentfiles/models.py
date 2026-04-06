@@ -63,7 +63,7 @@ __all__ = [
     # Exceptions
     "ConfigError",
     "SourceError",
-    "SyncodeError",
+    "AgentfilesError",
     "TargetError",
     # Enumerations
     "DiffStatus",
@@ -105,19 +105,19 @@ _DEFAULT_VERSION = "1.0.0"
 # ---------------------------------------------------------------------------
 
 
-class SyncodeError(Exception):
+class AgentfilesError(Exception):
     """Base exception for all agentfiles operations."""
 
 
-class ConfigError(SyncodeError):
+class ConfigError(AgentfilesError):
     """Raised when a configuration file cannot be found, read, or parsed."""
 
 
-class SourceError(SyncodeError):
+class SourceError(AgentfilesError):
     """Raised when a source path cannot be resolved or read."""
 
 
-class TargetError(SyncodeError):
+class TargetError(AgentfilesError):
     """Raised when a target platform directory cannot be found or accessed."""
 
 

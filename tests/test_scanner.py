@@ -730,7 +730,7 @@ class TestCorruptedYAMLResilience:
         plugins_dir = tmp_path / "plugins"
         plugins_dir.mkdir()
         (plugins_dir / "good.yaml").write_text("name: my-plugin\ndescription: ok", encoding="utf-8")
-        # Use frontmatter-wrapped list YAML that triggers SyncodeError
+        # Use frontmatter-wrapped list YAML that triggers agentfilesError""
         (plugins_dir / "broken.yaml").write_text(
             "---\n- item1\n- item2\n---\nbody", encoding="utf-8"
         )

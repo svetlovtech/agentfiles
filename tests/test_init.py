@@ -24,10 +24,10 @@ from agentfiles.cli import (
     cmd_init,
 )
 from agentfiles.models import (
+    AgentfilesError,
     Item,
     ItemType,
     Platform,
-    SyncodeError,
     TargetPaths,
     TokenEstimate,
 )
@@ -254,20 +254,20 @@ class TestInitErrorPaths:
     """Tests for error handling in cmd_init."""
 
     def test_raises_on_permission_denied_for_mkdir(self, tmp_path: Path) -> None:
-        """SyncodeError raised when base directory cannot be created."""
+        """AgentfilesError raised when base directory cannot be created."""
         args = _make_args(str(tmp_path))
         with (
             patch("pathlib.Path.mkdir", side_effect=OSError("Permission denied")),
-            pytest.raises(SyncodeError, match="Failed to create directory"),
+            pytest.raises(AgentfilesError, match="Failed to create directory"),
         ):
             cmd_init(args)
 
     def test_raises_on_permission_denied_for_config_write(self, tmp_path: Path) -> None:
-        """SyncodeError raised when config file cannot be written."""
+        """AgentfilesError raised when config file cannot be written."""
         args = _make_args(str(tmp_path))
         with (
             patch("pathlib.Path.write_text", side_effect=OSError("Read-only")),
-            pytest.raises(SyncodeError),
+            pytest.raises(AgentfilesError),
         ):
             cmd_init(args)
 
@@ -303,7 +303,7 @@ class TestCreateInitStructure:
     def test_raises_on_oserror(self, tmp_path: Path) -> None:
         with (
             patch("pathlib.Path.mkdir", side_effect=OSError("disk full")),
-            pytest.raises(SyncodeError, match="Failed to create directory"),
+            pytest.raises(AgentfilesError, match="Failed to create directory"),
         ):
             _create_init_structure(tmp_path)
 

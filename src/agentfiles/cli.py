@@ -61,7 +61,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from agentfiles.config import SyncodeConfig
+    from agentfiles.config import AgentfilesConfig
     from agentfiles.engine import SyncEngine
     from agentfiles.models import (
         Item,
@@ -92,7 +92,7 @@ logger = logging.getLogger(__name__)
 
 def _resolve_platforms(
     target_flag: str | None,
-    config: SyncodeConfig,
+    config: AgentfilesConfig,
 ) -> list[Platform]:
     """Resolve which target platforms to operate on.
 
@@ -106,7 +106,7 @@ def _resolve_platforms(
     Args:
         target_flag: Value of the ``--target`` CLI flag (``"all"``, a
             platform name, or ``None``).
-        config: Loaded ``SyncodeConfig`` providing ``default_platforms``.
+        config: Loaded ``AgentfilesConfig`` providing ``default_platforms``.
 
     Returns:
         List of ``Platform`` enums to operate on.
@@ -272,29 +272,29 @@ def _apply_color_env(color: str) -> None:
     # "auto" → leave env untouched; init_logging() uses its heuristic
 
 
-def _discover_targets(config: SyncodeConfig) -> TargetManager:
+def _discover_targets(config: AgentfilesConfig) -> TargetManager:
     """Discover installed AI tool platforms and build a ``TargetManager``.
 
     Scans common install paths for OpenCode, Claude Code, Cursor, Windsurf,
     etc.  Custom paths from the config override the defaults.
 
     Args:
-        config: Loaded ``SyncodeConfig`` (may provide ``custom_paths``).
+        config: Loaded ``AgentfilesConfig`` (may provide ``custom_paths``).
 
     Returns:
         A ``TargetManager`` with at least one discovered platform.
 
     Raises:
-        SyncodeError: When no platforms are discovered on the system.
+        AgentfilesError: When no platforms are discovered on the system.
 
     """
-    from agentfiles.models import SyncodeError
+    from agentfiles.models import AgentfilesError
     from agentfiles.target import build_target_manager
 
     target_manager = build_target_manager(config.custom_paths)
 
     if not target_manager.targets:
-        raise SyncodeError(
+        raise AgentfilesError(
             "No target platforms found. Install at least one supported tool: "
             "OpenCode (https://opencode.ai), Claude Code (https://claude.ai/code), "
             "Windsurf (https://codeium.com/windsurf), or Cursor (https://cursor.com). "
@@ -319,7 +319,7 @@ def _get_source(
         args: Parsed CLI namespace (reads ``source`` and ``cache_dir``).
         fallback_cache_dir: Config file's ``cache_dir`` used when the
             CLI ``--cache-dir`` flag is not provided.  Passed by callers
-            that have already loaded a :class:`SyncodeConfig`.
+            that have already loaded a :class:`AgentfilesConfig`.
 
     Returns:
         Local ``Path`` to the resolved source directory.
@@ -364,7 +364,7 @@ def _get_source(
 
 def _create_sync_pipeline(
     source_dir: Path,
-    config: SyncodeConfig,
+    config: AgentfilesConfig,
     args: argparse.Namespace,
 ) -> tuple[SourceScanner, TargetManager, SyncEngine]:
     """Create the configured scanner, target manager, and sync engine.
@@ -374,7 +374,7 @@ def _create_sync_pipeline(
 
     Args:
         source_dir: Resolved local path to the source repository.
-        config: Loaded ``SyncodeConfig``.
+        config: Loaded ``AgentfilesConfig``.
         args: Parsed CLI namespace (reads ``symlinks`` and ``dry_run``).
 
     Returns:
@@ -406,7 +406,7 @@ class CommandContext:
     are ``None`` when the context is built with ``needs_pipeline=False``.
     """
 
-    config: SyncodeConfig
+    config: AgentfilesConfig
     source_dir: Path | None
     scanner: SourceScanner | None
     target_manager: TargetManager | None
@@ -441,9 +441,9 @@ def _build_context(
     Returns:
         A populated :class:`CommandContext` instance.
     """
-    from agentfiles.config import SyncodeConfig
+    from agentfiles.config import AgentfilesConfig
 
-    config = SyncodeConfig.load(getattr(args, "config", None))
+    config = AgentfilesConfig.load(getattr(args, "config", None))
 
     source_dir: Path | None = None
     scanner: SourceScanner | None = None
@@ -597,22 +597,42 @@ def _run_pull_interactive(
     from agentfiles.output import info, warning
 
     session = InteractiveSession()
-    mode = session.choose_sync_mode()
+    try:
+        mode = session.choose_sync_mode()
+    except KeyboardInterrupt:
+        print()
+        warning("Aborted.")
+        return None
 
     if mode == "custom":
-        selected_platforms = session.select_platforms(platforms)
+        try:
+            selected_platforms = session.select_platforms(platforms)
+        except KeyboardInterrupt:
+            print()
+            warning("Aborted.")
+            return None
         if not selected_platforms:
             warning("No platforms selected.")
             return None
         platforms = selected_platforms
 
-        selected_types = session.select_item_types()
+        try:
+            selected_types = session.select_item_types()
+        except KeyboardInterrupt:
+            print()
+            warning("Aborted.")
+            return None
         items = _filter_items(items, selected_types)
         if not items:
             warning("No items selected.")
             return None
 
-        items = session.select_items(items)
+        try:
+            items = session.select_items(items)
+        except KeyboardInterrupt:
+            print()
+            warning("Aborted.")
+            return None
         if not items:
             warning("No items selected.")
             return None
@@ -711,10 +731,10 @@ def _create_init_structure(base: Path) -> tuple[list[str], list[str]]:
         created vs. already existed.  Useful for user-facing output.
 
     Raises:
-        SyncodeError: When directory or file creation fails due to
+        AgentfilesError: When directory or file creation fails due to
             permission or filesystem errors.
     """
-    from agentfiles.models import ItemType, SyncodeError
+    from agentfiles.models import AgentfilesError, ItemType
 
     created_dirs: list[str] = []
     skipped_dirs: list[str] = []
@@ -729,7 +749,7 @@ def _create_init_structure(base: Path) -> tuple[list[str], list[str]]:
                 subdir.mkdir(parents=True, exist_ok=True)
                 (subdir / ".gitkeep").touch()
             except OSError as exc:
-                raise SyncodeError(
+                raise AgentfilesError(
                     f"Failed to create directory '{subdir}': {exc}. "
                     f"Check that the parent directory exists and is writable, "
                     f"or run with appropriate permissions"
@@ -896,11 +916,11 @@ def cmd_push(args: argparse.Namespace) -> int:
     Returns:
         ``0`` on success, ``1`` if any operation failed.
     """
-    from agentfiles.config import SyncodeConfig
+    from agentfiles.config import AgentfilesConfig
     from agentfiles.interactive import InteractiveSession
     from agentfiles.output import bold, info, warning
 
-    config = SyncodeConfig.load(args.config)
+    config = AgentfilesConfig.load(args.config)
     source_dir = _get_source(
         args,
         config.cache_dir,
@@ -929,7 +949,12 @@ def cmd_push(args: argparse.Namespace) -> int:
     # Interactive selection unless --yes
     if not args.non_interactive:
         session = InteractiveSession()
-        installed_items = session.select_items(installed_items)
+        try:
+            installed_items = session.select_items(installed_items)
+        except KeyboardInterrupt:
+            print()
+            warning("Aborted.")
+            return 1
         if not installed_items:
             warning("No items selected.")
             return 0
@@ -982,7 +1007,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     Returns:
         ``0`` on success.
     """
-    from agentfiles.config import SyncodeConfig
+    from agentfiles.config import AgentfilesConfig
 
     # --list mode: list source items
     if getattr(args, "list_items", False):
@@ -1007,7 +1032,7 @@ def cmd_status(args: argparse.Namespace) -> int:
         from agentfiles.output import format_diff, format_diff_json
         from agentfiles.scanner import SourceScanner
 
-        config = SyncodeConfig.load(getattr(args, "config", None))
+        config = AgentfilesConfig.load(getattr(args, "config", None))
         source_dir = _get_source(
             args,
             config.cache_dir,
@@ -1037,7 +1062,7 @@ def cmd_status(args: argparse.Namespace) -> int:
 
     from agentfiles.output import print_table
 
-    config = SyncodeConfig.load(args.config)
+    config = AgentfilesConfig.load(args.config)
     target_manager = _discover_targets(config)
     summary = target_manager.platform_summary()
 
@@ -1084,13 +1109,13 @@ def cmd_clean(args: argparse.Namespace) -> int:
     Returns:
         ``0`` on success, ``1`` if any uninstall operation failed.
     """
-    from agentfiles.config import SyncodeConfig
+    from agentfiles.config import AgentfilesConfig
     from agentfiles.engine import SyncEngine
     from agentfiles.interactive import InteractiveSession
     from agentfiles.output import bold, info, warning
     from agentfiles.scanner import SourceScanner
 
-    config = SyncodeConfig.load(args.config)
+    config = AgentfilesConfig.load(args.config)
     source_dir = _get_source(args, config.cache_dir)
 
     scanner = SourceScanner(source_dir)
@@ -1206,10 +1231,10 @@ def cmd_init(args: argparse.Namespace) -> int:
         ``0`` on success.
 
     Raises:
-        SyncodeError: On filesystem permission or I/O errors.
+        AgentfilesError: On filesystem permission or I/O errors.
     """
     from agentfiles.interactive import InteractiveSession
-    from agentfiles.models import SyncodeError
+    from agentfiles.models import AgentfilesError
     from agentfiles.output import info, success
 
     base = Path(args.path).resolve()
@@ -1223,7 +1248,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     try:
         base.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        raise SyncodeError(
+        raise AgentfilesError(
             f"Failed to create directory '{base}': {exc}. "
             f"Check that the parent path exists and is writable, "
             f"or run with appropriate permissions (e.g. no sudo if needed)"
@@ -1241,7 +1266,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         try:
             config_path.write_text(config_content)
         except OSError as exc:
-            raise SyncodeError(
+            raise AgentfilesError(
                 f"Failed to write config file '{config_path}': {exc}. "
                 f"Check that the directory is writable and there is sufficient disk space"
             ) from exc
@@ -1258,7 +1283,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         try:
             state_path.write_text(state_content)
         except OSError as exc:
-            raise SyncodeError(
+            raise AgentfilesError(
                 f"Failed to write state file '{state_path}': {exc}. "
                 f"Check that the directory is writable and there is sufficient disk space"
             ) from exc
@@ -1678,11 +1703,11 @@ def main() -> None:
     Exit codes:
 
     - ``0`` — success
-    - ``1`` — application error (``SyncodeError`` or unexpected exception)
+    - ``1`` — application error (``AgentfilesError`` or unexpected exception)
     - ``2`` — usage error (no subcommand provided)
     - ``130`` — interrupted by ``Ctrl-C``
     """
-    from agentfiles.models import SyncodeError
+    from agentfiles.models import AgentfilesError
     from agentfiles.output import error, init_logging, warning
 
     parser = build_parser()
@@ -1710,7 +1735,7 @@ def main() -> None:
     except KeyboardInterrupt:
         warning("\nAborted.")
         code = 130
-    except SyncodeError as exc:
+    except AgentfilesError as exc:
         error(f"{exc}")
         code = 1
     except Exception as exc:

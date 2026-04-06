@@ -40,11 +40,11 @@ import os
 from pathlib import Path
 
 from agentfiles.models import (
+    AgentfilesError,
     DiffEntry,
     DiffStatus,
     Item,
     Platform,
-    SyncodeError,
     TargetError,
 )
 from agentfiles.paths import get_item_dest_path, read_item_content
@@ -202,7 +202,7 @@ class Differ:
                 for platform in applicable:
                     entry = self._compare_item(item, platform)
                     results.setdefault(platform, []).append(entry)
-            except (SyncodeError, OSError):
+            except (AgentfilesError, OSError):
                 logger.warning(
                     "Failed to diff item %s, skipping",
                     item.name,

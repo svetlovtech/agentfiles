@@ -218,7 +218,7 @@ def init_logging(verbose: bool = False, quiet: bool = False) -> None:
 # ---------------------------------------------------------------------------
 
 # Default directory for debug log files.
-_LOG_DIR = Path("/tmp/agentfiles/svistocode")
+_LOG_DIR = Path("/tmp/agentfiles")
 
 # Default formatter for file-based log output.
 _FILE_LOG_FORMAT = "%(asctime)s [%(levelname)-7s] %(name)s: %(message)s"

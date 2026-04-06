@@ -225,7 +225,10 @@ class MenuRenderer:
             )
             buf.append(f"  {label}")
             for item in group_items:
-                buf.append(f"    [{counter}] {item.name}")
+                src = item.source_path
+                # Show parent directory for concise output
+                location = src.parent if src.is_absolute() and src.parent != src else src
+                buf.append(f"    [{counter}] {item.name}  {self._c(str(location), Colors.DIM)}")
                 index_map[counter] = item
                 counter += 1
             buf.append("")
@@ -340,14 +343,16 @@ class InputParser:
     def prompt(self, message: str) -> str:
         """Display a coloured prompt and wait for user input.
 
-        Handles ``KeyboardInterrupt`` and ``EOFError`` gracefully by
-        returning an empty string so callers can treat it as a
-        cancellation.  ``EOFError`` occurs when stdin is closed or
-        exhausted (e.g. piped input).
+        Returns:
+            The stripped user input, or an empty string on empty input.
+
+        Raises:
+            KeyboardInterrupt: When the user presses Ctrl+C, so callers
+            can distinguish cancellation from an empty response.
         """
         try:
             return input(self._renderer._c(message, Colors.BOLD)).strip()
-        except (KeyboardInterrupt, EOFError):
+        except EOFError:
             print()
             return ""
 
@@ -549,6 +554,9 @@ class InteractiveSession:
         Returns:
             Parsed result, or *fallback* when retries are exhausted
             or the user submits empty/``"all"`` input.
+
+        Raises:
+            KeyboardInterrupt: When the user presses Ctrl+C.
 
         """
         for attempt in range(_MAX_INPUT_RETRIES):

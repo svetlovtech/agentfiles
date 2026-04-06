@@ -95,7 +95,7 @@ except ImportError:
 
 # name → (module_path, attribute_name) for O(1) lazy resolution.
 _EXPORT_MAP: dict[str, tuple[str, str]] = {
-    "SyncodeConfig": ("agentfiles.config", "SyncodeConfig"),
+    "AgentfilesConfig": ("agentfiles.config", "AgentfilesConfig"),
     "Differ": ("agentfiles.differ", "Differ"),
     "SyncEngine": ("agentfiles.engine", "SyncEngine"),
     "SyncReport": ("agentfiles.engine", "SyncReport"),
@@ -112,7 +112,7 @@ _EXPORT_MAP: dict[str, tuple[str, str]] = {
     "SourceInfo": ("agentfiles.models", "SourceInfo"),
     "SourceType": ("agentfiles.models", "SourceType"),
     "SyncAction": ("agentfiles.models", "SyncAction"),
-    "SyncodeError": ("agentfiles.models", "SyncodeError"),
+    "AgentfilesError": ("agentfiles.models", "AgentfilesError"),
     "ConfigError": ("agentfiles.models", "ConfigError"),
     "SyncPlan": ("agentfiles.models", "SyncPlan"),
     "SyncResult": ("agentfiles.models", "SyncResult"),
@@ -155,7 +155,7 @@ __all__ = [
     # Exceptions
     "ConfigError",
     "SourceError",
-    "SyncodeError",
+    "AgentfilesError",
     "TargetError",
     # Enums
     "DiffStatus",
@@ -182,7 +182,7 @@ __all__ = [
     "SourceScanner",
     "SyncEngine",
     "SyncReport",
-    "SyncodeConfig",
+    "AgentfilesConfig",
     "TargetDiscovery",
     "TargetManager",
     # Factories & helpers

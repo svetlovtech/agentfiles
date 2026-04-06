@@ -50,6 +50,24 @@ from agentfiles.paths import get_item_dest_path
 
 logger = logging.getLogger(__name__)
 
+# Well-known names that are NOT agentfiles items but may appear in platform
+# directories (e.g. node_modules in OpenCode's plugin dir, blocklist.json in
+# Claude Code's plugins dir).
+_IGNORED_NAMES: frozenset[str] = frozenset(
+    {
+        "node_modules",
+        "cache",
+        "marketplaces",
+        "package",
+        "package-lock",
+        "tsconfig",
+        "vitest.config",
+        "blocklist",
+        "installed_plugins",
+        "known_marketplaces",
+    }
+)
+
 
 # ---------------------------------------------------------------------------
 # Convenience factory
@@ -629,14 +647,33 @@ class TargetManager:
             for entry in entries:
                 if entry.name.startswith("."):
                     continue
+                # For directory-based items (skills, plugins), only consider
+                # directories — skip stray files like package.json, tsconfig.json.
+                # For file-based items (agents, commands), only consider files.
                 try:
-                    name = entry.stem if item_type.is_file_based and entry.is_file() else entry.name
+                    is_file = entry.is_file()
+                    is_dir = entry.is_dir()
                 except OSError:
                     logger.debug(
                         "Cannot stat entry %s, skipping",
                         entry,
                     )
                     continue
+
+                if item_type.is_file_based:
+                    if not is_file:
+                        continue
+                    name = entry.stem
+                else:
+                    if not is_dir:
+                        continue
+                    name = entry.name
+
+                # Skip well-known non-item names that may appear in platform
+                # directories (e.g. node_modules in OpenCode's plugin dir).
+                if name in _IGNORED_NAMES:
+                    continue
+
                 items.append((item_type, name))
 
         return items

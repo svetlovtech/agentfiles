@@ -2,7 +2,7 @@
 
 This module handles three clearly separated concerns:
 
-1. **Configuration data class** — :class:`SyncodeConfig` defines runtime
+1. **Configuration data class** — :class:`AgentfilesConfig` defines runtime
    settings (default platforms, symlinks, cache directory, etc.).
 2. **Configuration file I/O** — Locating and loading YAML config from
    standard search locations (explicit path, CWD, home directory).
@@ -22,10 +22,10 @@ from typing import Any
 import yaml
 
 from agentfiles.models import (
+    AgentfilesError,
     ConfigError,
     ItemState,
     PlatformState,
-    SyncodeError,
     SyncState,
 )
 
@@ -38,7 +38,7 @@ _CONFIG_FILENAMES: tuple[str, ...] = (".agentfiles.yaml", ".agentfiles.yml")
 _STATE_FILENAME: str = ".agentfiles.state.yaml"
 
 # Mapping of YAML config keys to their type coercers.
-# Used by SyncodeConfig._from_dict to declaratively convert parsed values.
+# Used by AgentfilesConfig._from_dict to declaratively convert parsed values.
 _FIELD_COERCERS: dict[str, type] = {
     "default_platforms": list,
     "use_symlinks": bool,
@@ -97,7 +97,7 @@ def _iter_config_search_paths(config_path: Path | None) -> Iterator[Path]:
     lazily from standard search locations (CWD then home), avoiding
     construction of paths that are never probed.
 
-    Separated from :meth:`SyncodeConfig.load` so that path resolution
+    Separated from :meth:`AgentfilesConfig.load` so that path resolution
     logic can be reasoned about and tested independently of file I/O.
 
     Args:
@@ -133,7 +133,7 @@ def _iter_config_search_paths(config_path: Path | None) -> Iterator[Path]:
 
 
 @dataclass(frozen=True)
-class SyncodeConfig:
+class AgentfilesConfig:
     """Runtime configuration for agentfiles.
 
     Loaded from YAML files with the following search order:
@@ -158,7 +158,7 @@ class SyncodeConfig:
     custom_paths: dict[str, str] = field(default_factory=dict)
 
     @classmethod
-    def load(cls, config_path: Path | None = None) -> SyncodeConfig:
+    def load(cls, config_path: Path | None = None) -> AgentfilesConfig:
         """Load config from file, falling back to defaults.
 
         Searches for config files in the standard locations.  If a file
@@ -179,7 +179,7 @@ class SyncodeConfig:
                 for auto-discovery.
 
         Returns:
-            A fully populated :class:`SyncodeConfig` instance.
+            A fully populated :class:`AgentfilesConfig` instance.
 
         Raises:
             ConfigError: When *config_path* is given and the file
@@ -191,7 +191,7 @@ class SyncodeConfig:
                 logger.debug("Loading config from %s", path)
                 try:
                     return _load_config_from_file(path)
-                except SyncodeError:
+                except AgentfilesError:
                     if config_path is not None:
                         raise
                     logger.warning(
@@ -204,7 +204,7 @@ class SyncodeConfig:
         return cls()
 
     @classmethod
-    def _from_dict(cls, data: dict[str, Any]) -> SyncodeConfig:
+    def _from_dict(cls, data: dict[str, Any]) -> AgentfilesConfig:
         """Construct a config from a parsed YAML dictionary.
 
         Uses :data:`_FIELD_COERCERS` to declaratively map YAML keys
@@ -267,7 +267,7 @@ def _validate_config_dict(data: dict[str, Any], path: Path) -> None:
 
 
 @lru_cache(maxsize=8)
-def _load_config_from_file(path: Path) -> SyncodeConfig:
+def _load_config_from_file(path: Path) -> AgentfilesConfig:
     """Load and parse a config file, caching results by resolved path.
 
     Avoids redundant YAML parsing when the same config file is
@@ -277,7 +277,7 @@ def _load_config_from_file(path: Path) -> SyncodeConfig:
         path: Path to the YAML config file.
 
     Returns:
-        A populated :class:`SyncodeConfig` instance.
+        A populated :class:`AgentfilesConfig` instance.
 
     Raises:
         ConfigError: When the file contains malformed YAML or
@@ -286,7 +286,7 @@ def _load_config_from_file(path: Path) -> SyncodeConfig:
     """
     data = _read_yaml_file(path)
     _validate_config_dict(data, path)
-    return SyncodeConfig._from_dict(data)
+    return AgentfilesConfig._from_dict(data)
 
 
 def clear_config_cache() -> None:
@@ -326,7 +326,7 @@ def load_sync_state(repo_path: Path) -> SyncState:
     try:
         data = _read_yaml_file(state_file)
         return _parse_sync_state(data)
-    except SyncodeError as exc:
+    except AgentfilesError as exc:
         logger.warning(
             "Corrupted state file '%s': %s. Backing up and resetting.",
             state_file,

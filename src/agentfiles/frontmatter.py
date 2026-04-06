@@ -36,9 +36,9 @@ import re
 from typing import Any
 
 # Lazy import from models to avoid circular dependency at module load time.
-# models.py imports from this module after defining SyncodeError, ItemMeta,
+# models.py imports from this module after defining AgentfilesError, ItemMeta,
 # and _DEFAULT_VERSION, so the circular import resolves correctly.
-from agentfiles.models import _DEFAULT_VERSION, ItemMeta, SyncodeError
+from agentfiles.models import _DEFAULT_VERSION, AgentfilesError, ItemMeta
 
 # ---------------------------------------------------------------------------
 # Shared constants
@@ -92,7 +92,7 @@ def parse_frontmatter(content: str) -> dict[str, Any]:
     2. Attempt ``yaml.safe_load`` on the raw block.
     3. On failure, re-quote colon-containing values and retry.
     4. Validate that the result is a YAML mapping (dict).
-    5. Return the dict (or raise :class:`SyncodeError`).
+    5. Return the dict (or raise :class:`AgentfilesError`).
 
     Args:
         content: Raw markdown file contents.
@@ -102,7 +102,7 @@ def parse_frontmatter(content: str) -> dict[str, Any]:
         frontmatter is found or the YAML block is empty.
 
     Raises:
-        SyncodeError: When the YAML block is present but cannot be parsed,
+        AgentfilesError: When the YAML block is present but cannot be parsed,
             or when the parsed result is not a mapping.
 
     """
@@ -137,7 +137,7 @@ def parse_frontmatter(content: str) -> dict[str, Any]:
         try:
             parsed = yaml.safe_load(yaml_block)
         except yaml.YAMLError as exc:
-            raise SyncodeError(
+            raise AgentfilesError(
                 f"malformed YAML frontmatter: {exc}. "
                 f"Fix: check for unquoted special characters, "
                 f"indentation errors, or missing quotes around values "
@@ -145,7 +145,7 @@ def parse_frontmatter(content: str) -> dict[str, Any]:
             ) from exc
 
     if not isinstance(parsed, dict):
-        raise SyncodeError(
+        raise AgentfilesError(
             f"frontmatter must be a YAML mapping (key: value pairs), "
             f"got {type(parsed).__name__}. "
             f"Fix: use 'key: value' syntax instead of a list or scalar."
@@ -183,7 +183,7 @@ def _meta_from_frontmatter(raw: dict[str, Any]) -> ItemMeta:
         A fully-populated :class:`ItemMeta` instance.
 
     Raises:
-        SyncodeError: When a known field has an unexpected type
+        AgentfilesError: When a known field has an unexpected type
             (e.g. ``tools`` is a string instead of a mapping).
 
     """
@@ -240,7 +240,7 @@ def _validate_field_type(
         expected: Allowed Python type(s).
 
     Raises:
-        SyncodeError: When the field is present but has the wrong type.
+        AgentfilesError: When the field is present but has the wrong type.
 
     """
     value = raw.get(field_name)
@@ -255,7 +255,7 @@ def _validate_field_type(
         if isinstance(expected, tuple)
         else expected.__name__
     )
-    raise SyncodeError(
+    raise AgentfilesError(
         f"frontmatter field '{field_name}' must be {type_label}, "
         f"got {type(value).__name__}: {value!r}. "
         f"Fix: set '{field_name}' to a {type_label} value or remove it."

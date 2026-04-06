@@ -1,4 +1,4 @@
-"""Tests for agentfiles.config — SyncodeConfig loading and sync state I/O."""
+"""Tests for agentfiles.config — AgentfilesConfig loading and sync state I/O."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 from agentfiles.config import (
-    SyncodeConfig,
+    AgentfilesConfig,
     _iter_config_search_paths,
     _read_yaml_file,
     _validate_config_dict,
@@ -51,38 +51,38 @@ def valid_config_file(tmp_path: Path, valid_yaml_content: str) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# SyncodeConfig creation
+# AgentfilesConfig creation
 # ---------------------------------------------------------------------------
 
 
-class TestSyncodeConfigCreation:
-    """Tests for SyncodeConfig instantiation with defaults and custom values."""
+class TestAgentfilesConfigCreation:
+    """Tests for AgentfilesConfig instantiation with defaults and custom values."""
 
     def test_default_values(self) -> None:
-        config = SyncodeConfig()
+        config = AgentfilesConfig()
         assert config.default_platforms == ["opencode", "claude_code", "windsurf", "cursor"]
         assert config.use_symlinks is False
         assert config.cache_dir is None
         assert config.custom_paths == {}
 
     def test_custom_platforms(self) -> None:
-        config = SyncodeConfig(default_platforms=["opencode"])
+        config = AgentfilesConfig(default_platforms=["opencode"])
         assert config.default_platforms == ["opencode"]
 
     def test_custom_use_symlinks(self) -> None:
-        config = SyncodeConfig(use_symlinks=True)
+        config = AgentfilesConfig(use_symlinks=True)
         assert config.use_symlinks is True
 
     def test_custom_cache_dir(self) -> None:
-        config = SyncodeConfig(cache_dir="/tmp/cache")
+        config = AgentfilesConfig(cache_dir="/tmp/cache")
         assert config.cache_dir == "/tmp/cache"
 
     def test_custom_paths(self) -> None:
-        config = SyncodeConfig(custom_paths={"opencode": "/x"})
+        config = AgentfilesConfig(custom_paths={"opencode": "/x"})
         assert config.custom_paths == {"opencode": "/x"}
 
     def test_all_custom_values(self) -> None:
-        config = SyncodeConfig(
+        config = AgentfilesConfig(
             default_platforms=["claude_code"],
             use_symlinks=True,
             cache_dir="/cache",
@@ -99,8 +99,8 @@ class TestSyncodeConfigCreation:
 # ---------------------------------------------------------------------------
 
 
-class TestSyncodeConfigImmutability:
-    """Tests that SyncodeConfig fields cannot be mutated after creation."""
+class TestAgentfilesConfigImmutability:
+    """Tests that AgentfilesConfig fields cannot be mutated after creation."""
 
     @pytest.mark.parametrize(
         "field, value",
@@ -112,7 +112,7 @@ class TestSyncodeConfigImmutability:
         ],
     )
     def test_frozen_dataclass_prevents_mutation(self, field: str, value: Any) -> None:
-        config = SyncodeConfig()
+        config = AgentfilesConfig()
         with pytest.raises(AttributeError):
             setattr(config, field, value)
 
@@ -123,7 +123,7 @@ class TestSyncodeConfigImmutability:
 
 
 class TestFromDict:
-    """Tests for SyncodeConfig._from_dict class method."""
+    """Tests for AgentfilesConfig._from_dict class method."""
 
     def test_full_dict(self) -> None:
         data = {
@@ -132,14 +132,14 @@ class TestFromDict:
             "cache_dir": "/cache",
             "custom_paths": {"opencode": "/x"},
         }
-        config = SyncodeConfig._from_dict(data)
+        config = AgentfilesConfig._from_dict(data)
         assert config.default_platforms == ["opencode"]
         assert config.use_symlinks is True
         assert config.cache_dir == "/cache"
         assert config.custom_paths == {"opencode": "/x"}
 
     def test_empty_dict_returns_defaults(self) -> None:
-        config = SyncodeConfig._from_dict({})
+        config = AgentfilesConfig._from_dict({})
         assert config.default_platforms == ["opencode", "claude_code", "windsurf", "cursor"]
         assert config.use_symlinks is False
         assert config.cache_dir is None
@@ -147,7 +147,7 @@ class TestFromDict:
 
     def test_partial_dict_uses_defaults_for_missing(self) -> None:
         data = {"use_symlinks": True}
-        config = SyncodeConfig._from_dict(data)
+        config = AgentfilesConfig._from_dict(data)
         assert config.use_symlinks is True
         assert config.default_platforms == ["opencode", "claude_code", "windsurf", "cursor"]
         assert config.cache_dir is None
@@ -155,42 +155,42 @@ class TestFromDict:
 
     def test_unknown_keys_ignored(self) -> None:
         data = {"unknown_key": "value", "another_unknown": 42, "use_symlinks": True}
-        config = SyncodeConfig._from_dict(data)
+        config = AgentfilesConfig._from_dict(data)
         assert config.use_symlinks is True
 
     def test_use_symlinks_coerced_to_bool(self) -> None:
-        config = SyncodeConfig._from_dict({"use_symlinks": "yes"})
+        config = AgentfilesConfig._from_dict({"use_symlinks": "yes"})
         assert config.use_symlinks is True
 
-        config2 = SyncodeConfig._from_dict({"use_symlinks": 0})
+        config2 = AgentfilesConfig._from_dict({"use_symlinks": 0})
         assert config2.use_symlinks is False
 
     def test_cache_dir_coerced_to_str(self) -> None:
-        config = SyncodeConfig._from_dict({"cache_dir": Path("/tmp/cache")})
+        config = AgentfilesConfig._from_dict({"cache_dir": Path("/tmp/cache")})
         assert config.cache_dir == "/tmp/cache"
 
     def test_default_platforms_copied_to_list(self) -> None:
         data = {"default_platforms": ["claude_code"]}
-        config = SyncodeConfig._from_dict(data)
+        config = AgentfilesConfig._from_dict(data)
         assert isinstance(config.default_platforms, list)
         assert config.default_platforms == ["claude_code"]
 
     def test_custom_paths_copied_to_dict(self) -> None:
         data = {"custom_paths": {"opencode": "/o", "claude_code": "/c"}}
-        config = SyncodeConfig._from_dict(data)
+        config = AgentfilesConfig._from_dict(data)
         assert isinstance(config.custom_paths, dict)
         assert config.custom_paths == {"opencode": "/o", "claude_code": "/c"}
 
     def test_none_cache_dir_uses_default(self) -> None:
         """A None value for cache_dir should use the default, not coerce to 'None'."""
         data = {"cache_dir": None}
-        config = SyncodeConfig._from_dict(data)
+        config = AgentfilesConfig._from_dict(data)
         assert config.cache_dir is None
 
     def test_none_use_symlinks_uses_default(self) -> None:
         """A None value for use_symlinks should use the default."""
         data = {"use_symlinks": None}
-        config = SyncodeConfig._from_dict(data)
+        config = AgentfilesConfig._from_dict(data)
         assert config.use_symlinks is False
 
 
@@ -200,10 +200,10 @@ class TestFromDict:
 
 
 class TestLoad:
-    """Tests for SyncodeConfig.load class method."""
+    """Tests for AgentfilesConfig.load class method."""
 
     def test_load_from_explicit_path(self, valid_config_file: Path) -> None:
-        config = SyncodeConfig.load(valid_config_file)
+        config = AgentfilesConfig.load(valid_config_file)
         assert config.default_platforms == ["opencode"]
         assert config.use_symlinks is True
         assert config.cache_dir == "/tmp/agentfiles-cache"
@@ -211,7 +211,7 @@ class TestLoad:
 
     def test_load_explicit_nonexistent_raises(self) -> None:
         with pytest.raises(ConfigError, match="config file not found"):
-            SyncodeConfig.load(Path("/nonexistent/config.yaml"))
+            AgentfilesConfig.load(Path("/nonexistent/config.yaml"))
 
     def test_load_none_returns_defaults(self, tmp_path: Path) -> None:
         """When no config file exists, load returns defaults."""
@@ -219,7 +219,7 @@ class TestLoad:
             mock.patch.object(Path, "cwd", return_value=tmp_path),
             mock.patch.object(Path, "home", return_value=tmp_path),
         ):
-            config = SyncodeConfig.load(None)
+            config = AgentfilesConfig.load(None)
         assert config.default_platforms == ["opencode", "claude_code", "windsurf", "cursor"]
         assert config.use_symlinks is False
 
@@ -234,7 +234,7 @@ class TestLoad:
             mock.patch.object(Path, "cwd", return_value=tmp_path),
             mock.patch.object(Path, "home", return_value=isolated_home),
         ):
-            config = SyncodeConfig.load(None)
+            config = AgentfilesConfig.load(None)
         assert config.use_symlinks is True
 
     def test_load_discovers_cwd_yml(self, tmp_path: Path) -> None:
@@ -248,7 +248,7 @@ class TestLoad:
             mock.patch.object(Path, "cwd", return_value=tmp_path),
             mock.patch.object(Path, "home", return_value=isolated_home),
         ):
-            config = SyncodeConfig.load(None)
+            config = AgentfilesConfig.load(None)
         assert config.cache_dir == "/mycache"
 
     def test_load_discovers_home_yaml(self, tmp_path: Path) -> None:
@@ -261,7 +261,7 @@ class TestLoad:
             mock.patch.object(Path, "cwd", return_value=tmp_path / "cwd"),
             mock.patch.object(Path, "home", return_value=tmp_path / "home"),
         ):
-            config = SyncodeConfig.load(None)
+            config = AgentfilesConfig.load(None)
         assert config.use_symlinks is True
 
     def test_cwd_takes_priority_over_home(self, tmp_path: Path) -> None:
@@ -277,7 +277,7 @@ class TestLoad:
             mock.patch.object(Path, "cwd", return_value=tmp_path),
             mock.patch.object(Path, "home", return_value=tmp_path / "home"),
         ):
-            config = SyncodeConfig.load(None)
+            config = AgentfilesConfig.load(None)
         assert config.use_symlinks is True
 
     def test_invalid_yaml_warns_and_continues(self, tmp_path: Path) -> None:
@@ -294,7 +294,7 @@ class TestLoad:
             mock.patch.object(Path, "cwd", return_value=tmp_path),
             mock.patch.object(Path, "home", return_value=isolated_home),
         ):
-            config = SyncodeConfig.load(None)
+            config = AgentfilesConfig.load(None)
 
         # Should fall through to .agentfiles.yml
         assert config.use_symlinks is True
@@ -315,7 +315,7 @@ class TestLoad:
             mock.patch.object(Path, "cwd", return_value=tmp_path),
             mock.patch.object(Path, "home", return_value=home),
         ):
-            config = SyncodeConfig.load(None)
+            config = AgentfilesConfig.load(None)
         assert config.default_platforms == ["opencode", "claude_code", "windsurf", "cursor"]
         assert config.use_symlinks is False
 
@@ -326,7 +326,7 @@ class TestLoad:
 
 
 class TestEdgeCases:
-    """Edge cases for SyncodeConfig."""
+    """Edge cases for AgentfilesConfig."""
 
     def test_yaml_with_none_value_uses_default(self, tmp_path: Path) -> None:
         """A key with null YAML value should behave like the key is absent."""
@@ -339,7 +339,7 @@ class TestEdgeCases:
             mock.patch.object(Path, "cwd", return_value=tmp_path),
             mock.patch.object(Path, "home", return_value=isolated_home),
         ):
-            config = SyncodeConfig.load(None)
+            config = AgentfilesConfig.load(None)
         assert config.use_symlinks is True
         assert config.cache_dir is None  # None in YAML should not become "None" string
 
@@ -353,14 +353,14 @@ class TestEdgeCases:
             mock.patch.object(Path, "cwd", return_value=tmp_path),
             mock.patch.object(Path, "home", return_value=isolated_home),
         ):
-            config = SyncodeConfig.load(None)
+            config = AgentfilesConfig.load(None)
         # yaml.safe_load returns None for comment-only file, which gets
         # converted to {} via "yaml.safe_load(fh) or {}"
         assert config.default_platforms == ["opencode", "claude_code", "windsurf", "cursor"]
 
     def test_two_configs_with_same_defaults_are_equal(self) -> None:
-        a = SyncodeConfig()
-        b = SyncodeConfig()
+        a = AgentfilesConfig()
+        b = AgentfilesConfig()
         assert a == b
 
     def test_explicit_path_overrides_auto_discovery(self, tmp_path: Path) -> None:
@@ -377,7 +377,7 @@ class TestEdgeCases:
             mock.patch.object(Path, "cwd", return_value=tmp_path),
             mock.patch.object(Path, "home", return_value=isolated_home),
         ):
-            config = SyncodeConfig.load(explicit)
+            config = AgentfilesConfig.load(explicit)
         assert config.use_symlinks is True
 
 
@@ -387,7 +387,7 @@ class TestEdgeCases:
 
 
 class TestLoadExplicitErrors:
-    """Tests for SyncodeConfig.load with explicit path and invalid files."""
+    """Tests for AgentfilesConfig.load with explicit path and invalid files."""
 
     def test_explicit_malformed_yaml_raises(self, tmp_path: Path) -> None:
         """Explicit path with malformed YAML raises ConfigError."""
@@ -395,7 +395,7 @@ class TestLoadExplicitErrors:
         cfg.write_text("\x00invalid: yaml: [", encoding="utf-8")
 
         with pytest.raises(ConfigError, match="malformed YAML"):
-            SyncodeConfig.load(cfg)
+            AgentfilesConfig.load(cfg)
 
     def test_explicit_invalid_platforms_type_raises(self, tmp_path: Path) -> None:
         """Explicit path with non-list default_platforms raises ConfigError."""
@@ -403,7 +403,7 @@ class TestLoadExplicitErrors:
         cfg.write_text(yaml.dump({"default_platforms": "opencode"}), encoding="utf-8")
 
         with pytest.raises(ConfigError, match="default_platforms"):
-            SyncodeConfig.load(cfg)
+            AgentfilesConfig.load(cfg)
 
     def test_explicit_invalid_platforms_item_raises(self, tmp_path: Path) -> None:
         """Explicit path with non-string platform item raises ConfigError."""
@@ -411,7 +411,7 @@ class TestLoadExplicitErrors:
         cfg.write_text(yaml.dump({"default_platforms": [123]}), encoding="utf-8")
 
         with pytest.raises(ConfigError, match=r"default_platforms\[0\]"):
-            SyncodeConfig.load(cfg)
+            AgentfilesConfig.load(cfg)
 
     def test_explicit_invalid_custom_paths_type_raises(self, tmp_path: Path) -> None:
         """Explicit path with non-dict custom_paths raises ConfigError."""
@@ -419,7 +419,7 @@ class TestLoadExplicitErrors:
         cfg.write_text(yaml.dump({"custom_paths": "not_a_dict"}), encoding="utf-8")
 
         with pytest.raises(ConfigError, match="custom_paths"):
-            SyncodeConfig.load(cfg)
+            AgentfilesConfig.load(cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -435,16 +435,16 @@ class TestReadYamlEdgeCases:
         cfg = tmp_path / "list.yaml"
         cfg.write_text("- item1\n- item2\n", encoding="utf-8")
 
-        config = SyncodeConfig.load(cfg)
-        assert config == SyncodeConfig()
+        config = AgentfilesConfig.load(cfg)
+        assert config == AgentfilesConfig()
 
     def test_top_level_scalar_returns_defaults(self, tmp_path: Path) -> None:
         """YAML file with scalar at top level treated as empty config."""
         cfg = tmp_path / "scalar.yaml"
         cfg.write_text("just a string\n", encoding="utf-8")
 
-        config = SyncodeConfig.load(cfg)
-        assert config == SyncodeConfig()
+        config = AgentfilesConfig.load(cfg)
+        assert config == AgentfilesConfig()
 
 
 # ---------------------------------------------------------------------------
@@ -535,7 +535,7 @@ class TestSyncStateRecovery:
             mock.patch.object(Path, "cwd", return_value=tmp_path),
             mock.patch.object(Path, "home", return_value=isolated_home),
         ):
-            config = SyncodeConfig.load(None)
+            config = AgentfilesConfig.load(None)
 
         assert config.use_symlinks is True
 
@@ -562,7 +562,7 @@ class TestConfigLoadAllFields:
         cfg_file = tmp_path / ".agentfiles.yaml"
         cfg_file.write_text(yaml.dump(data), encoding="utf-8")
 
-        config = SyncodeConfig.load(cfg_file)
+        config = AgentfilesConfig.load(cfg_file)
 
         assert config.default_platforms == ["opencode", "claude_code", "windsurf"]
         assert config.use_symlinks is True
@@ -589,7 +589,7 @@ class TestConfigLoadAllFields:
             mock.patch.object(Path, "cwd", return_value=tmp_path),
             mock.patch.object(Path, "home", return_value=isolated_home),
         ):
-            config = SyncodeConfig.load(None)
+            config = AgentfilesConfig.load(None)
 
         assert config.default_platforms == ["cursor"]
         assert config.use_symlinks is False
@@ -610,7 +610,7 @@ class TestConfigLoadMissingOptionalFields:
         cfg = tmp_path / ".agentfiles.yaml"
         cfg.write_text(yaml.dump({"default_platforms": ["windsurf"]}), encoding="utf-8")
 
-        config = SyncodeConfig.load(cfg)
+        config = AgentfilesConfig.load(cfg)
 
         assert config.default_platforms == ["windsurf"]
         assert config.use_symlinks is False
@@ -622,7 +622,7 @@ class TestConfigLoadMissingOptionalFields:
         cfg = tmp_path / ".agentfiles.yaml"
         cfg.write_text(yaml.dump({"use_symlinks": True}), encoding="utf-8")
 
-        config = SyncodeConfig.load(cfg)
+        config = AgentfilesConfig.load(cfg)
 
         assert config.default_platforms == ["opencode", "claude_code", "windsurf", "cursor"]
         assert config.use_symlinks is True
@@ -634,7 +634,7 @@ class TestConfigLoadMissingOptionalFields:
         cfg = tmp_path / ".agentfiles.yaml"
         cfg.write_text(yaml.dump({"cache_dir": "/tmp/my-cache"}), encoding="utf-8")
 
-        config = SyncodeConfig.load(cfg)
+        config = AgentfilesConfig.load(cfg)
 
         assert config.default_platforms == ["opencode", "claude_code", "windsurf", "cursor"]
         assert config.use_symlinks is False
@@ -649,7 +649,7 @@ class TestConfigLoadMissingOptionalFields:
             encoding="utf-8",
         )
 
-        config = SyncodeConfig.load(cfg)
+        config = AgentfilesConfig.load(cfg)
 
         assert config.default_platforms == ["opencode", "claude_code", "windsurf", "cursor"]
         assert config.use_symlinks is False
@@ -661,9 +661,9 @@ class TestConfigLoadMissingOptionalFields:
         cfg = tmp_path / ".agentfiles.yaml"
         cfg.write_text(yaml.dump({}), encoding="utf-8")
 
-        config = SyncodeConfig.load(cfg)
+        config = AgentfilesConfig.load(cfg)
 
-        assert config == SyncodeConfig()
+        assert config == AgentfilesConfig()
 
 
 # ---------------------------------------------------------------------------
@@ -756,19 +756,19 @@ class TestClearConfigCache:
         cfg.write_text(yaml.dump({"use_symlinks": False}), encoding="utf-8")
 
         # First load — cached
-        config1 = SyncodeConfig.load(cfg)
+        config1 = AgentfilesConfig.load(cfg)
         assert config1.use_symlinks is False
 
         # Modify the file on disk
         cfg.write_text(yaml.dump({"use_symlinks": True}), encoding="utf-8")
 
         # Without clearing cache, the old value persists
-        config2 = SyncodeConfig.load(cfg)
+        config2 = AgentfilesConfig.load(cfg)
         assert config2.use_symlinks is False
 
         # After clearing cache, the new value is read
         clear_config_cache()
-        config3 = SyncodeConfig.load(cfg)
+        config3 = AgentfilesConfig.load(cfg)
         assert config3.use_symlinks is True
 
 
@@ -936,7 +936,7 @@ class TestCorruptedConfigRecovery:
             mock.patch.object(Path, "cwd", return_value=tmp_path),
             mock.patch.object(Path, "home", return_value=isolated_home),
         ):
-            config = SyncodeConfig.load(None)
+            config = AgentfilesConfig.load(None)
 
         assert config.cache_dir == "/fallback-cache"
 
@@ -957,7 +957,7 @@ class TestCorruptedConfigRecovery:
             mock.patch.object(Path, "cwd", return_value=tmp_path),
             mock.patch.object(Path, "home", return_value=home),
         ):
-            config = SyncodeConfig.load(None)
+            config = AgentfilesConfig.load(None)
 
         assert config.use_symlinks is True
 
@@ -971,7 +971,7 @@ class TestCorruptedConfigRecovery:
         good_cfg.write_text(yaml.dump({"use_symlinks": True}), encoding="utf-8")
 
         with pytest.raises(ConfigError, match="malformed YAML"):
-            SyncodeConfig.load(bad_cfg)
+            AgentfilesConfig.load(bad_cfg)
 
     def test_invalid_config_value_type_falls_through(self, tmp_path: Path) -> None:
         """Config with wrong value types (e.g. string for platforms) falls through."""
@@ -993,7 +993,7 @@ class TestCorruptedConfigRecovery:
             mock.patch.object(Path, "cwd", return_value=tmp_path),
             mock.patch.object(Path, "home", return_value=isolated_home),
         ):
-            config = SyncodeConfig.load(None)
+            config = AgentfilesConfig.load(None)
 
         assert config.use_symlinks is True
         assert config.default_platforms == ["opencode", "claude_code", "windsurf", "cursor"]

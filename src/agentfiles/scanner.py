@@ -63,11 +63,11 @@ from typing import NamedTuple
 
 from agentfiles.models import (
     SKILL_MAIN_FILE,
+    AgentfilesError,
     Item,
     ItemType,
     Platform,
     SourceError,
-    SyncodeError,
     item_from_directory,
     item_from_file,
 )
@@ -374,7 +374,7 @@ def _scan_with_subdirs(
             item = item_from_file(child, item_type)
             items.append(_apply_platforms(item))
             seen_stems.add(child.stem)
-        except (SyncodeError, OSError) as exc:
+        except (AgentfilesError, OSError) as exc:
             logger.warning("Skipping %s file %s: %s", item_type.value, child, exc, exc_info=True)
 
     # Phase 2: process subdirectories that were not already claimed by a
@@ -402,7 +402,7 @@ def _scan_with_subdirs(
 
             item = item_from_directory(child, item_type)
             items.append(_apply_platforms(item))
-        except (SyncodeError, OSError) as exc:
+        except (AgentfilesError, OSError) as exc:
             logger.warning(
                 "Skipping %s directory %s: %s", item_type.value, child.name, exc, exc_info=True
             )
@@ -465,7 +465,7 @@ def _scan_skills_dir(
                 continue
             item = item_from_directory(child, ItemType.SKILL)
             items.append(_apply_platforms(item))
-        except (SyncodeError, OSError) as exc:
+        except (AgentfilesError, OSError) as exc:
             logger.warning("Skipping skill directory %s: %s", child.name, exc, exc_info=True)
 
     return items
@@ -585,7 +585,7 @@ def _scan_plugins_dir(
             try:
                 item = item_from_file(child, ItemType.PLUGIN)
                 items.append(_apply_platforms(item))
-            except (SyncodeError, OSError) as exc:
+            except (AgentfilesError, OSError) as exc:
                 logger.warning("Skipping plugin file %s: %s", child.name, exc, exc_info=True)
 
         # Top-level plugin directory (not a platform name)
@@ -596,7 +596,7 @@ def _scan_plugins_dir(
             try:
                 item = item_from_directory(child, ItemType.PLUGIN)
                 items.append(_apply_platforms(item))
-            except (SyncodeError, OSError) as exc:
+            except (AgentfilesError, OSError) as exc:
                 logger.warning("Skipping plugin directory %s: %s", child.name, exc, exc_info=True)
 
     return items
@@ -634,7 +634,7 @@ def _scan_platform_plugins_dir(
             try:
                 item = item_from_file(child, ItemType.PLUGIN)
                 items.append(replace(item, supported_platforms=(platform,)))
-            except (SyncodeError, OSError) as exc:
+            except (AgentfilesError, OSError) as exc:
                 logger.warning("Skipping plugin file %s: %s", child.name, exc, exc_info=True)
 
         elif entry.is_dir():
@@ -644,7 +644,7 @@ def _scan_platform_plugins_dir(
             try:
                 item = item_from_directory(child, ItemType.PLUGIN)
                 items.append(replace(item, supported_platforms=(platform,)))
-            except (SyncodeError, OSError) as exc:
+            except (AgentfilesError, OSError) as exc:
                 logger.warning("Skipping plugin directory %s: %s", child.name, exc, exc_info=True)
 
     return items
@@ -755,7 +755,7 @@ class SourceScanner:
         for item_type in ItemType:
             try:
                 all_items.extend(self.scan_type(item_type))
-            except (SyncodeError, OSError) as exc:
+            except (AgentfilesError, OSError) as exc:
                 logger.warning("Failed to scan %s: %s", item_type.plural, exc, exc_info=True)
 
         all_items.sort(key=lambda it: it.sort_key)

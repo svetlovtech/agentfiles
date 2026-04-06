@@ -209,10 +209,11 @@ def _make_item(
     ),
 ) -> Item:
     """Create a minimal Item for testing."""
+    ext = ".md" if item_type.is_file_based else ""
     return Item(
         item_type=item_type,
         name=name,
-        source_path=Path("/src") / name,
+        source_path=Path("/src") / f"{name}{ext}",
         supported_platforms=platforms,
     )
 
@@ -255,7 +256,7 @@ class TestTargetManager:
         assert result is None
 
     def test_is_item_installed_true(self, fake_home: SimpleNamespace) -> None:
-        (fake_home.opencode / "agent" / "python-reviewer").mkdir()
+        (fake_home.opencode / "agent" / "python-reviewer.md").write_text("# agent")
 
         with (
             mock.patch.object(Path, "home", return_value=fake_home.home),
@@ -287,8 +288,8 @@ class TestTargetManager:
         assert manager.is_item_installed(item, Platform.OPENCODE) is False
 
     def test_get_installed_items(self, fake_home: SimpleNamespace) -> None:
-        (fake_home.opencode / "agent" / "reviewer").mkdir()
-        (fake_home.opencode / "agent" / "orchestrator").mkdir()
+        (fake_home.opencode / "agent" / "reviewer.md").write_text("# agent")
+        (fake_home.opencode / "agent" / "orchestrator.md").write_text("# agent")
         (fake_home.opencode / "skill" / "python-stylist").mkdir()
 
         with (
@@ -312,8 +313,8 @@ class TestTargetManager:
             manager.get_installed_items(Platform.OPENCODE)
 
     def test_get_installed_items_skips_hidden(self, fake_home: SimpleNamespace) -> None:
-        (fake_home.opencode / "agent" / "visible").mkdir()
-        (fake_home.opencode / "agent" / ".hidden").mkdir()
+        (fake_home.opencode / "agent" / "visible.md").write_text("# agent")
+        (fake_home.opencode / "agent" / ".hidden.md").write_text("# agent")
 
         with (
             mock.patch.object(Path, "home", return_value=fake_home.home),
@@ -329,11 +330,11 @@ class TestTargetManager:
         assert ".hidden" not in names
 
     def test_platform_summary(self, fake_home: SimpleNamespace) -> None:
-        (fake_home.opencode / "agent" / "a1").mkdir()
-        (fake_home.opencode / "agent" / "a2").mkdir()
+        (fake_home.opencode / "agent" / "a1.md").write_text("# agent")
+        (fake_home.opencode / "agent" / "a2.md").write_text("# agent")
         (fake_home.opencode / "skill" / "s1").mkdir()
 
-        (fake_home.claude / "agents" / "c1").mkdir()
+        (fake_home.claude / "agents" / "c1.md").write_text("# agent")
         (fake_home.claude / "skills" / "c2").mkdir()
         (fake_home.claude / "skills" / "c3").mkdir()
         (fake_home.claude / "plugins" / "p1").mkdir()
@@ -601,7 +602,7 @@ class TestPermissionErrorHandling:
         fake_home: SimpleNamespace,
     ) -> None:
         """get_installed_items skips subdirs that raise PermissionError on iterdir."""
-        (fake_home.opencode / "agent" / "visible-agent").mkdir()
+        (fake_home.opencode / "agent" / "visible-agent.md").write_text("# agent")
 
         with (
             mock.patch.object(Path, "home", return_value=fake_home.home),
@@ -631,7 +632,7 @@ class TestPermissionErrorHandling:
         fake_home: SimpleNamespace,
     ) -> None:
         """get_installed_items skips subdirs that raise OSError on iterdir."""
-        (fake_home.opencode / "agent" / "a1").mkdir()
+        (fake_home.opencode / "agent" / "a1.md").write_text("# agent")
 
         with (
             mock.patch.object(Path, "home", return_value=fake_home.home),
@@ -662,8 +663,8 @@ class TestPermissionErrorHandling:
         fake_home: SimpleNamespace,
     ) -> None:
         """get_installed_items skips entries that raise OSError on is_file."""
-        (fake_home.opencode / "agent" / "good-agent").mkdir()
-        (fake_home.opencode / "agent" / "broken-agent").mkdir()
+        (fake_home.opencode / "agent" / "good-agent.md").write_text("# agent")
+        (fake_home.opencode / "agent" / "broken-agent.md").write_text("# agent")
 
         with (
             mock.patch.object(Path, "home", return_value=fake_home.home),
@@ -676,7 +677,7 @@ class TestPermissionErrorHandling:
         original_is_file = Path.is_file
 
         def _patched_is_file(self: Path) -> bool:
-            if self.name == "broken-agent":
+            if self.name == "broken-agent.md":
                 raise OSError("stale NFS handle")
             return original_is_file(self)
 
@@ -969,11 +970,11 @@ class TestInstalledItemsEdgeCases:
         self,
         fake_home: SimpleNamespace,
     ) -> None:
-        """get_installed_items handles both files and directories."""
+        """get_installed_items only picks up files for file-based types."""
         agent_dir = fake_home.opencode / "agent"
-        # A file-based agent.
+        # A file-based agent — should be discovered.
         (agent_dir / "file-agent.md").write_text("# file agent")
-        # A directory-based agent (unusual but should not crash).
+        # A directory-based agent — should NOT be discovered (agents are file-based).
         (agent_dir / "dir-agent").mkdir()
 
         with (
@@ -987,7 +988,7 @@ class TestInstalledItemsEdgeCases:
 
         names = [n for t, n in items if t == ItemType.AGENT]
         assert "file-agent" in names
-        assert "dir-agent" in names
+        assert "dir-agent" not in names
 
 
 # ---------------------------------------------------------------------------
@@ -1042,7 +1043,7 @@ class TestFindExistingEdgeCases:
         fake_home: SimpleNamespace,
     ) -> None:
         """get_installed_items skips subdirs where is_dir() raises OSError."""
-        (fake_home.opencode / "agent" / "a1").mkdir()
+        (fake_home.opencode / "agent" / "a1.md").write_text("# agent")
 
         with (
             mock.patch.object(Path, "home", return_value=fake_home.home),

@@ -29,7 +29,7 @@ from agentfiles.git import (
     list_branches,
     switch_branch,
 )
-from agentfiles.models import SyncodeError
+from agentfiles.models import AgentfilesError
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -702,8 +702,8 @@ class TestExceptions:
         assert issubclass(GitNotFoundError, GitError)
 
     def test_git_error_inherits_agentfiles_error(self) -> None:
-        """GitError should inherit from SyncodeError."""
-        assert issubclass(GitError, SyncodeError)
+        """GitError should inherit from AgentfilesError."""
+        assert issubclass(GitError, AgentfilesError)
 
     def test_git_not_found_error_message(self) -> None:
         """GitNotFoundError should carry the provided message."""

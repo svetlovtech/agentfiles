@@ -134,7 +134,7 @@ class TestCmdPushIntegration:
     @mock.patch("agentfiles.cli._resolve_item_types")
     @mock.patch("agentfiles.cli._create_sync_pipeline")
     @mock.patch("agentfiles.cli._get_source")
-    @mock.patch("agentfiles.config.SyncodeConfig.load")
+    @mock.patch("agentfiles.config.AgentfilesConfig.load")
     def test_push_no_installed_items(
         self,
         mock_config_load: mock.MagicMock,
@@ -176,7 +176,7 @@ class TestCmdPushIntegration:
     @mock.patch("agentfiles.cli._resolve_item_types")
     @mock.patch("agentfiles.cli._create_sync_pipeline")
     @mock.patch("agentfiles.cli._get_source")
-    @mock.patch("agentfiles.config.SyncodeConfig.load")
+    @mock.patch("agentfiles.config.AgentfilesConfig.load")
     def test_push_non_interactive_success(
         self,
         mock_config_load: mock.MagicMock,
@@ -225,7 +225,7 @@ class TestCmdPushIntegration:
     @mock.patch("agentfiles.cli._resolve_item_types")
     @mock.patch("agentfiles.cli._create_sync_pipeline")
     @mock.patch("agentfiles.cli._get_source")
-    @mock.patch("agentfiles.config.SyncodeConfig.load")
+    @mock.patch("agentfiles.config.AgentfilesConfig.load")
     def test_push_failure_returns_1(
         self,
         mock_config_load: mock.MagicMock,
@@ -272,7 +272,62 @@ class TestCmdPushIntegration:
     @mock.patch("agentfiles.cli._resolve_item_types")
     @mock.patch("agentfiles.cli._create_sync_pipeline")
     @mock.patch("agentfiles.cli._get_source")
-    @mock.patch("agentfiles.config.SyncodeConfig.load")
+    @mock.patch("agentfiles.config.AgentfilesConfig.load")
+    def test_push_keyboard_interrupt_returns_1(
+        self,
+        mock_config_load: mock.MagicMock,
+        mock_get_source: mock.MagicMock,
+        mock_pipeline: mock.MagicMock,
+        mock_resolve_types: mock.MagicMock,
+        mock_resolve_platforms: mock.MagicMock,
+        mock_discover: mock.MagicMock,
+        mock_resolve_filter: mock.MagicMock,
+        mock_apply_filter: mock.MagicMock,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Ctrl+C during interactive item selection aborts push and returns 1.
+
+        Regression test: previously, KeyboardInterrupt was silently caught by
+        ``InputParser.prompt()`` and treated as empty input (which selected all
+        items).  Now it properly aborts the operation.
+        """
+        item = _make_item()
+
+        engine = mock.MagicMock()
+        target_manager = mock.MagicMock()
+
+        mock_config_load.return_value = mock.MagicMock(cache_dir=None)
+        mock_get_source.return_value = tmp_path
+        mock_pipeline.return_value = (mock.MagicMock(), target_manager, engine)
+        mock_resolve_types.return_value = [ItemType.AGENT]
+        mock_resolve_platforms.return_value = [Platform.OPENCODE]
+        mock_discover.return_value = [item]
+        mock_resolve_filter.return_value = (None, None)
+        mock_apply_filter.return_value = [item]
+
+        # Interactive mode — user presses Ctrl+C at item selection.
+        args = _make_args(non_interactive=False)
+        with mock.patch(
+            "agentfiles.interactive.InputParser.prompt",
+            side_effect=KeyboardInterrupt,
+        ):
+            result = cmd_push(args)
+
+        assert result == 1
+        # engine.push must NOT have been called — the user aborted.
+        engine.push.assert_not_called()
+        output = capsys.readouterr().out
+        assert "Aborted" in output
+
+    @mock.patch("agentfiles.cli._apply_item_filter")
+    @mock.patch("agentfiles.cli._resolve_item_filter")
+    @mock.patch("agentfiles.cli._discover_installed_from_targets")
+    @mock.patch("agentfiles.cli._resolve_platforms")
+    @mock.patch("agentfiles.cli._resolve_item_types")
+    @mock.patch("agentfiles.cli._create_sync_pipeline")
+    @mock.patch("agentfiles.cli._get_source")
+    @mock.patch("agentfiles.config.AgentfilesConfig.load")
     def test_push_dry_run_no_state_update(
         self,
         mock_config_load: mock.MagicMock,

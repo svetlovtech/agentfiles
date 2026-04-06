@@ -13,7 +13,6 @@ import pytest
 from agentfiles.engine import SyncEngine, SyncReport, SyncTarget, _copy_item, _remove_item
 from agentfiles.models import (
     Item,
-    ItemState,
     ItemType,
     Platform,
     PlatformState,

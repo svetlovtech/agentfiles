@@ -50,13 +50,13 @@ from typing import Protocol, runtime_checkable
 
 from agentfiles.config import load_sync_state, save_sync_state
 from agentfiles.models import (
+    AgentfilesError,
     Item,
     ItemState,
     ItemType,
     Platform,
     PlatformState,
     SyncAction,
-    SyncodeError,
     SyncPlan,
     SyncResult,
     SyncState,
@@ -364,7 +364,7 @@ class SyncEngine:
             for platform in candidate_platforms:
                 try:
                     plan = self._plan_single(item, platform, action)
-                except (SyncodeError, OSError) as exc:
+                except (AgentfilesError, OSError) as exc:
                     logger.warning(
                         "Failed to plan %s for %s on %s: %s",
                         action.value,

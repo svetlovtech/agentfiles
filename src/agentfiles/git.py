@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from agentfiles.models import SyncodeError
+from agentfiles.models import AgentfilesError
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ _BRANCH_NOT_FOUND_PATTERNS: Final[tuple[str, ...]] = (
 # ---------------------------------------------------------------------------
 
 
-class GitError(SyncodeError):
+class GitError(AgentfilesError):
     """Base exception for git-related errors."""
 
 

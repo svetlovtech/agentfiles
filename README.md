@@ -54,11 +54,9 @@ source repo ────────┼─── Claude Code
 
 - **4 platforms** — OpenCode, Claude Code, Windsurf, Cursor
 - **4 item types** — agents, skills, commands, plugins
-- **Bidirectional sync** — pull, push, or smart 3-way merge
-- **CI-friendly** — `agentfiles verify` exits 0/1 for drift detection
+- **Bidirectional sync** — pull and push
 - **Surgical filtering** — `--only`, `--except`, `--type`, `--target`
 - **Dry-run** — preview changes without applying
-- **Shell completion** — bash, zsh, fish
 - **One dependency** — `pyyaml` only
 
 ## Quick Start
@@ -87,20 +85,9 @@ agentfiles pull --dry-run
 |---------|-------------|
 | [`pull`](#pull) | Install/update items from source to local configs |
 | [`push`](#push) | Push local items back to source |
-| [`adopt`](#adopt) | Adopt items from platforms into source |
-| [`sync`](#sync) | Bidirectional 3-way merge |
-| [`status`](#status) | Show installed items per platform |
-| [`list`](#list) | List source items (`--tokens` for costs) |
-| [`diff`](#diff) | Compare source vs installed |
-| [`verify`](#verify) | CI drift detection (exit 0/1) |
+| [`status`](#status) | Show installed items per platform (`--list`, `--diff`) |
 | [`clean`](#clean) | Remove orphaned items |
-| [`uninstall`](#uninstall) | Remove installed items |
 | [`init`](#init) | Scaffold a new repository |
-| [`update`](#update) | Git pull + sync in one step |
-| [`branch`](#branch) | Show or switch git branches |
-| [`show`](#show) | Preview an item's content |
-| [`doctor`](#doctor) | Diagnose environment issues |
-| [`completion`](#completion) | Generate shell completions |
 
 ### `pull`
 
@@ -109,6 +96,7 @@ Install or update items from a source repository to local platform configs.
 ```bash
 agentfiles pull                                    # interactive (default)
 agentfiles pull --yes                              # non-interactive
+agentfiles pull --update                           # git pull source, then sync
 agentfiles pull --target opencode --type agent     # only agents → OpenCode
 agentfiles pull --only coder,solid-principles      # specific items
 agentfiles pull --dry-run --verbose                # preview with details
@@ -122,85 +110,31 @@ Push locally-installed items back into the source repository. Useful when you've
 ```bash
 agentfiles push                # interactive
 agentfiles push --yes          # non-interactive
-```
-
-### `adopt`
-
-Adopt items that already exist on your local platforms into the source repository. Great for bootstrapping a new source repo from existing configs.
-
-```bash
-agentfiles adopt --yes
-```
-
-### `sync`
-
-Smart bidirectional sync using checksums stored in `.agentfiles.state.yaml`. Detects whether each item needs a pull, push, or manual conflict resolution.
-
-```bash
-agentfiles sync
-```
-
-### `verify`
-
-CI-friendly drift detection. Exit 0 if all items match, 1 if drift detected.
-
-```bash
-agentfiles verify                  # text output
-agentfiles verify --format json    # machine-readable
-agentfiles verify --quiet          # errors only
-```
-
-Example CI step:
-
-```yaml
-- name: Check config drift
-  run: agentfiles verify
+agentfiles push --dry-run      # preview
+agentfiles push --target opencode  # push only from OpenCode
 ```
 
 ### `status`
 
-Show installed-item counts per discovered platform.
+Show installed-item counts per discovered platform. Supports two sub-modes via flags:
+
+- `--list` — list items available in the source repository
+- `--diff` — compare source vs installed items
 
 ```bash
-agentfiles status
-agentfiles status --format json
-```
+agentfiles status                            # show platforms
+agentfiles status --format json              # JSON output
 
-### `list`
+# --list mode: list source items
+agentfiles status --list                     # text table
+agentfiles status --list --tokens            # include token estimates
+agentfiles status --list --format json       # machine-readable
 
-List items available in the source repository.
-
-```bash
-agentfiles list                # text table
-agentfiles list --tokens       # include token estimates
-agentfiles list --format json  # machine-readable
-```
-
-### `diff`
-
-Show differences between source items and installed counterparts.
-
-```bash
-agentfiles diff
-agentfiles diff --target opencode
-agentfiles diff --format json
-```
-
-### `show`
-
-Preview the content of a specific item. Supports partial name matching.
-
-```bash
-agentfiles show coder
-agentfiles show solid-principles --format json
-```
-
-### `update`
-
-Git pull + sync in one step. The primary multi-machine workflow.
-
-```bash
-agentfiles update
+# --diff mode: compare source vs installed
+agentfiles status --diff                     # show differences
+agentfiles status --diff --verbose           # content-level diffs
+agentfiles status --diff --target opencode   # diff for one platform
+agentfiles status --diff --format json       # machine-readable
 ```
 
 ### `clean`
@@ -212,47 +146,14 @@ agentfiles clean --dry-run      # preview
 agentfiles clean --yes          # non-interactive
 ```
 
-### `uninstall`
-
-Remove installed items from target platforms.
-
-```bash
-agentfiles uninstall --yes
-```
-
 ### `init`
 
 Scaffold a new agentfiles repository with `agents/`, `skills/`, `commands/`, `plugins/` directories and a `.agentfiles.yaml` config.
 
 ```bash
-agentfiles init
-```
-
-### `branch`
-
-List or switch git branches in the source repository.
-
-```bash
-agentfiles branch              # list branches
-agentfiles branch feature-x    # switch branch
-```
-
-### `doctor`
-
-Diagnose common environment and configuration problems.
-
-```bash
-agentfiles doctor
-```
-
-### `completion`
-
-Generate shell completion scripts.
-
-```bash
-agentfiles completion bash   > ~/.local/share/bash-completion/completions/agentfiles
-agentfiles completion zsh    > ~/.zfunc/_agentfiles
-agentfiles completion fish   > ~/.config/fish/completions/agentfiles.fish
+agentfiles init                              # current directory
+agentfiles init /path/to/project             # specific directory
+agentfiles init --yes                        # skip confirmation
 ```
 
 ## Global Options
@@ -366,7 +267,7 @@ mypy src/
 pytest tests/ -v
 
 # Test with coverage
-pytest tests/ -v --cov=syncode --cov-report=term-missing
+pytest tests/ -v --cov=agentfiles --cov-report=term-missing
 
 # Build package
 python -m build
