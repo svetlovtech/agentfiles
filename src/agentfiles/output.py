@@ -18,7 +18,7 @@ This module provides the presentation layer for CLI output.  It handles:
   columnar output with automatic terminal-width detection and column
   truncation; :func:`print_banner` draws a Unicode box-drawing frame.
 * **Diff display** — :func:`format_diff` and :func:`format_diff_json`
-  convert :class:`~syncode.models.DiffEntry` mappings into human-readable
+  convert :class:`~agentfiles.models.DiffEntry` mappings into human-readable
   or machine-consumable text.
 * **Text utilities** — :func:`format_item_count` produces correct
   singular/plural forms for count display.
@@ -43,7 +43,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, TextIO
 
-from syncode.models import DiffEntry, DiffStatus, ItemType, Platform
+from agentfiles.models import DiffEntry, DiffStatus, ItemType, Platform
 
 # ---------------------------------------------------------------------------
 # ANSI colour constants
@@ -120,7 +120,7 @@ DIFF_STATUS_STYLES: dict[DiffStatus, StatusStyle] = {
 # Used by diff formatters to show parenthetical descriptions.
 DIFF_STATUS_DETAILS: dict[DiffStatus, str] = {
     DiffStatus.NEW: "new",
-    DiffStatus.UPDATED: "checksum differs",
+    DiffStatus.UPDATED: "content differs",
     DiffStatus.DELETED: "deleted from source",
     DiffStatus.UNCHANGED: "unchanged",
     DiffStatus.CONFLICT: "conflict",
@@ -232,7 +232,7 @@ _FILE_LOG_BACKUP_COUNT = 3
 def setup_file_logging(
     log_dir: Path = _LOG_DIR,
     prefix: str = "app",
-    module_names: tuple[str, ...] = ("syncode",),
+    module_names: tuple[str, ...] = ("agentfiles",),
     level: int = logging.DEBUG,
 ) -> Path:
     """Configure DEBUG-level file logging for one or more module loggers.
@@ -571,7 +571,7 @@ def print_item_status(
 
     Example output::
 
-        ✅ agent/coder [opencode, claude_code] — checksums match
+        ✅ agent/coder [opencode, claude_code] — up to date
 
     Args:
         key: Item identifier (e.g. ``"agent/coder"``).

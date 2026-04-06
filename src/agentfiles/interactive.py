@@ -26,7 +26,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from syncode.models import (
+from agentfiles.models import (
     DiffEntry,
     DiffStatus,
     Item,
@@ -35,7 +35,7 @@ from syncode.models import (
     SyncAction,
     SyncPlan,
 )
-from syncode.output import (
+from agentfiles.output import (
     DIFF_STATUS_STYLES,
     Colors,
     colorize,
@@ -78,10 +78,7 @@ _SYNC_MODES: list[tuple[str, str]] = [
 _MAIN_MENU: list[tuple[str, str, str]] = [
     ("1", "pull", "Pull items from repo to local configs"),
     ("2", "push", "Push local changes back to repo"),
-    ("3", "sync", "Smart bidirectional sync"),
-    ("4", "status", "Show installed items"),
-    ("5", "list", "List source items"),
-    ("6", "diff", "Show differences"),
+    ("3", "status", "Show installed items"),
     ("0", "quit", "Exit"),
 ]
 
@@ -176,7 +173,7 @@ class MenuRenderer:
 
     def show_welcome(self) -> None:
         """Display a welcome banner."""
-        from syncode import __version__
+        from agentfiles import __version__
 
         lines = [
             colorize("agentfiles", Colors.BOLD) + f" v{__version__}",
@@ -491,18 +488,18 @@ class InteractiveSession:
     The public API is organised into four interface segments.  Callers
     typically only need one or two segments:
 
-    **Selection prompts** — used by pull/push/uninstall commands::
+    **Selection prompts** — used by pull/push commands::
 
         choose_sync_mode()      → str          # cmd_pull
         select_platforms(...)   → list[Platform]  # cmd_pull
         select_item_types()     → list[ItemType]  # cmd_pull
-        select_items(...)       → list[Item]       # cmd_pull, cmd_push, cmd_uninstall
+        select_items(...)       → list[Item]       # cmd_pull, cmd_push
 
     **Confirmation prompts** — used by most commands that modify state::
 
         confirm_action(...)              → bool  # internal base method
         confirm_plans(...)               → bool  # internal base method
-        confirm_action_or_abort(...)     → bool  # cmd_uninstall, cmd_init, cmd_branch, cmd_sync
+        confirm_action_or_abort(...)     → bool  # cmd_clean, cmd_init
         confirm_plans_or_abort(...)      → bool  # cmd_pull
 
     **Navigation** — used by :class:`InteractiveRunner` only::
@@ -805,8 +802,7 @@ class InteractiveSession:
         """Display the main menu and return the user's choice.
 
         Returns:
-            One of: ``"pull"``, ``"push"``, ``"sync"``, ``"status"``,
-            ``"list"``, ``"diff"``, ``"quit"``.
+            One of: ``"pull"``, ``"push"``, ``"status"``, ``"quit"``.
 
         """
         self._renderer.show_main_menu()

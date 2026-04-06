@@ -46,3 +46,5 @@ Thumbs.db
 .agentfiles/
 .agentfiles.state.yaml
 agentfiles-output-*
+.opencode/
+uv.lock

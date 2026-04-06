@@ -14,7 +14,7 @@ Path categories:
       optimised filesystem calls (see :func:`read_item_content`).
     * **Key generation** — stable string keys for sync state and diffs
       are available via the ``Item.item_key`` property on
-      :class:`~syncode.models.Item`.
+      :class:`~agentfiles.models.Item`.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ import os
 import stat as stat_mod
 from pathlib import Path
 
-from syncode.models import (
+from agentfiles.models import (
     SKILL_MAIN_FILE,
     Item,
     ItemType,
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 def get_item_dest_path(target_dir: Path, item: Item) -> Path:
     """Return the on-disk destination path for *item* within *target_dir*.
 
-    Delegates to :func:`syncode.models.resolve_target_name` to determine
+    Delegates to :func:`agentfiles.models.resolve_target_name` to determine
     the correct filename (which handles platform-specific naming rules).
 
     Args:

@@ -39,8 +39,8 @@ import subprocess
 from pathlib import Path
 from typing import Final, Protocol, runtime_checkable
 
-from syncode.git import is_git_repo, run_git
-from syncode.models import ItemType, SourceError, SourceInfo, SourceType
+from agentfiles.git import is_git_repo, run_git
+from agentfiles.models import ItemType, SourceError, SourceInfo, SourceType
 
 logger = logging.getLogger(__name__)
 
@@ -226,8 +226,8 @@ class GitBackend(Protocol):
 class SubprocessGitBackend:
     """Default :class:`GitBackend` backed by the ``git`` subprocess.
 
-    Delegates to :func:`syncode.git.run_git` for clone / fetch / reset
-    operations and :func:`syncode.git.is_git_repo` for ``.git`` detection.
+    Delegates to :func:`agentfiles.git.run_git` for clone / fetch / reset
+    operations and :func:`agentfiles.git.is_git_repo` for ``.git`` detection.
 
     **Error handling**
 
@@ -259,7 +259,7 @@ class SubprocessGitBackend:
     ) -> subprocess.CompletedProcess[str]:
         """Run a git subprocess with uniform error handling.
 
-        Wraps :func:`syncode.git._run_git` and translates all failure modes
+        Wraps :func:`agentfiles.git._run_git` and translates all failure modes
         (timeout, missing binary, OS errors, non-zero exit) into
         :class:`SourceError` with actionable hints.
 

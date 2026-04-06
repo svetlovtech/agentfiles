@@ -3,18 +3,18 @@
 Scanning strategy
 -----------------
 The scanner uses **convention-based directory discovery**: for each
-:class:`~syncode.models.ItemType`, it looks for a matching subdirectory
+:class:`~agentfiles.models.ItemType`, it looks for a matching subdirectory
 inside the source root — first the plural form (``agents/``), then the
 singular (``agent/``).  Once a content directory is found, a
 type-specific scanner function walks its children, identifies valid
 item definitions, and delegates parsing to
-:func:`~syncode.models.item_from_file` (flat files) or
-:func:`~syncode.models.item_from_directory` (subdirectories).
+:func:`~agentfiles.models.item_from_file` (flat files) or
+:func:`~agentfiles.models.item_from_directory` (subdirectories).
 
 Scanner registry
 ~~~~~~~~~~~~~~~~
-Each :class:`~syncode.models.ItemType` maps 1-to-1 to a scanner
-function and its supported :class:`~syncode.models.Platform` values
+Each :class:`~agentfiles.models.ItemType` maps 1-to-1 to a scanner
+function and its supported :class:`~agentfiles.models.Platform` values
 via the module-level ``_SCANNER_REGISTRY`` dict.  This registry is
 populated once at import time through :func:`_register_scanner`.
 
@@ -27,7 +27,7 @@ No existing scanner code needs modification (Open/Closed Principle).
 
 Platform assignment
 ~~~~~~~~~~~~~~~~~~~
-Every discovered :class:`~syncode.models.Item` starts with empty
+Every discovered :class:`~agentfiles.models.Item` starts with empty
 ``supported_platforms``.  The registry lookup in :func:`_apply_platforms`
 replaces that field with the platforms declared at registration time.
 An optional per-``SourceScanner`` platform filter then excludes items
@@ -61,7 +61,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import NamedTuple
 
-from syncode.models import (
+from agentfiles.models import (
     SKILL_MAIN_FILE,
     Item,
     ItemType,
@@ -340,7 +340,7 @@ def _scan_with_subdirs(
     This is a **generic** two-phase scanner used by :func:`_scan_agents_dir`
     and :func:`_scan_commands_dir`.  It is **not** registered in the scanner
     registry directly; type-specific wrappers call it with the appropriate
-    :class:`~syncode.models.ItemType`.
+    :class:`~agentfiles.models.ItemType`.
 
     Flat files take priority over subdirectories with the same stem.
     The implementation performs a **single** ``os.scandir()`` call and
@@ -416,7 +416,7 @@ def _scan_agents_dir(
 ) -> list[Item]:
     """Scan *dir_path* for agent definitions.
 
-    **Item type**: :attr:`~syncode.models.ItemType.AGENT`
+    **Item type**: :attr:`~agentfiles.models.ItemType.AGENT`
     **Registry platforms**: ``(OPENCODE, CLAUDE_CODE)``
 
     Discovers both flat ``.md`` files and subdirectories containing
@@ -435,11 +435,11 @@ def _scan_skills_dir(
 ) -> list[Item]:
     """Scan *dir_path* for skill subdirectories.
 
-    **Item type**: :attr:`~syncode.models.ItemType.SKILL`
+    **Item type**: :attr:`~agentfiles.models.ItemType.SKILL`
     **Registry platforms**: ``(OPENCODE, CLAUDE_CODE, WINDSURF, CURSOR)``
 
     Unlike agents and commands, skills are **directory-only**: each
-    subdirectory must contain :data:`~syncode.models.SKILL_MAIN_FILE`
+    subdirectory must contain :data:`~agentfiles.models.SKILL_MAIN_FILE`
     (``SKILL.md``).  Flat ``.md`` files at the top level of the skills
     directory are ignored.
 
@@ -477,7 +477,7 @@ def _scan_commands_dir(
 ) -> list[Item]:
     """Scan *dir_path* for command definitions.
 
-    **Item type**: :attr:`~syncode.models.ItemType.COMMAND`
+    **Item type**: :attr:`~agentfiles.models.ItemType.COMMAND`
     **Registry platforms**: ``(OPENCODE,)``
 
     Discovers both flat ``.md`` files and subdirectories containing
@@ -530,21 +530,30 @@ def _has_plugin_file(directory: Path, *, _depth: int = 0) -> bool:
     return False
 
 
+# Known platform directory names for platform-specific plugin scanning.
+_PLATFORM_DIR_NAMES: frozenset[str] = frozenset(p.value for p in Platform)
+
+
 def _scan_plugins_dir(
     dir_path: Path,
     gitignore: GitIgnoreMatcher | None = None,
 ) -> list[Item]:
     """Scan *dir_path* for plugin files and plugin directories.
 
-    **Item type**: :attr:`~syncode.models.ItemType.PLUGIN`
-    **Registry platforms**: ``(OPENCODE,)``
+    **Item type**: :attr:`~agentfiles.models.ItemType.PLUGIN`
+    **Registry platforms**: ``(OPENCODE,)`` (default for non-platform-specific items)
 
-    Unlike the other scanners, plugins support **multiple file extensions**
-    (``.ts``, ``.yaml``, ``.py``) rather than just ``.md``.  Single files
-    with a recognised extension are parsed via :func:`item_from_file`.
-    Subdirectories containing at least one recognised plugin file (checked
-    recursively by :func:`_has_plugin_file`) are parsed via
-    :func:`item_from_directory`.
+    Supports two organization styles:
+
+    1. **Platform-specific subdirectories** — directories named after a platform
+       (e.g. ``plugins/opencode/``, ``plugins/claude_code/``) are scanned for
+       plugin files/directories, and items found within are assigned only to
+       that platform.
+
+    2. **Flat files and directories** — at the top level of ``plugins/``,
+       single files with recognised extensions or directories containing plugin
+       files are parsed as before (backward compatible), using the default
+       platform tuple from the registry.
 
     Args:
         dir_path: Directory containing plugin definitions.
@@ -563,6 +572,13 @@ def _scan_plugins_dir(
         if gitignore and gitignore.is_ignored(child):
             continue
 
+        # Platform-specific subdirectory (e.g. plugins/opencode/)
+        if entry.is_dir() and entry.name in _PLATFORM_DIR_NAMES:
+            platform = Platform(entry.name)
+            items.extend(_scan_platform_plugins_dir(child, platform, gitignore))
+            continue
+
+        # Top-level flat plugin file
         if entry.is_file():
             if child.suffix not in _PLUGIN_EXTENSIONS:
                 continue
@@ -572,6 +588,7 @@ def _scan_plugins_dir(
             except (SyncodeError, OSError) as exc:
                 logger.warning("Skipping plugin file %s: %s", child.name, exc, exc_info=True)
 
+        # Top-level plugin directory (not a platform name)
         elif entry.is_dir():
             if not _has_plugin_file(child):
                 logger.debug("Skipping plugin dir %s — no plugin files", child.name)
@@ -579,6 +596,54 @@ def _scan_plugins_dir(
             try:
                 item = item_from_directory(child, ItemType.PLUGIN)
                 items.append(_apply_platforms(item))
+            except (SyncodeError, OSError) as exc:
+                logger.warning("Skipping plugin directory %s: %s", child.name, exc, exc_info=True)
+
+    return items
+
+
+def _scan_platform_plugins_dir(
+    platform_dir: Path,
+    platform: Platform,
+    gitignore: GitIgnoreMatcher | None = None,
+) -> list[Item]:
+    """Scan a platform-specific plugin subdirectory.
+
+    Items found within are assigned only to *platform*.
+
+    Args:
+        platform_dir: Platform subdirectory (e.g. plugins/opencode/).
+        platform: The platform these plugins belong to.
+        gitignore: Optional gitignore matcher.
+
+    Returns:
+        List of plugin Items assigned to *platform*.
+    """
+    items: list[Item] = []
+
+    for entry in _scandir_sorted(platform_dir):
+        if _should_skip(entry.name):
+            continue
+        child = Path(entry.path)
+        if gitignore and gitignore.is_ignored(child):
+            continue
+
+        if entry.is_file():
+            if child.suffix not in _PLUGIN_EXTENSIONS:
+                continue
+            try:
+                item = item_from_file(child, ItemType.PLUGIN)
+                items.append(replace(item, supported_platforms=(platform,)))
+            except (SyncodeError, OSError) as exc:
+                logger.warning("Skipping plugin file %s: %s", child.name, exc, exc_info=True)
+
+        elif entry.is_dir():
+            if not _has_plugin_file(child):
+                logger.debug("Skipping plugin dir %s — no plugin files", child.name)
+                continue
+            try:
+                item = item_from_directory(child, ItemType.PLUGIN)
+                items.append(replace(item, supported_platforms=(platform,)))
             except (SyncodeError, OSError) as exc:
                 logger.warning("Skipping plugin directory %s: %s", child.name, exc, exc_info=True)
 
@@ -629,13 +694,13 @@ class SourceScanner:
 
     The scan lifecycle is:
 
-    1. :meth:`scan` iterates over every :class:`~syncode.models.ItemType`.
+    1. :meth:`scan` iterates over every :class:`~agentfiles.models.ItemType`.
     2. For each type, :meth:`scan_type` locates the content directory
        (``agents/`` or ``agent/``, etc.) via :func:`_find_item_dirs`.
     3. The registry dispatches to the type-specific scanner function
        (e.g. :func:`_scan_agents_dir`).
-    4. Each scanner delegates parsing to :func:`~syncode.models.item_from_file`
-       or :func:`~syncode.models.item_from_directory`.
+    4. Each scanner delegates parsing to :func:`~agentfiles.models.item_from_file`
+       or :func:`~agentfiles.models.item_from_directory`.
     5. Platform metadata is applied from the registry; if *platforms*
        was provided at construction, items whose platforms don't
        intersect with the filter are excluded.

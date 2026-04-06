@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-"""syncode — Sync AI tool configurations across platforms.
+"""agentfiles — Sync AI tool configurations across platforms.
 
 Architecture Overview
 =====================
-syncode keeps AI tool configurations (agents, skills, commands, plugins)
+agentfiles keeps AI tool configurations (agents, skills, commands, plugins)
 consistent across multiple target platforms (OpenCode, Claude Code,
 Windsurf, Cursor) by treating a source repository as the single source
 of truth and propagating changes through a three-stage pipeline::
@@ -83,8 +83,8 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Lazy submodule exports
 # ---------------------------------------------------------------------------
-# Replaced eager ``from syncode.xxx import ...`` with ``__getattr__``-based
-# lazy loading so that ``import syncode`` (or ``from syncode import __version__``)
+# Replaced eager ``from agentfiles.xxx import ...`` with ``__getattr__``-based
+# lazy loading so that ``import agentfiles`` (or ``from agentfiles import __version__``)
 # no longer cascades through every submodule.  Each name is resolved on first
 # access and then cached in ``globals()`` for O(1) subsequent lookups.
 #
@@ -95,38 +95,38 @@ except ImportError:
 
 # name → (module_path, attribute_name) for O(1) lazy resolution.
 _EXPORT_MAP: dict[str, tuple[str, str]] = {
-    "SyncodeConfig": ("syncode.config", "SyncodeConfig"),
-    "Differ": ("syncode.differ", "Differ"),
-    "SyncEngine": ("syncode.engine", "SyncEngine"),
-    "SyncReport": ("syncode.engine", "SyncReport"),
-    "InteractiveSession": ("syncode.interactive", "InteractiveSession"),
-    "DiffEntry": ("syncode.models", "DiffEntry"),
-    "DiffStatus": ("syncode.models", "DiffStatus"),
-    "Item": ("syncode.models", "Item"),
-    "ItemMeta": ("syncode.models", "ItemMeta"),
-    "ItemState": ("syncode.models", "ItemState"),
-    "ItemType": ("syncode.models", "ItemType"),
-    "Platform": ("syncode.models", "Platform"),
-    "PlatformState": ("syncode.models", "PlatformState"),
-    "SourceError": ("syncode.models", "SourceError"),
-    "SourceInfo": ("syncode.models", "SourceInfo"),
-    "SourceType": ("syncode.models", "SourceType"),
-    "SyncAction": ("syncode.models", "SyncAction"),
-    "SyncodeError": ("syncode.models", "SyncodeError"),
-    "ConfigError": ("syncode.models", "ConfigError"),
-    "SyncPlan": ("syncode.models", "SyncPlan"),
-    "SyncResult": ("syncode.models", "SyncResult"),
-    "SyncState": ("syncode.models", "SyncState"),
-    "TargetError": ("syncode.models", "TargetError"),
-    "TargetPaths": ("syncode.models", "TargetPaths"),
-    "TokenEstimate": ("syncode.models", "TokenEstimate"),
-    "resolve_platform": ("syncode.models", "resolve_platform"),
-    "token_estimate": ("syncode.tokens", "token_estimate"),
-    "SourceScanner": ("syncode.scanner", "SourceScanner"),
-    "SourceResolver": ("syncode.source", "SourceResolver"),
-    "TargetDiscovery": ("syncode.target", "TargetDiscovery"),
-    "TargetManager": ("syncode.target", "TargetManager"),
-    "build_target_manager": ("syncode.target", "build_target_manager"),
+    "SyncodeConfig": ("agentfiles.config", "SyncodeConfig"),
+    "Differ": ("agentfiles.differ", "Differ"),
+    "SyncEngine": ("agentfiles.engine", "SyncEngine"),
+    "SyncReport": ("agentfiles.engine", "SyncReport"),
+    "InteractiveSession": ("agentfiles.interactive", "InteractiveSession"),
+    "DiffEntry": ("agentfiles.models", "DiffEntry"),
+    "DiffStatus": ("agentfiles.models", "DiffStatus"),
+    "Item": ("agentfiles.models", "Item"),
+    "ItemMeta": ("agentfiles.models", "ItemMeta"),
+    "ItemState": ("agentfiles.models", "ItemState"),
+    "ItemType": ("agentfiles.models", "ItemType"),
+    "Platform": ("agentfiles.models", "Platform"),
+    "PlatformState": ("agentfiles.models", "PlatformState"),
+    "SourceError": ("agentfiles.models", "SourceError"),
+    "SourceInfo": ("agentfiles.models", "SourceInfo"),
+    "SourceType": ("agentfiles.models", "SourceType"),
+    "SyncAction": ("agentfiles.models", "SyncAction"),
+    "SyncodeError": ("agentfiles.models", "SyncodeError"),
+    "ConfigError": ("agentfiles.models", "ConfigError"),
+    "SyncPlan": ("agentfiles.models", "SyncPlan"),
+    "SyncResult": ("agentfiles.models", "SyncResult"),
+    "SyncState": ("agentfiles.models", "SyncState"),
+    "TargetError": ("agentfiles.models", "TargetError"),
+    "TargetPaths": ("agentfiles.models", "TargetPaths"),
+    "TokenEstimate": ("agentfiles.models", "TokenEstimate"),
+    "resolve_platform": ("agentfiles.models", "resolve_platform"),
+    "token_estimate": ("agentfiles.tokens", "token_estimate"),
+    "SourceScanner": ("agentfiles.scanner", "SourceScanner"),
+    "SourceResolver": ("agentfiles.source", "SourceResolver"),
+    "TargetDiscovery": ("agentfiles.target", "TargetDiscovery"),
+    "TargetManager": ("agentfiles.target", "TargetManager"),
+    "build_target_manager": ("agentfiles.target", "build_target_manager"),
 }
 
 

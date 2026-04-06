@@ -24,7 +24,7 @@ import logging
 import os
 from pathlib import Path
 
-from syncode.models import Item, TokenEstimate
+from agentfiles.models import Item, TokenEstimate
 
 logger = logging.getLogger(__name__)
 
@@ -222,7 +222,7 @@ def token_estimate(item: Item) -> TokenEstimate:
         item: The item to estimate.
 
     Returns:
-        A :class:`~syncode.models.TokenEstimate` with the full breakdown.
+        A :class:`~agentfiles.models.TokenEstimate` with the full breakdown.
 
     """
     resolved_files = _resolve_item_files(item)

@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from syncode.models import SyncodeError
+from agentfiles.models import SyncodeError
 
 logger = logging.getLogger(__name__)
 

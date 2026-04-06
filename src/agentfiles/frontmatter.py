@@ -23,10 +23,10 @@ The parsing pipeline:
    into a ``dict`` with an automatic retry mechanism that quotes bare
    colons in values.
 2. :func:`_meta_from_frontmatter` converts the raw dict into a
-   structured :class:`~syncode.models.ItemMeta` instance, validating
+   structured :class:`~agentfiles.models.ItemMeta` instance, validating
    field types and collecting unknown keys into an ``extra`` dict.
 
-Both functions are re-exported from :mod:`syncode.models` for backward
+Both functions are re-exported from :mod:`agentfiles.models` for backward
 compatibility.
 """
 
@@ -38,7 +38,7 @@ from typing import Any
 # Lazy import from models to avoid circular dependency at module load time.
 # models.py imports from this module after defining SyncodeError, ItemMeta,
 # and _DEFAULT_VERSION, so the circular import resolves correctly.
-from syncode.models import _DEFAULT_VERSION, ItemMeta, SyncodeError
+from agentfiles.models import _DEFAULT_VERSION, ItemMeta, SyncodeError
 
 # ---------------------------------------------------------------------------
 # Shared constants

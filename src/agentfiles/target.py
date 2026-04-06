@@ -39,14 +39,14 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import ClassVar
 
-from syncode.models import (
+from agentfiles.models import (
     Item,
     ItemType,
     Platform,
     TargetError,
     TargetPaths,
 )
-from syncode.paths import get_item_dest_path
+from agentfiles.paths import get_item_dest_path
 
 logger = logging.getLogger(__name__)
 

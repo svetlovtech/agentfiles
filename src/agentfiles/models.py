@@ -1,8 +1,8 @@
 """Data models and helper utilities for the agentfiles CLI tool.
 
 agentfiles manages AI tool configurations (agents, skills, commands, plugins)
-by parsing YAML frontmatter, computing checksums, and tracking sync
-operations across platforms (OpenCode, Claude Code, Windsurf, Cursor).
+by parsing YAML frontmatter and tracking sync operations across platforms
+(OpenCode, Claude Code, Windsurf, Cursor).
 
 Models are built with ``dataclasses`` from the standard library.  The only
 external dependency is ``pyyaml`` for YAML frontmatter parsing.
@@ -30,7 +30,7 @@ State tracking uses a three-level structure persisted as YAML::
 
     SyncState           Per-repository state file (``.agentfiles.state.yaml``).
     └── PlatformState   Per-platform section.
-        └── ItemState   Per-item checksums and timestamps.
+        └── ItemState   Per-item timestamps.
 
 Diffing (comparing source to target) produces::
 
@@ -42,11 +42,8 @@ Token estimation (for context-window budgeting) produces::
 
 Utility layers
 --------------
-* **Checksums** — :func:`compute_checksum` and :func:`compute_checksum_with_size`
-  (re-exported from :mod:`syncode.checksum`) produce deterministic SHA-256
-  digests for files and directories.
 * **Frontmatter parsing** — :func:`parse_frontmatter` and related helpers
-  (re-exported from :mod:`syncode.frontmatter`) extract YAML blocks from
+  (re-exported from :mod:`agentfiles.frontmatter`) extract YAML blocks from
   markdown files with automatic retry for bare-colon values.
 * **Token estimation** — :func:`token_estimate` reads item files and produces
   a :class:`TokenEstimate` using a 4-chars-per-token heuristic.
@@ -60,9 +57,7 @@ from pathlib import Path
 from typing import Any, Final
 
 __all__ = [
-    # Re-exported from syncode.checksum
-    "compute_checksum",
-    # Re-exported from syncode.frontmatter
+    # Re-exported from agentfiles.frontmatter
     "SKILL_MAIN_FILE",
     "parse_frontmatter",
     # Exceptions
@@ -111,7 +106,7 @@ _DEFAULT_VERSION = "1.0.0"
 
 
 class SyncodeError(Exception):
-    """Base exception for all syncode operations."""
+    """Base exception for all agentfiles operations."""
 
 
 class ConfigError(SyncodeError):
@@ -328,9 +323,9 @@ class DiffStatus(Enum):
 
     Members:
         NEW: Item exists in source but not at the target.
-        UPDATED: Item exists at both; checksums differ.
+        UPDATED: Item exists at both; content differs.
         DELETED: Item exists at target but no longer in source.
-        UNCHANGED: Checksums match — no action needed.
+        UNCHANGED: Content matches — no action needed.
         CONFLICT: Both sides changed independently since the last sync.
     """
 
@@ -351,14 +346,14 @@ class SyncDirection(Enum):
 
 
 # ---------------------------------------------------------------------------
-# Shared file filter (used across checksum, models, and tokens)
+# Shared file filter (used across models and tokens)
 # ---------------------------------------------------------------------------
 
 _SKIP_NAMES: Final[frozenset[str]] = frozenset({"__pycache__", "__init__.py"})
 
 
 def _is_item_file(rel_path: Path) -> bool:
-    """Whether a relative path should be included in item content/checksums."""
+    """Whether a relative path should be included in item content."""
     return not any(part.startswith(".") or part in _SKIP_NAMES for part in rel_path.parts)
 
 
@@ -408,13 +403,12 @@ class ItemMeta:
 
 
 # ---------------------------------------------------------------------------
-# Eager imports from syncode.frontmatter and syncode.checksum.
-# These MUST come after ItemMeta is defined because frontmatter.py imports
+# Eager import from agentfiles.frontmatter.
+# This MUST come after ItemMeta is defined because frontmatter.py imports
 # ItemMeta from this module.  The noqa: E402 suppresses the "module level
 # import not at top of file" warning — this placement is intentional.
 # ---------------------------------------------------------------------------
-from syncode.checksum import compute_checksum  # noqa: E402
-from syncode.frontmatter import (  # noqa: E402
+from agentfiles.frontmatter import (  # noqa: E402
     SKILL_MAIN_FILE,
     _meta_from_frontmatter,
     parse_frontmatter,
@@ -431,7 +425,6 @@ class Item:
         source_path: Absolute path to the item in the source repository.
         meta: Parsed frontmatter metadata, if available.
         version: Semantic version (defaults to ``"1.0.0"``).
-        checksum: SHA-256 hex digest of the item's contents.
         files: All file paths (relative to *source_path*) in the item.
         supported_platforms: Which platforms this item supports.
 
@@ -442,7 +435,6 @@ class Item:
     source_path: Path
     meta: ItemMeta | None = None
     version: str = _DEFAULT_VERSION
-    checksum: str = ""
     files: tuple[str, ...] = ()
     supported_platforms: tuple[Platform, ...] = (Platform.OPENCODE, Platform.CLAUDE_CODE)
 
@@ -563,16 +555,12 @@ class DiffEntry:
     Attributes:
         item: The source item being compared.
         status: Result of the comparison.
-        source_checksum: SHA-256 digest of the source content.
-        target_checksum: SHA-256 digest of the target content (empty if new).
         details: Human-readable description of the difference.
 
     """
 
     item: Item
     status: DiffStatus
-    source_checksum: str = ""
-    target_checksum: str = ""
     details: str = ""
 
 
@@ -620,14 +608,10 @@ class ItemState:
     """Sync state for a single item on a single platform.
 
     Attributes:
-        source_hash: SHA-256 checksum of the item in the source repository.
-        target_hash: SHA-256 checksum of the item in the local platform config.
         synced_at: ISO 8601 timestamp of the last successful sync.
 
     """
 
-    source_hash: str = ""
-    target_hash: str = ""
     synced_at: str = ""
 
 
@@ -704,8 +688,7 @@ def item_from_directory(
 
     The directory is scanned recursively.  The primary markdown file is
     located via :func:`_find_main_md`, its frontmatter is parsed for
-    metadata, a content checksum is computed, and the full file list
-    is collected.
+    metadata, and the full file list is collected.
 
     Args:
         path: Filesystem path to the item directory.
@@ -774,7 +757,7 @@ def item_from_file(
         item_type: Category of the item being created.
 
     Returns:
-        A fully populated :class:`Item` instance with checksum and meta.
+        A fully populated :class:`Item` instance with meta.
 
     Raises:
         SourceError: When the file cannot be read or parsed.
@@ -805,19 +788,13 @@ def item_from_file(
 
 
 # ---------------------------------------------------------------------------
-# Lazy re-exports — backward-compatible symbols from syncode.checksum,
-# syncode.frontmatter, and syncode.tokens
+# Lazy re-exports — backward-compatible symbols from agentfiles.frontmatter
+# and agentfiles.tokens
 # ---------------------------------------------------------------------------
 # Imports are resolved lazily to break the circular dependency chain:
-# models.py ↔ checksum.py ↔ frontmatter.py.  The public API is preserved
-# so that existing imports continue to work.
+# models.py ↔ frontmatter.py.  The public API is preserved so that
+# existing imports continue to work.
 # ---------------------------------------------------------------------------
-
-_CHECKSUM_NAMES = frozenset(
-    {
-        "compute_checksum",
-    }
-)
 
 _FRONTMATTER_NAMES = frozenset(
     {
@@ -841,21 +818,16 @@ _TOKEN_NAMES = frozenset(
 
 
 def __getattr__(name: str) -> object:
-    """Lazy re-export of symbols from checksum, frontmatter, and tokens modules."""
+    """Lazy re-export of symbols from frontmatter and tokens modules."""
     if name in _TOKEN_NAMES:
-        from syncode import tokens as _tokens
+        from agentfiles import tokens as _tokens
 
         value = getattr(_tokens, name)
         # Cache in module globals so future access bypasses __getattr__.
         globals()[name] = value
         return value
-    if name in _CHECKSUM_NAMES:
-        from syncode.checksum import compute_checksum as _compute_checksum
-
-        globals()["compute_checksum"] = _compute_checksum
-        return _compute_checksum
     if name in _FRONTMATTER_NAMES:
-        from syncode import frontmatter as _fm
+        from agentfiles import frontmatter as _fm
 
         value = getattr(_fm, name)
         globals()[name] = value
@@ -942,7 +914,7 @@ def _build_item(
     name: str,
     files: tuple[str, ...],
 ) -> Item:
-    """Construct an :class:`Item` with computed version and checksum.
+    """Construct an :class:`Item` with computed version.
 
     Centralises the shared logic used by both :func:`item_from_directory`
     and :func:`item_from_file` for building an :class:`Item` instance.
@@ -955,28 +927,16 @@ def _build_item(
         files: Relative file paths belonging to the item.
 
     Returns:
-        A fully-populated :class:`Item` instance.
-
-    Raises:
-        SourceError: When the checksum cannot be computed.
+        A fully-populated :class:`Item` instance with meta.
 
     """
     version = meta.version if meta else _DEFAULT_VERSION
-    try:
-        checksum = compute_checksum(path)
-    except SourceError as exc:
-        raise SourceError(
-            f"cannot compute checksum for {item_type.value} item "
-            f"'{name}' at '{path}': {exc}. "
-            f"Check that the source path is readable and contains valid files"
-        ) from exc
     return Item(
         item_type=item_type,
         name=name,
         source_path=path,
         meta=meta,
         version=version,
-        checksum=checksum,
         files=files,
     )
 

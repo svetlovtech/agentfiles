@@ -48,22 +48,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from syncode.config import load_sync_state, save_sync_state
-from syncode.models import (
+from agentfiles.config import load_sync_state, save_sync_state
+from agentfiles.models import (
     Item,
     ItemState,
     ItemType,
     Platform,
     PlatformState,
-    SourceError,
     SyncAction,
     SyncodeError,
     SyncPlan,
     SyncResult,
     SyncState,
-    compute_checksum,
 )
-from syncode.paths import get_item_dest_path, get_push_dest_path
+from agentfiles.paths import get_item_dest_path, get_push_dest_path
 
 logger = logging.getLogger(__name__)
 
@@ -345,10 +343,9 @@ class SyncEngine:
         The *action* parameter controls the planning strategy:
 
         * ``INSTALL`` — items that are not yet on the target are planned for
-          installation; already-installed items with matching checksums are
-          skipped.
-        * ``UPDATE`` — items that differ from the installed version are
-          planned for update.
+          installation; already-installed items are skipped.
+        * ``UPDATE`` — items that are already installed are planned for
+          update.
         * ``UNINSTALL`` — installed items are planned for removal.
 
         Args:
@@ -441,8 +438,8 @@ class SyncEngine:
 
         When *source_dir* is provided and *action* is ``INSTALL``, the
         sync state file is updated after successful execution so that
-        subsequent ``compute_sync_plan`` calls can perform accurate
-        three-way comparisons.
+        subsequent ``compute_sync_plan`` calls can determine which items
+        have been synced.
         """
         plans = self.plan_sync(items, platforms, action=action)
         results = self.execute_plan(plans)
@@ -450,7 +447,7 @@ class SyncEngine:
         logger.info(report.summary())
 
         # Persist sync state after pull operations so that bidirectional
-        # sync (compute_sync_plan) has accurate checksums to compare.
+        # sync (compute_sync_plan) can track which items have been synced.
         if (
             source_dir is not None
             and not self._dry_run
@@ -476,8 +473,8 @@ class SyncEngine:
             source_dir: Root of the source repository.  When provided,
                 the sync state file (``.agentfiles.state.yaml``) is
                 updated after successful installation so that
-                ``compute_sync_plan`` can perform accurate three-way
-                comparisons on subsequent runs.
+                ``compute_sync_plan`` can track which items have been
+                synced on subsequent runs.
 
         Returns:
             Aggregated :class:`SyncReport`.
@@ -559,7 +556,7 @@ class SyncEngine:
         report = self.aggregate(results)
         logger.info("Push complete: %s", report.summary())
 
-        # Update state file with new checksums after successful push.
+        # Update state file after successful push.
         has_successful_push = any(r.is_success for r in results)
         if not dry_run and has_successful_push:
             self._update_push_state(
@@ -579,8 +576,8 @@ class SyncEngine:
     ) -> list[tuple[Item, Platform, str]]:
         """Compute what needs to be pulled, pushed, or is in conflict.
 
-        Uses the state file to perform a three-way comparison between
-        source, target, and last-synced state.
+        Checks each item against the target platform to determine whether
+        it needs to be pulled from the source repository.
 
         Args:
             items: Source items to evaluate.
@@ -593,11 +590,8 @@ class SyncEngine:
             ``"pull"``, ``"push"``, ``"conflict"``, or ``"skip"``.
 
         Logic:
-            - source changed, target unchanged → ``"pull"``
-            - source unchanged, target changed → ``"push"``
-            - both changed → ``"conflict"``
-            - neither changed → ``"skip"``
-            - item not in state → ``"pull"`` (new from repo)
+            - item not at target → ``"pull"``
+            - item exists at target → ``"skip"``
 
         """
         plan: list[tuple[Item, Platform, str]] = []
@@ -665,7 +659,7 @@ class SyncEngine:
         target_dir: Path,
         requested_action: SyncAction,
     ) -> SyncPlan | None:
-        """Plan install or update based on the current state on disk."""
+        """Plan install or update based on whether the item exists on disk."""
         dest_path = self._dest_path(item, target_dir)
         try:
             is_installed = dest_path.exists()
@@ -674,24 +668,8 @@ class SyncEngine:
             return None
 
         if is_installed:
-            # dest_path.exists() follows symlinks, so the resolved target
-            # is guaranteed to exist — no separate existence check needed.
-            resolved_dest = Path(os.path.realpath(dest_path))
-            try:
-                target_checksum = compute_checksum(resolved_dest)
-            except (SourceError, OSError) as exc:
-                logger.warning(
-                    "Cannot compute target checksum for %s: %s — treating as UPDATE",
-                    item.name,
-                    exc,
-                )
-                target_checksum = ""
-            if target_checksum == item.checksum:
-                determined_action = SyncAction.SKIP
-                reason = "already up-to-date"
-            else:
-                determined_action = SyncAction.UPDATE
-                reason = "checksum differs"
+            determined_action = SyncAction.SKIP
+            reason = "already installed"
         else:
             determined_action = SyncAction.INSTALL
             reason = "not installed"
@@ -891,14 +869,7 @@ class SyncEngine:
     ) -> None:
         """Update the state file after a successful pull (install/update).
 
-        For each successful result, records the source and target checksums
-        in ``.agentfiles.state.yaml`` so that future
-        :meth:`compute_sync_plan` calls can perform accurate three-way
-        comparisons.
-
-        Errors during state update are logged as warnings and do not
-        propagate — a failed state save must not roll back the filesystem
-        changes that were already made.
+        Records the sync timestamp for each successful result.
         """
         try:
             state = load_sync_state(source_dir)
@@ -917,11 +888,9 @@ class SyncEngine:
                 continue
 
             plan = result.plan
-            # Only record state for install/update/skip — not uninstall.
             if plan.action == SyncAction.UNINSTALL:
                 continue
 
-            # Use the canonical reverse-lookup from TargetManager.
             platform = self._target_manager.resolve_platform_for(
                 plan.item.item_type,
                 plan.target_dir,
@@ -937,14 +906,6 @@ class SyncEngine:
             item_key = item.item_key
             platform_key = platform.value
 
-            # Source hash comes from the item's pre-computed checksum.
-            source_hash = item.checksum
-
-            # Target hash is computed from the actual file on disk after copy.
-            target_path = get_item_dest_path(plan.target_dir, item)
-            target_hash = self._resolve_target_hash(target_path)
-
-            # Ensure the platform section exists.
             if platform_key not in state.platforms:
                 target_dir = self._target_manager.get_target_dir(
                     platform,
@@ -955,8 +916,6 @@ class SyncEngine:
                 )
 
             state.platforms[platform_key].items[item_key] = ItemState(
-                source_hash=source_hash,
-                target_hash=target_hash,
                 synced_at=now,
             )
 
@@ -977,12 +936,7 @@ class SyncEngine:
         push_contexts: list[tuple[Item, Platform]],
         source_dir: Path,
     ) -> None:
-        """Update the state file after a successful push operation.
-
-        Computes new checksums for each successfully pushed item and
-        persists the updated state to ``.agentfiles.state.yaml`` in
-        *source_dir*.
-        """
+        """Update the state file after a successful push operation."""
         try:
             state = load_sync_state(source_dir)
         except Exception:
@@ -1002,36 +956,16 @@ class SyncEngine:
             item_key = item.item_key
             platform_key = platform.value
 
-            # Compute new source hash (the file we just pushed to source_dir).
-            dest_in_source = get_push_dest_path(source_dir, item)
-            try:
-                new_source_hash = compute_checksum(dest_in_source)
-            except (SourceError, OSError):
-                logger.debug(
-                    "Cannot compute source hash for %s after push",
-                    item.name,
-                    exc_info=True,
-                )
-                new_source_hash = ""
-
-            # Compute target hash (unchanged during push).
             target_dir = self._target_manager.get_target_dir(
                 platform,
                 item.item_type,
             )
-            new_target_hash = ""
-            if target_dir is not None:
-                target_path = get_item_dest_path(target_dir, item)
-                new_target_hash = self._resolve_target_hash(target_path)
 
-            # Update platform state.
             if platform_key not in state.platforms:
                 state.platforms[platform_key] = PlatformState(
                     path=str(target_dir) if target_dir else "",
                 )
             state.platforms[platform_key].items[item_key] = ItemState(
-                source_hash=new_source_hash,
-                target_hash=new_target_hash,
                 synced_at=now,
             )
 
@@ -1153,78 +1087,18 @@ class SyncEngine:
     ) -> str:
         """Determine the sync action for a single (item, platform) pair.
 
-        Performs a three-way comparison between the current source checksum,
-        the current target checksum, and the checksums recorded in *state*
-        at the time of the last successful sync.  The result is:
-
-        - ``"pull"`` — source changed since last sync, target unchanged.
-          The repo version should overwrite the local one.
-        - ``"push"`` — target changed since last sync, source unchanged.
-          The local version should be copied back to the repo.
-        - ``"conflict"`` — both source and target changed independently.
-          Requires manual resolution.
-        - ``"skip"`` — neither changed; nothing to do.
-        - ``"pull"`` — item or platform not yet in *state* (new item or
-          first sync for this platform).
+        Without checksums, checks if the item exists at the target.
+        Returns "pull" if not installed, "skip" if installed.
         """
         target_dir = self._target_manager.get_target_dir(platform, item.item_type)
         if target_dir is None:
             return "skip"
 
-        current_source_hash = item.checksum
         target_path = get_item_dest_path(target_dir, item)
-        current_target_hash = self._resolve_target_hash(target_path)
-
-        platform_state = state.platforms.get(platform.value)
-        if platform_state is None:
+        if not target_path.exists():
             return "pull"
 
-        item_key = item.item_key
-        item_state = platform_state.items.get(item_key)
-        if item_state is None:
-            return "pull"
-
-        source_changed = current_source_hash != item_state.source_hash
-        target_changed = current_target_hash != item_state.target_hash
-
-        # Three-way change detection keyed by (source_changed, target_changed).
-        # Unchanged/unchanged falls through to the default "skip".
-        change_actions: dict[tuple[bool, bool], str] = {
-            (True, False): "pull",
-            (False, True): "push",
-            (True, True): "conflict",
-        }
-        return change_actions.get((source_changed, target_changed), "skip")
-
-    @staticmethod
-    def _resolve_target_hash(target_path: Path) -> str:
-        """Compute checksum of a target path, resolving symlinks.
-
-        Returns empty string if the path does not exist or cannot be read.
-
-        Uses ``os.lstat`` for a single syscall to detect existence and type,
-        avoiding the overhead of separate ``exists()`` and ``is_symlink()``
-        calls.
-        """
-        try:
-            st = os.lstat(target_path)
-        except OSError:
-            return ""
-
-        path_to_hash = target_path
-        if stat.S_ISLNK(st.st_mode):
-            # Resolve symlink and verify the target exists with one stat call.
-            path_to_hash = Path(os.path.realpath(target_path))
-            try:
-                os.stat(path_to_hash)
-            except OSError:
-                return ""
-
-        try:
-            return compute_checksum(path_to_hash)
-        except (OSError, SourceError):
-            logger.debug("Cannot compute hash for %s", target_path, exc_info=True)
-            return ""
+        return "skip"
 
     @staticmethod
     def aggregate(results: list[SyncResult]) -> SyncReport:

@@ -21,7 +21,7 @@ from typing import Any
 
 import yaml
 
-from syncode.models import (
+from agentfiles.models import (
     ConfigError,
     ItemState,
     PlatformState,
@@ -356,8 +356,6 @@ def save_sync_state(repo_path: Path, state: SyncState) -> None:
 def _parse_item_state(raw: dict[str, Any]) -> ItemState:
     """Construct an ItemState from a raw parsed dictionary."""
     return ItemState(
-        source_hash=str(raw.get("source_hash", "")),
-        target_hash=str(raw.get("target_hash", "")),
         synced_at=str(raw.get("synced_at", "")),
     )
 
@@ -395,11 +393,10 @@ def _parse_sync_state(data: dict[str, Any]) -> SyncState:
 
 def _serialize_item_state(item: ItemState) -> dict[str, str]:
     """Convert an ItemState to a YAML-serializable dictionary."""
-    return {
-        "source_hash": item.source_hash,
-        "target_hash": item.target_hash,
-        "synced_at": item.synced_at,
-    }
+    result: dict[str, str] = {}
+    if item.synced_at:
+        result["synced_at"] = item.synced_at
+    return result
 
 
 def _serialize_sync_state(state: SyncState) -> dict[str, Any]:

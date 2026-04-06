@@ -1,34 +1,23 @@
 """JSON formatting helpers for CLI output.
 
-Extracted from :mod:`syncode.cli` to reduce file size.  Contains:
+Extracted from :mod:`agentfiles.cli` to reduce file size.  Contains:
 - ``_format_list_json`` — JSON output for ``list`` command
 - ``_format_status_json`` — JSON output for ``status`` command
 - ``_format_plan_json`` — JSON output for ``pull``/``push`` dry-run plans
 - ``_format_results_json`` — JSON output for ``pull``/``push`` execution results
-- ``_format_show_json`` — JSON output for ``show`` command
-- ``_build_verify_items`` — Build verification records from diff results
 """
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from syncode.models import DiffStatus
-
 if TYPE_CHECKING:  # pragma: no cover
-    from syncode.models import (
-        DiffEntry,
-        DiffStatus,
+    from agentfiles.models import (
         Item,
-        Platform,
         SyncPlan,
         SyncResult,
     )
-
-# Short hash length for verify output (matches typical git abbreviation).
-_SHORT_HASH_LEN = 8
 
 
 def _format_list_json(items: list[Item], show_tokens: bool) -> int:
@@ -41,7 +30,7 @@ def _format_list_json(items: list[Item], show_tokens: bool) -> int:
     Returns:
         Exit code (always ``0``).
     """
-    from syncode.tokens import token_estimate
+    from agentfiles.tokens import token_estimate
 
     data: list[dict[str, Any]] = []
     for item in sorted(items, key=lambda i: i.sort_key):
@@ -103,28 +92,6 @@ def _format_status_json(
     return 0
 
 
-def _format_show_json(item: Item, content: str, file_path: Path) -> int:
-    """Format item content as JSON and print to stdout.
-
-    Args:
-        item: The :class:`Item` whose content is displayed.
-        content: Text content of the item's primary file.
-        file_path: Path to the content file on disk.
-
-    Returns:
-        Exit code (always ``0``).
-    """
-    output = {
-        "name": item.name,
-        "type": item.item_type.value,
-        "content": content,
-        "source_path": str(file_path),
-        "platforms": item.platform_values,
-    }
-    print(json.dumps(output, indent=2))
-    return 0
-
-
 def _format_plan_json(
     plans: list[SyncPlan],
     target_manager: Any,
@@ -143,7 +110,7 @@ def _format_plan_json(
     Returns:
         Exit code (always ``0``).
     """
-    from syncode.models import SyncAction
+    from agentfiles.models import SyncAction
 
     # Group by (item_key, action) to merge per-platform entries.
     grouped: dict[tuple[str, str], dict[str, Any]] = {}
@@ -218,89 +185,3 @@ def _format_results_json(
     }
     print(json.dumps(output, indent=2))
     return 0 if report.is_success else 1
-
-
-def _build_verify_items(
-    diff_results: dict[Platform, list[DiffEntry]],
-) -> list[dict[str, Any]]:
-    """Convert diff results into flat verify-item records.
-
-    Each record has ``key``, ``status``, and ``platforms`` fields.
-    Drift records also include ``source_hash`` and ``target_hash``
-    (abbreviated to :data:`_SHORT_HASH_LEN` characters).
-
-    Args:
-        diff_results: Mapping of Platform to list of DiffEntry.
-
-    Returns:
-        Sorted list of verification record dicts.
-    """
-    verify_items: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
-
-    for platform, entries in diff_results.items():
-        for entry in entries:
-            item_key = entry.item.item_key
-            platform_key = platform.value
-            if (item_key, platform_key) in seen:
-                continue
-            seen.add((item_key, platform_key))
-
-            if entry.status == DiffStatus.UNCHANGED:
-                status = "matching"
-            elif entry.status == DiffStatus.NEW:
-                status = "missing"
-            else:
-                status = "drift"
-
-            record: dict[str, Any] = {
-                "key": item_key,
-                "status": status,
-                "platforms": [platform_key],
-            }
-            if status == "drift" and entry.source_checksum:
-                record["source_hash"] = entry.source_checksum[:_SHORT_HASH_LEN]
-                if entry.target_checksum:
-                    record["target_hash"] = entry.target_checksum[:_SHORT_HASH_LEN]
-            verify_items.append(record)
-
-    verify_items.sort(key=lambda r: r["key"])
-    return verify_items
-
-
-def _print_verify_text(
-    verify_items: list[dict[str, Any]],
-    matching_count: int,
-    drift_count: int,
-    missing_count: int,
-) -> None:
-    """Print human-readable verify output with colour-coded status lines."""
-    from syncode.cli import _use_colors_output
-    from syncode.output import Colors, colorize
-
-    use_col = _use_colors_output()
-
-    print("\nagentfiles verify\n")
-    for record in verify_items:
-        key = record["key"]
-        status = record["status"]
-        platform_names = record["platforms"]
-
-        if status == "matching":
-            symbol = colorize("\u2705", Colors.GREEN) if use_col else "\u2705"
-            detail = "checksums match"
-        elif status == "drift":
-            symbol = colorize("~", Colors.YELLOW) if use_col else "~"
-            src = record.get("source_hash", "???")
-            tgt = record.get("target_hash", "???")
-            detail = f"DRIFT DETECTED (source: {src}, installed: {tgt})"
-        else:
-            symbol = colorize("\u274c", Colors.RED) if use_col else "\u274c"
-            detail = "NOT INSTALLED"
-
-        print(f"{symbol} {key:<30s} {platform_names} — {detail}")
-
-    print()
-    print(f"{matching_count} items verified, {drift_count} drift, {missing_count} missing.")
-    exit_code = 1 if (drift_count > 0 or missing_count > 0) else 0
-    print(f"Exit code: {exit_code}")
