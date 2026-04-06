@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from syncode.models import Item, ItemType, Platform, item_from_file
-from syncode.scanner import (
+from agentfiles.models import Item, ItemType, Platform, item_from_file
+from agentfiles.scanner import (
     _SCANNER_REGISTRY,
     SourceScanner,
     _apply_platforms,
@@ -860,7 +860,7 @@ class TestHasPluginFileDepthLimit:
 
     def test_deeply_nested_directory_stops(self, tmp_path: Path) -> None:
         """Directories deeper than max depth should not cause RecursionError."""
-        from syncode.scanner import _has_plugin_file
+        from agentfiles.scanner import _has_plugin_file
 
         current = tmp_path
         for i in range(15):  # Exceed _PLUGIN_SCAN_MAX_DEPTH of 10
@@ -874,7 +874,7 @@ class TestHasPluginFileDepthLimit:
 
     def test_plugin_file_at_shallow_depth_found(self, tmp_path: Path) -> None:
         """Plugin files at shallow depth should still be found."""
-        from syncode.scanner import _has_plugin_file
+        from agentfiles.scanner import _has_plugin_file
 
         shallow = tmp_path / "sub"
         shallow.mkdir()
@@ -1157,7 +1157,7 @@ class TestPluginEdgeCases:
         tmp_path: Path,
     ) -> None:
         """Plugin file at depth 3 should be found."""
-        from syncode.scanner import _has_plugin_file
+        from agentfiles.scanner import _has_plugin_file
 
         level1 = tmp_path / "src"
         level2 = level1 / "lib"
@@ -1168,7 +1168,7 @@ class TestPluginEdgeCases:
 
     def test_plugin_dir_with_non_plugin_files_only(self, tmp_path: Path) -> None:
         """Directory with only .md, .json, .txt files has no plugin file."""
-        from syncode.scanner import _has_plugin_file
+        from agentfiles.scanner import _has_plugin_file
 
         (tmp_path / "readme.md").write_text("# readme", encoding="utf-8")
         (tmp_path / "package.json").write_text("{}", encoding="utf-8")
@@ -1178,7 +1178,7 @@ class TestPluginEdgeCases:
 
     def test_plugin_dir_with_empty_subdirectories_only(self, tmp_path: Path) -> None:
         """Directory tree with only empty subdirs has no plugin file."""
-        from syncode.scanner import _has_plugin_file
+        from agentfiles.scanner import _has_plugin_file
 
         (tmp_path / "empty1").mkdir()
         (tmp_path / "empty2").mkdir()
@@ -1265,7 +1265,7 @@ class TestPluginEdgeCases:
 
     def test_plugin_dir_at_exactly_max_depth(self, tmp_path: Path) -> None:
         """Plugin file at exactly _PLUGIN_SCAN_MAX_DEPTH is found."""
-        from syncode.scanner import _PLUGIN_SCAN_MAX_DEPTH, _has_plugin_file
+        from agentfiles.scanner import _PLUGIN_SCAN_MAX_DEPTH, _has_plugin_file
 
         current = tmp_path
         for i in range(_PLUGIN_SCAN_MAX_DEPTH):
@@ -1408,13 +1408,13 @@ class TestScandirSorted:
     """Tests for _scandir_sorted helper."""
 
     def test_returns_empty_for_nonexistent_dir(self, tmp_path: Path) -> None:
-        from syncode.scanner import _scandir_sorted
+        from agentfiles.scanner import _scandir_sorted
 
         result = _scandir_sorted(tmp_path / "nonexistent")
         assert result == []
 
     def test_returns_sorted_entries(self, tmp_path: Path) -> None:
-        from syncode.scanner import _scandir_sorted
+        from agentfiles.scanner import _scandir_sorted
 
         (tmp_path / "c.md").write_text("c", encoding="utf-8")
         (tmp_path / "a.md").write_text("a", encoding="utf-8")
@@ -1425,7 +1425,7 @@ class TestScandirSorted:
         assert names == ["a.md", "b.md", "c.md"]
 
     def test_returns_empty_for_empty_dir(self, tmp_path: Path) -> None:
-        from syncode.scanner import _scandir_sorted
+        from agentfiles.scanner import _scandir_sorted
 
         entries = _scandir_sorted(tmp_path)
         assert entries == []

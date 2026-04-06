@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from syncode.interactive import (
+from agentfiles.interactive import (
     InputParser,
     InteractiveRunner,
     InteractiveSession,
@@ -19,7 +19,7 @@ from syncode.interactive import (
     _parse_comma_list,
     _parse_ranges,
 )
-from syncode.models import (
+from agentfiles.models import (
     DiffEntry,
     DiffStatus,
     Item,
@@ -72,12 +72,12 @@ def sample_items() -> list[Item]:
 def _isolate_output_colors() -> Generator[None, None, None]:
     """Save and restore the output module's ``_use_colors`` flag.
 
-    ``syncode.output._use_colors`` is module-level mutable state mutated
+    ``agentfiles.output._use_colors`` is module-level mutable state mutated
     by ``init_logging()``.  Without this fixture a test (in this file or
     any other) that calls ``init_logging()`` would change the flag for
     every subsequent test in the same process, causing flaky failures.
     """
-    import syncode.output as _output_mod
+    import agentfiles.output as _output_mod
 
     original = _output_mod._use_colors
     yield
@@ -221,8 +221,8 @@ class TestMenuRenderer:
         assert renderer._c("text", "\033[92m") == "text"
 
     def test_c_returns_colored_when_colors_enabled(self) -> None:
-        import syncode.output as _output_mod
-        from syncode.output import Colors, colorize
+        import agentfiles.output as _output_mod
+        from agentfiles.output import Colors, colorize
 
         r = MenuRenderer(use_colors=True)
         # Explicitly set the module-level flag so the test is deterministic
@@ -482,19 +482,19 @@ class TestInputParser:
 
     def test_parse_main_menu_choice_number(self, parser: InputParser) -> None:
         assert parser.parse_main_menu_choice("1") == "pull"
-        assert parser.parse_main_menu_choice("6") == "diff"
+        assert parser.parse_main_menu_choice("3") == "status"
         assert parser.parse_main_menu_choice("0") == "quit"
 
     def test_parse_main_menu_choice_empty_defaults_to_status(self, parser: InputParser) -> None:
         assert parser.parse_main_menu_choice("") == "status"
 
     def test_parse_main_menu_choice_by_name(self, parser: InputParser) -> None:
-        assert parser.parse_main_menu_choice("diff") == "diff"
+        assert parser.parse_main_menu_choice("status") == "status"
         assert parser.parse_main_menu_choice("quit") == "quit"
 
     def test_parse_main_menu_choice_prefix_match(self, parser: InputParser) -> None:
         assert parser.parse_main_menu_choice("pu") == "pull"
-        assert parser.parse_main_menu_choice("li") == "list"
+        assert parser.parse_main_menu_choice("st") == "status"
 
     def test_parse_main_menu_choice_invalid_defaults_to_status(self, parser: InputParser) -> None:
         assert parser.parse_main_menu_choice("xyz") == "status"
@@ -928,7 +928,7 @@ class TestInteractiveRunner:
     def test_show_status_handles_exception_from_provider(
         self, capsys: pytest.CaptureFixture, caplog: pytest.LogCaptureFixture
     ) -> None:
-        caplog.set_level(logging.DEBUG, logger="syncode.interactive")
+        caplog.set_level(logging.DEBUG, logger="agentfiles.interactive")
         provider = MagicMock(side_effect=RuntimeError("boom"))
         runner = InteractiveRunner(command_dispatch=MagicMock(), status_provider=provider)
         runner._show_status()  # Should not raise
@@ -1188,7 +1188,7 @@ class TestMenuRendererWelcome:
 
     def test_show_welcome_with_colors(self, capsys: pytest.CaptureFixture) -> None:
         """show_welcome() works without error when colours are enabled."""
-        import syncode.output as _output_mod
+        import agentfiles.output as _output_mod
 
         renderer = MenuRenderer(use_colors=True)
         with patch.object(_output_mod, "_use_colors", True):
@@ -1564,26 +1564,26 @@ class TestSessionWelcomeAndMenu:
             result = session.main_menu()
         assert result == "pull"
 
-    def test_main_menu_returns_sync(self, capsys: pytest.CaptureFixture) -> None:
-        """Main menu returns 'sync' for input '3'."""
+    def test_main_menu_returns_status(self, capsys: pytest.CaptureFixture) -> None:
+        """Main menu returns 'status' for input '3'."""
         session = InteractiveSession(use_colors=False)
         with patch("builtins.input", return_value="3"):
             result = session.main_menu()
-        assert result == "sync"
+        assert result == "status"
 
-    def test_main_menu_returns_list(self, capsys: pytest.CaptureFixture) -> None:
-        """Main menu returns 'list' for input '5'."""
+    def test_main_menu_returns_push(self, capsys: pytest.CaptureFixture) -> None:
+        """Main menu returns 'push' for input '2'."""
         session = InteractiveSession(use_colors=False)
-        with patch("builtins.input", return_value="5"):
+        with patch("builtins.input", return_value="2"):
             result = session.main_menu()
-        assert result == "list"
+        assert result == "push"
 
-    def test_main_menu_returns_diff(self, capsys: pytest.CaptureFixture) -> None:
-        """Main menu returns 'diff' for input '6'."""
+    def test_main_menu_invalid_defaults_to_status(self, capsys: pytest.CaptureFixture) -> None:
+        """Main menu returns 'status' for unrecognized numeric input."""
         session = InteractiveSession(use_colors=False)
-        with patch("builtins.input", return_value="6"):
+        with patch("builtins.input", return_value="9"):
             result = session.main_menu()
-        assert result == "diff"
+        assert result == "status"
 
 
 # ---------------------------------------------------------------------------
@@ -1617,7 +1617,7 @@ class TestInteractiveRunnerRunLoop:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Run loop catches and logs exceptions from command_dispatch."""
-        caplog.set_level(logging.DEBUG, logger="syncode.interactive")
+        caplog.set_level(logging.DEBUG, logger="agentfiles.interactive")
         dispatch = MagicMock(side_effect=RuntimeError("test error"))
         runner = InteractiveRunner(command_dispatch=dispatch, use_colors=False)
 

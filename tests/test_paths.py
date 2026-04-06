@@ -1,4 +1,4 @@
-"""Tests for syncode.paths — centralised path construction helpers."""
+"""Tests for agentfiles.paths — centralised path construction helpers."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from typing import Any
 
 import pytest
 
-from syncode.models import Item, ItemType
-from syncode.paths import (
+from agentfiles.models import Item, ItemType
+from agentfiles.paths import (
     get_installed_item_path,
     get_item_dest_path,
     get_push_dest_path,
@@ -28,7 +28,6 @@ def agent_item(tmp_path: Path) -> Item:
         item_type=ItemType.AGENT,
         name="coder",
         source_path=f,
-        checksum="abc",
     )
 
 
@@ -42,7 +41,6 @@ def skill_item(tmp_path: Path) -> Item:
         item_type=ItemType.SKILL,
         name="python-reviewer",
         source_path=d,
-        checksum="def",
     )
 
 
@@ -68,7 +66,6 @@ def plugin_item(tmp_path: Path) -> Item:
         item_type=ItemType.PLUGIN,
         name="my-plugin",
         source_path=d,
-        checksum="ghi",
     )
 
 

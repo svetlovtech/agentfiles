@@ -2,25 +2,16 @@
 
 from __future__ import annotations
 
-import hashlib
-import os
-import sys
 from pathlib import Path
 
 import pytest
 
-from syncode.checksum import (
-    _directory_sha256,
-    _directory_size,
-    _file_sha256,
-    compute_checksum_with_size,
-)
-from syncode.frontmatter import (
+from agentfiles.frontmatter import (
     _is_quoted,
     _quote_colon_values,
     _validate_field_type,
 )
-from syncode.models import (
+from agentfiles.models import (
     CHARS_PER_TOKEN,
     PLATFORM_ALIASES,
     PLATFORM_NAMES,
@@ -48,7 +39,6 @@ from syncode.models import (
     _find_main_md,
     _meta_from_frontmatter,
     _parse_item_meta,
-    compute_checksum,
     estimate_tokens_from_content,
     item_from_directory,
     item_from_file,
@@ -56,7 +46,7 @@ from syncode.models import (
     resolve_platform,
     resolve_target_name,
 )
-from syncode.scanner import GitIgnoreMatcher, parse_gitignore
+from agentfiles.scanner import GitIgnoreMatcher, parse_gitignore
 
 # ---------------------------------------------------------------------------
 # Exceptions
@@ -74,7 +64,7 @@ class TestExceptions:
             (TargetError, SyncodeError),
             (ConfigError, SyncodeError),
         ],
-        ids=["syncode-base", "source", "target", "config"],
+        ids=["agentfiles-base", "source", "target", "config"],
     )
     def test_inheritance(self, exc_class: type, parent_class: type) -> None:
         assert issubclass(exc_class, parent_class)
@@ -322,7 +312,6 @@ class TestItem:
         assert item.source_path == Path("/a")
         assert item.meta is None
         assert item.version == "1.0.0"
-        assert item.checksum == ""
         assert item.files == ()
         assert item.supported_platforms == (Platform.OPENCODE, Platform.CLAUDE_CODE)
 
@@ -334,14 +323,12 @@ class TestItem:
             source_path=Path("/skills/full-skill"),
             meta=meta,
             version="3.0.0",
-            checksum="abc123",
             files=("SKILL.md", "refs.yaml"),
             supported_platforms=(Platform.OPENCODE,),
         )
         assert item.item_type == ItemType.SKILL
         assert item.meta is meta
         assert item.version == "3.0.0"
-        assert item.checksum == "abc123"
         assert item.files == ("SKILL.md", "refs.yaml")
         assert item.supported_platforms == (Platform.OPENCODE,)
 
@@ -478,8 +465,6 @@ class TestDiffEntry:
         entry = DiffEntry(item=item, status=DiffStatus.NEW)
         assert entry.item is item
         assert entry.status == DiffStatus.NEW
-        assert entry.source_checksum == ""
-        assert entry.target_checksum == ""
         assert entry.details == ""
 
     def test_full_creation(self) -> None:
@@ -487,12 +472,8 @@ class TestDiffEntry:
         entry = DiffEntry(
             item=item,
             status=DiffStatus.UPDATED,
-            source_checksum="aaa",
-            target_checksum="bbb",
             details="content changed",
         )
-        assert entry.source_checksum == "aaa"
-        assert entry.target_checksum == "bbb"
         assert entry.details == "content changed"
 
     def test_frozen_immutability(self) -> None:
@@ -700,230 +681,6 @@ class TestMetaFromFrontmatter:
 
 
 # ---------------------------------------------------------------------------
-# _file_sha256 / _directory_sha256
-# ---------------------------------------------------------------------------
-
-
-class TestFileSha256:
-    """Tests for _file_sha256 helper."""
-
-    def test_known_content(self, tmp_path: Path) -> None:
-        f = tmp_path / "test.txt"
-        f.write_text("hello world", encoding="utf-8")
-        result = _file_sha256(f)
-        expected = hashlib.sha256(b"hello world").hexdigest()
-        assert result == expected
-
-    def test_empty_file(self, tmp_path: Path) -> None:
-        f = tmp_path / "empty.txt"
-        f.write_bytes(b"")
-        result = _file_sha256(f)
-        assert result == hashlib.sha256(b"").hexdigest()
-
-    def test_binary_file(self, tmp_path: Path) -> None:
-        f = tmp_path / "bin.dat"
-        data = bytes(range(256))
-        f.write_bytes(data)
-        result = _file_sha256(f)
-        assert result == hashlib.sha256(data).hexdigest()
-
-
-class TestDirectorySha256:
-    """Tests for _directory_sha256 helper."""
-
-    def test_single_file_dir(self, tmp_path: Path) -> None:
-        d = tmp_path / "dir"
-        d.mkdir()
-        (d / "a.txt").write_text("content", encoding="utf-8")
-        result = _directory_sha256(d)
-        assert isinstance(result, str)
-        assert len(result) == 64
-
-    def test_empty_directory(self, tmp_path: Path) -> None:
-        d = tmp_path / "empty"
-        d.mkdir()
-        result = _directory_sha256(d)
-        assert result == hashlib.sha256(b"").hexdigest()
-
-    def test_deterministic_order(self, tmp_path: Path) -> None:
-        d = tmp_path / "d1"
-        d.mkdir()
-        (d / "z.txt").write_text("z", encoding="utf-8")
-        (d / "a.txt").write_text("a", encoding="utf-8")
-
-        d2 = tmp_path / "d2"
-        d2.mkdir()
-        (d2 / "a.txt").write_text("a", encoding="utf-8")
-        (d2 / "z.txt").write_text("z", encoding="utf-8")
-
-        assert _directory_sha256(d) == _directory_sha256(d2)
-
-    def test_nested_files(self, tmp_path: Path) -> None:
-        d = tmp_path / "nested"
-        d.mkdir()
-        sub = d / "sub"
-        sub.mkdir()
-        (sub / "inner.txt").write_text("deep", encoding="utf-8")
-        (d / "outer.txt").write_text("top", encoding="utf-8")
-        result = _directory_sha256(d)
-        assert isinstance(result, str)
-        assert len(result) == 64
-
-
-# ---------------------------------------------------------------------------
-# compute_checksum
-# ---------------------------------------------------------------------------
-
-
-class TestComputeChecksum:
-    """Tests for compute_checksum function."""
-
-    def test_file_checksum(self, tmp_path: Path) -> None:
-        f = tmp_path / "file.txt"
-        f.write_text("test content", encoding="utf-8")
-        result = compute_checksum(f)
-        expected = hashlib.sha256(b"test content").hexdigest()
-        assert result == expected
-
-    def test_directory_checksum(self, tmp_path: Path) -> None:
-        d = tmp_path / "dir"
-        d.mkdir()
-        (d / "a.txt").write_text("a", encoding="utf-8")
-        result = compute_checksum(d)
-        assert isinstance(result, str)
-        assert len(result) == 64
-
-    def test_nonexistent_path_raises(self) -> None:
-        with pytest.raises(SourceError, match="path does not exist"):
-            compute_checksum(Path("/nonexistent/path"))
-
-    @pytest.mark.skipif(
-        sys.platform == "win32",
-        reason="FIFOs (named pipes) are not available on Windows",
-    )
-    def test_unsupported_path_type_raises(self, tmp_path: Path) -> None:
-        # Use a FIFO (named pipe) — exists on disk but is neither file nor dir.
-        fifo = tmp_path / "pipe"
-        os.mkfifo(fifo)
-        with pytest.raises(SourceError, match="unsupported path type"):
-            compute_checksum(fifo)
-
-    def test_expected_size_match_returns_checksum(self, tmp_path: Path) -> None:
-        """When expected_size matches actual size, checksum is computed normally."""
-        f = tmp_path / "file.txt"
-        content = "test content"
-        f.write_text(content, encoding="utf-8")
-        actual_size = len(content.encode("utf-8"))
-        result = compute_checksum(f, expected_size=actual_size)
-        expected = hashlib.sha256(content.encode("utf-8")).hexdigest()
-        assert result == expected
-
-    def test_expected_size_mismatch_returns_empty(self, tmp_path: Path) -> None:
-        """When expected_size differs, checksum is skipped and empty string returned."""
-        f = tmp_path / "file.txt"
-        f.write_text("hello", encoding="utf-8")
-        result = compute_checksum(f, expected_size=9999)
-        assert result == ""
-
-    def test_expected_size_none_behaves_normally(self, tmp_path: Path) -> None:
-        """Without expected_size, behaves as original (always computes)."""
-        f = tmp_path / "file.txt"
-        f.write_text("data", encoding="utf-8")
-        result = compute_checksum(f, expected_size=None)
-        assert len(result) == 64
-
-    def test_expected_size_directory_match(self, tmp_path: Path) -> None:
-        """Size-based early exit works for directories too."""
-        d = tmp_path / "dir"
-        d.mkdir()
-        (d / "a.txt").write_text("hello world", encoding="utf-8")
-        total_size = len(b"hello world")
-        result = compute_checksum(d, expected_size=total_size)
-        assert len(result) == 64
-
-    def test_expected_size_directory_mismatch(self, tmp_path: Path) -> None:
-        """Directory size mismatch returns empty string."""
-        d = tmp_path / "dir"
-        d.mkdir()
-        (d / "a.txt").write_text("content", encoding="utf-8")
-        result = compute_checksum(d, expected_size=9999)
-        assert result == ""
-
-
-# ---------------------------------------------------------------------------
-# compute_checksum_with_size
-# ---------------------------------------------------------------------------
-
-
-class TestComputeChecksumWithSize:
-    """Tests for compute_checksum_with_size function."""
-
-    def test_file_returns_checksum_and_size(self, tmp_path: Path) -> None:
-        f = tmp_path / "file.txt"
-        content = "hello world"
-        f.write_text(content, encoding="utf-8")
-        digest, size = compute_checksum_with_size(f)
-        assert digest == hashlib.sha256(content.encode("utf-8")).hexdigest()
-        assert size == len(content.encode("utf-8"))
-
-    def test_empty_file_size_zero(self, tmp_path: Path) -> None:
-        f = tmp_path / "empty.txt"
-        f.write_bytes(b"")
-        digest, size = compute_checksum_with_size(f)
-        assert digest == hashlib.sha256(b"").hexdigest()
-        assert size == 0
-
-    def test_directory_returns_checksum_and_size(self, tmp_path: Path) -> None:
-        d = tmp_path / "dir"
-        d.mkdir()
-        (d / "a.txt").write_text("aaa", encoding="utf-8")
-        (d / "b.txt").write_text("bb", encoding="utf-8")
-        digest, size = compute_checksum_with_size(d)
-        assert len(digest) == 64
-        assert size == 5  # len("aaa") + len("bb")
-
-    def test_nonexistent_raises(self) -> None:
-        with pytest.raises(SourceError, match="path does not exist"):
-            compute_checksum_with_size(Path("/nonexistent"))
-
-
-# ---------------------------------------------------------------------------
-# _directory_size
-# ---------------------------------------------------------------------------
-
-
-class TestDirectorySize:
-    """Tests for _directory_size helper."""
-
-    def test_empty_directory(self, tmp_path: Path) -> None:
-        d = tmp_path / "empty"
-        d.mkdir()
-        assert _directory_size(d) == 0
-
-    def test_single_file(self, tmp_path: Path) -> None:
-        d = tmp_path / "dir"
-        d.mkdir()
-        (d / "f.txt").write_bytes(b"12345")
-        assert _directory_size(d) == 5
-
-    def test_multiple_files(self, tmp_path: Path) -> None:
-        d = tmp_path / "dir"
-        d.mkdir()
-        (d / "a.txt").write_bytes(b"123")
-        (d / "b.txt").write_bytes(b"4567")
-        assert _directory_size(d) == 7
-
-    def test_nested_files(self, tmp_path: Path) -> None:
-        d = tmp_path / "dir"
-        d.mkdir()
-        sub = d / "sub"
-        sub.mkdir()
-        (sub / "inner.txt").write_bytes(b"abc")
-        (d / "outer.txt").write_bytes(b"de")
-        assert _directory_size(d) == 5
-
-
-# ---------------------------------------------------------------------------
 # _collect_relative_files
 # ---------------------------------------------------------------------------
 
@@ -1078,7 +835,6 @@ class TestBuildItem:
         item = _build_item(ItemType.SKILL, tmp_path, meta, "built", ("file.txt",))
         assert item.name == "built"
         assert item.version == "2.0.0"
-        assert item.checksum != ""
         assert item.files == ("file.txt",)
         assert item.meta is meta
 
@@ -1087,11 +843,6 @@ class TestBuildItem:
         item = _build_item(ItemType.AGENT, tmp_path, None, "agent-x", ("file.txt",))
         assert item.version == "1.0.0"
         assert item.meta is None
-
-    def test_checksum_failure_raises(self) -> None:
-        nonexistent = Path("/nonexistent")
-        with pytest.raises(SourceError, match="cannot compute checksum"):
-            _build_item(ItemType.AGENT, nonexistent, None, "x", ())
 
 
 # ---------------------------------------------------------------------------
@@ -1108,7 +859,6 @@ class TestItemFromFile:
         item = item_from_file(f, ItemType.AGENT)
         assert item.item_type == ItemType.AGENT
         assert item.name == "python-reviewer"
-        assert item.checksum != ""
         assert item.files == (f.name,)
 
     def test_file_without_frontmatter_uses_stem(self, tmp_path: Path) -> None:
@@ -1148,7 +898,6 @@ class TestItemFromDirectory:
         assert item.item_type == ItemType.SKILL
         assert item.name == "python-stylist"
         assert item.version == "1.5.0"
-        assert item.checksum != ""
         assert len(item.files) >= 1
         assert item.meta is not None
 
@@ -1650,24 +1399,18 @@ class TestItemState:
 
     def test_defaults(self) -> None:
         state = ItemState()
-        assert state.source_hash == ""
-        assert state.target_hash == ""
         assert state.synced_at == ""
 
     def test_custom_values(self) -> None:
         state = ItemState(
-            source_hash="abc123",
-            target_hash="def456",
             synced_at="2025-01-15T10:30:00Z",
         )
-        assert state.source_hash == "abc123"
-        assert state.target_hash == "def456"
         assert state.synced_at == "2025-01-15T10:30:00Z"
 
     def test_frozen_immutability(self) -> None:
-        state = ItemState(source_hash="abc")
+        state = ItemState(synced_at="abc")
         with pytest.raises(AttributeError):
-            state.source_hash = "changed"  # type: ignore[misc]
+            state.synced_at = "changed"  # type: ignore[misc]
 
 
 class TestPlatformState:
@@ -1679,14 +1422,14 @@ class TestPlatformState:
         assert ps.items == {}
 
     def test_custom_values(self) -> None:
-        item_state = ItemState(source_hash="abc")
+        item_state = ItemState(synced_at="2025-01-01T00:00:00Z")
         ps = PlatformState(
             path="/home/user/.config/opencode",
             items={"agent/coder": item_state},
         )
         assert ps.path == "/home/user/.config/opencode"
         assert "agent/coder" in ps.items
-        assert ps.items["agent/coder"].source_hash == "abc"
+        assert ps.items["agent/coder"].synced_at == "2025-01-01T00:00:00Z"
 
     def test_frozen_immutability(self) -> None:
         ps = PlatformState()
@@ -1737,25 +1480,6 @@ class TestCharsPerToken:
     def test_estimate_tokens_less_than_one_char_per_token(self) -> None:
         # Function guarantees at least 1 token for any non-empty string.
         assert estimate_tokens_from_content("abc") == 1
-
-
-# ---------------------------------------------------------------------------
-# compute_checksum_with_size — unsupported path type
-# ---------------------------------------------------------------------------
-
-
-class TestComputeChecksumWithSizeEdgeCases:
-    """Additional edge cases for compute_checksum_with_size."""
-
-    @pytest.mark.skipif(
-        sys.platform == "win32",
-        reason="FIFOs (named pipes) are not available on Windows",
-    )
-    def test_unsupported_path_type_raises(self, tmp_path: Path) -> None:
-        fifo = tmp_path / "pipe"
-        os.mkfifo(fifo)
-        with pytest.raises(SourceError, match="unsupported path type"):
-            compute_checksum_with_size(fifo)
 
 
 # ---------------------------------------------------------------------------

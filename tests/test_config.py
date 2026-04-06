@@ -9,7 +9,7 @@ from unittest import mock
 import pytest
 import yaml
 
-from syncode.config import (
+from agentfiles.config import (
     SyncodeConfig,
     _iter_config_search_paths,
     _read_yaml_file,
@@ -18,7 +18,7 @@ from syncode.config import (
     load_sync_state,
     save_sync_state,
 )
-from syncode.models import (
+from agentfiles.models import (
     ConfigError,
     PlatformState,
     SyncState,
@@ -36,7 +36,7 @@ def valid_yaml_content() -> str:
         {
             "default_platforms": ["opencode"],
             "use_symlinks": True,
-            "cache_dir": "/tmp/syncode-cache",
+            "cache_dir": "/tmp/agentfiles-cache",
             "custom_paths": {"opencode": "/custom/opencode"},
         }
     )
@@ -206,7 +206,7 @@ class TestLoad:
         config = SyncodeConfig.load(valid_config_file)
         assert config.default_platforms == ["opencode"]
         assert config.use_symlinks is True
-        assert config.cache_dir == "/tmp/syncode-cache"
+        assert config.cache_dir == "/tmp/agentfiles-cache"
         assert config.custom_paths == {"opencode": "/custom/opencode"}
 
     def test_load_explicit_nonexistent_raises(self) -> None:
@@ -553,7 +553,7 @@ class TestConfigLoadAllFields:
         data = {
             "default_platforms": ["opencode", "claude_code", "windsurf"],
             "use_symlinks": True,
-            "cache_dir": "/opt/syncode/cache",
+            "cache_dir": "/opt/agentfiles/cache",
             "custom_paths": {
                 "opencode": "/home/user/.config/opencode",
                 "claude_code": "/home/user/.claude",
@@ -566,7 +566,7 @@ class TestConfigLoadAllFields:
 
         assert config.default_platforms == ["opencode", "claude_code", "windsurf"]
         assert config.use_symlinks is True
-        assert config.cache_dir == "/opt/syncode/cache"
+        assert config.cache_dir == "/opt/agentfiles/cache"
         assert config.custom_paths == {
             "opencode": "/home/user/.config/opencode",
             "claude_code": "/home/user/.claude",
@@ -577,7 +577,7 @@ class TestConfigLoadAllFields:
         data = {
             "default_platforms": ["cursor"],
             "use_symlinks": False,
-            "cache_dir": "/var/cache/syncode",
+            "cache_dir": "/var/cache/agentfiles",
             "custom_paths": {"cursor": "/home/user/.cursor"},
         }
         cfg = tmp_path / ".agentfiles.yaml"
@@ -593,7 +593,7 @@ class TestConfigLoadAllFields:
 
         assert config.default_platforms == ["cursor"]
         assert config.use_symlinks is False
-        assert config.cache_dir == "/var/cache/syncode"
+        assert config.cache_dir == "/var/cache/agentfiles"
         assert config.custom_paths == {"cursor": "/home/user/.cursor"}
 
 

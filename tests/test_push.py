@@ -8,8 +8,8 @@ from unittest import mock
 
 import pytest
 
-from syncode.cli import _COMMAND_MAP, build_parser, cmd_push
-from syncode.models import Item, ItemType, Platform
+from agentfiles.cli import _COMMAND_MAP, build_parser, cmd_push
+from agentfiles.models import Item, ItemType, Platform
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -19,14 +19,12 @@ from syncode.models import Item, ItemType, Platform
 def _make_item(
     name: str = "coder",
     item_type: ItemType = ItemType.AGENT,
-    checksum: str = "a" * 64,
 ) -> Item:
     return Item(
         item_type=item_type,
         name=name,
         source_path=Path("/src") / item_type.plural / name,
         supported_platforms=(Platform.OPENCODE,),
-        checksum=checksum,
     )
 
 
@@ -129,14 +127,14 @@ class TestPushParser:
 class TestCmdPushIntegration:
     """Integration tests for cmd_push with mocked dependencies."""
 
-    @mock.patch("syncode.cli._apply_item_filter")
-    @mock.patch("syncode.cli._resolve_item_filter")
-    @mock.patch("syncode.cli._discover_installed_from_targets")
-    @mock.patch("syncode.cli._resolve_platforms")
-    @mock.patch("syncode.cli._resolve_item_types")
-    @mock.patch("syncode.cli._create_sync_pipeline")
-    @mock.patch("syncode.cli._get_source")
-    @mock.patch("syncode.config.SyncodeConfig.load")
+    @mock.patch("agentfiles.cli._apply_item_filter")
+    @mock.patch("agentfiles.cli._resolve_item_filter")
+    @mock.patch("agentfiles.cli._discover_installed_from_targets")
+    @mock.patch("agentfiles.cli._resolve_platforms")
+    @mock.patch("agentfiles.cli._resolve_item_types")
+    @mock.patch("agentfiles.cli._create_sync_pipeline")
+    @mock.patch("agentfiles.cli._get_source")
+    @mock.patch("agentfiles.config.SyncodeConfig.load")
     def test_push_no_installed_items(
         self,
         mock_config_load: mock.MagicMock,
@@ -171,14 +169,14 @@ class TestCmdPushIntegration:
         output = capsys.readouterr().out
         assert "No installed items" in output
 
-    @mock.patch("syncode.cli._apply_item_filter")
-    @mock.patch("syncode.cli._resolve_item_filter")
-    @mock.patch("syncode.cli._discover_installed_from_targets")
-    @mock.patch("syncode.cli._resolve_platforms")
-    @mock.patch("syncode.cli._resolve_item_types")
-    @mock.patch("syncode.cli._create_sync_pipeline")
-    @mock.patch("syncode.cli._get_source")
-    @mock.patch("syncode.config.SyncodeConfig.load")
+    @mock.patch("agentfiles.cli._apply_item_filter")
+    @mock.patch("agentfiles.cli._resolve_item_filter")
+    @mock.patch("agentfiles.cli._discover_installed_from_targets")
+    @mock.patch("agentfiles.cli._resolve_platforms")
+    @mock.patch("agentfiles.cli._resolve_item_types")
+    @mock.patch("agentfiles.cli._create_sync_pipeline")
+    @mock.patch("agentfiles.cli._get_source")
+    @mock.patch("agentfiles.config.SyncodeConfig.load")
     def test_push_non_interactive_success(
         self,
         mock_config_load: mock.MagicMock,
@@ -220,14 +218,14 @@ class TestCmdPushIntegration:
         assert result == 0
         engine.push.assert_called_once()
 
-    @mock.patch("syncode.cli._apply_item_filter")
-    @mock.patch("syncode.cli._resolve_item_filter")
-    @mock.patch("syncode.cli._discover_installed_from_targets")
-    @mock.patch("syncode.cli._resolve_platforms")
-    @mock.patch("syncode.cli._resolve_item_types")
-    @mock.patch("syncode.cli._create_sync_pipeline")
-    @mock.patch("syncode.cli._get_source")
-    @mock.patch("syncode.config.SyncodeConfig.load")
+    @mock.patch("agentfiles.cli._apply_item_filter")
+    @mock.patch("agentfiles.cli._resolve_item_filter")
+    @mock.patch("agentfiles.cli._discover_installed_from_targets")
+    @mock.patch("agentfiles.cli._resolve_platforms")
+    @mock.patch("agentfiles.cli._resolve_item_types")
+    @mock.patch("agentfiles.cli._create_sync_pipeline")
+    @mock.patch("agentfiles.cli._get_source")
+    @mock.patch("agentfiles.config.SyncodeConfig.load")
     def test_push_failure_returns_1(
         self,
         mock_config_load: mock.MagicMock,
@@ -267,14 +265,14 @@ class TestCmdPushIntegration:
 
         assert result == 1
 
-    @mock.patch("syncode.cli._apply_item_filter")
-    @mock.patch("syncode.cli._resolve_item_filter")
-    @mock.patch("syncode.cli._discover_installed_from_targets")
-    @mock.patch("syncode.cli._resolve_platforms")
-    @mock.patch("syncode.cli._resolve_item_types")
-    @mock.patch("syncode.cli._create_sync_pipeline")
-    @mock.patch("syncode.cli._get_source")
-    @mock.patch("syncode.config.SyncodeConfig.load")
+    @mock.patch("agentfiles.cli._apply_item_filter")
+    @mock.patch("agentfiles.cli._resolve_item_filter")
+    @mock.patch("agentfiles.cli._discover_installed_from_targets")
+    @mock.patch("agentfiles.cli._resolve_platforms")
+    @mock.patch("agentfiles.cli._resolve_item_types")
+    @mock.patch("agentfiles.cli._create_sync_pipeline")
+    @mock.patch("agentfiles.cli._get_source")
+    @mock.patch("agentfiles.config.SyncodeConfig.load")
     def test_push_dry_run_no_state_update(
         self,
         mock_config_load: mock.MagicMock,

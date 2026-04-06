@@ -1,4 +1,4 @@
-"""Tests for syncode.git module."""
+"""Tests for agentfiles.git module."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from syncode.git import (
+from agentfiles.git import (
     BranchInfo,
     GitError,
     GitNotFoundError,
@@ -29,7 +29,7 @@ from syncode.git import (
     list_branches,
     switch_branch,
 )
-from syncode.models import SyncodeError
+from agentfiles.models import SyncodeError
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -287,7 +287,7 @@ class TestGetCurrentBranch:
         git_dir.mkdir()
         (git_dir / "HEAD").write_text("ref: refs/heads/main\n")
 
-        with patch("syncode.git._run_git") as mock_git:
+        with patch("agentfiles.git._run_git") as mock_git:
             branch = get_current_branch(tmp_path)
 
         assert branch == "main"
@@ -302,7 +302,7 @@ class TestGetCurrentBranch:
             BranchInfo(name="cached-branch", is_current=True),
         ]
 
-        with patch("syncode.git._run_git") as mock_git:
+        with patch("agentfiles.git._run_git") as mock_git:
             branch = get_current_branch(tmp_path)
 
         assert branch == "cached-branch"
@@ -316,7 +316,7 @@ class TestGetCurrentBranch:
         mock_result.stdout = "main\n"
         mock_result.stderr = ""
 
-        with patch("syncode.git._run_git", return_value=mock_result) as mock_git:
+        with patch("agentfiles.git._run_git", return_value=mock_result) as mock_git:
             branch = get_current_branch(tmp_path)
 
         assert branch == "main"
@@ -330,7 +330,7 @@ class TestGetCurrentBranch:
         mock_result.stdout = ""
         mock_result.stderr = "fatal: not a git repository"
 
-        with patch("syncode.git._run_git", return_value=mock_result):
+        with patch("agentfiles.git._run_git", return_value=mock_result):
             branch = get_current_branch(tmp_path)
 
         assert branch == ""
@@ -348,7 +348,7 @@ class TestGetCurrentBranch:
         mock_result.stdout = "  develop  \n"
         mock_result.stderr = ""
 
-        with patch("syncode.git._run_git", return_value=mock_result):
+        with patch("agentfiles.git._run_git", return_value=mock_result):
             branch = get_current_branch(tmp_path)
 
         assert branch == "develop"
@@ -363,7 +363,7 @@ class TestGetCurrentBranch:
         mock_result.stdout = "HEAD\n"
         mock_result.stderr = ""
 
-        with patch("syncode.git._run_git", return_value=mock_result):
+        with patch("agentfiles.git._run_git", return_value=mock_result):
             branch = get_current_branch(tmp_path)
 
         assert branch == ""
@@ -385,7 +385,7 @@ class TestListBranches:
         mock_result.stdout = "* main\n  develop\n  feature/test\n"
         mock_result.stderr = ""
 
-        with patch("syncode.git._run_git", return_value=mock_result) as mock_git:
+        with patch("agentfiles.git._run_git", return_value=mock_result) as mock_git:
             branches = list_branches(tmp_path)
 
         assert len(branches) == 3
@@ -409,7 +409,7 @@ class TestListBranches:
         mock_result.stdout = ""
         mock_result.stderr = "fatal: not a git repository"
 
-        with patch("syncode.git._run_git", return_value=mock_result):
+        with patch("agentfiles.git._run_git", return_value=mock_result):
             branches = list_branches(tmp_path)
 
         assert branches == []
@@ -428,7 +428,7 @@ class TestListBranches:
         mock_result.stdout = "  zeta\n* main\n  alpha\n"
         mock_result.stderr = ""
 
-        with patch("syncode.git._run_git", return_value=mock_result):
+        with patch("agentfiles.git._run_git", return_value=mock_result):
             branches = list_branches(tmp_path)
 
         assert branches[0].name == "main"
@@ -444,7 +444,7 @@ class TestListBranches:
         mock_result.stdout = "* main\n  develop\n"
         mock_result.stderr = ""
 
-        with patch("syncode.git._run_git", return_value=mock_result) as mock_git:
+        with patch("agentfiles.git._run_git", return_value=mock_result) as mock_git:
             first = list_branches(tmp_path)
             second = list_branches(tmp_path)
 
@@ -460,7 +460,7 @@ class TestListBranches:
         mock_result.stdout = "* main\n"
         mock_result.stderr = ""
 
-        with patch("syncode.git._run_git", return_value=mock_result):
+        with patch("agentfiles.git._run_git", return_value=mock_result):
             result = list_branches(tmp_path)
 
         result.append(BranchInfo(name="injected", is_current=False))
@@ -492,7 +492,7 @@ class TestSwitchBranch:
         checkout_result.stderr = ""
 
         with patch(
-            "syncode.git._run_git", side_effect=[is_dirty_result, checkout_result]
+            "agentfiles.git._run_git", side_effect=[is_dirty_result, checkout_result]
         ) as mock_git:
             result = switch_branch(tmp_path, "develop")
 
@@ -506,14 +506,14 @@ class TestSwitchBranch:
         mock_result.returncode = 1
         mock_result.stderr = "error: pathspec 'nonexistent' did not match"
 
-        with patch("syncode.git._run_git", return_value=mock_result):
+        with patch("agentfiles.git._run_git", return_value=mock_result):
             result = switch_branch(tmp_path, "nonexistent")
 
         assert result is False
 
     def test_returns_false_when_not_git_repo(self, tmp_path: Path) -> None:
         """Should return False without calling git when path has no .git."""
-        with patch("syncode.git._run_git") as mock_git:
+        with patch("agentfiles.git._run_git") as mock_git:
             result = switch_branch(tmp_path, "develop")
 
         assert result is False
@@ -534,7 +534,7 @@ class TestSwitchBranch:
         checkout_result.returncode = 0
         checkout_result.stderr = ""
 
-        with patch("syncode.git._run_git", side_effect=[is_dirty_result, checkout_result]):
+        with patch("agentfiles.git._run_git", side_effect=[is_dirty_result, checkout_result]):
             switch_branch(tmp_path, "develop")
 
         assert _cache_key(tmp_path) not in _branch_cache
@@ -549,7 +549,7 @@ class TestSwitchBranch:
         mock_result.returncode = 1
         mock_result.stderr = "error"
 
-        with patch("syncode.git._run_git", return_value=mock_result):
+        with patch("agentfiles.git._run_git", return_value=mock_result):
             switch_branch(tmp_path, "nonexistent")
 
         assert _cache_key(tmp_path) in _branch_cache
@@ -570,7 +570,7 @@ class TestRunGit:
         mock_result.stdout = "ok"
         mock_result.stderr = ""
 
-        with patch("syncode.git.subprocess.run", return_value=mock_result) as mock_run:
+        with patch("agentfiles.git.subprocess.run", return_value=mock_result) as mock_run:
             result = _run_git("status")
 
         mock_run.assert_called_once()
@@ -589,7 +589,7 @@ class TestRunGit:
         mock_result.stdout = ""
         mock_result.stderr = ""
 
-        with patch("syncode.git.subprocess.run", return_value=mock_result) as mock_run:
+        with patch("agentfiles.git.subprocess.run", return_value=mock_result) as mock_run:
             _run_git("branch", "--list", cwd="/some/repo")
 
         assert mock_run.call_args[1]["cwd"] == "/some/repo"
@@ -601,7 +601,7 @@ class TestRunGit:
         mock_result.stdout = "output"
         mock_result.stderr = "errors"
 
-        with patch("syncode.git.subprocess.run", return_value=mock_result):
+        with patch("agentfiles.git.subprocess.run", return_value=mock_result):
             result = _run_git("log")
 
         assert result is mock_result
@@ -615,7 +615,7 @@ class TestRunGit:
         mock_result.stderr = "timeout"
         with (
             patch(
-                "syncode.git.subprocess.run",
+                "agentfiles.git.subprocess.run",
                 side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
             ),
             pytest.raises(GitError, match="timed out"),
@@ -629,7 +629,7 @@ class TestRunGit:
         mock_result.stdout = ""
         mock_result.stderr = ""
 
-        with patch("syncode.git.subprocess.run", return_value=mock_result) as mock_run:
+        with patch("agentfiles.git.subprocess.run", return_value=mock_result) as mock_run:
             _run_git(
                 "clone", "--depth", "1", "https://example.com/repo.git", "/tmp/repo", timeout=120
             )
@@ -647,7 +647,7 @@ class TestParseBranchOutput:
 
     def test_parses_current_branch(self) -> None:
         """Lines starting with '*' should be marked as current."""
-        from syncode.git import _parse_branch_output
+        from agentfiles.git import _parse_branch_output
 
         result = _parse_branch_output("* main")
         assert len(result) == 1
@@ -656,7 +656,7 @@ class TestParseBranchOutput:
 
     def test_parses_non_current_branch(self) -> None:
         """Lines with two-space indent should be marked as non-current."""
-        from syncode.git import _parse_branch_output
+        from agentfiles.git import _parse_branch_output
 
         result = _parse_branch_output("  develop")
         assert len(result) == 1
@@ -665,7 +665,7 @@ class TestParseBranchOutput:
 
     def test_parses_multiple_branches(self) -> None:
         """Should return all branches in the order they appear."""
-        from syncode.git import _parse_branch_output
+        from agentfiles.git import _parse_branch_output
 
         output = "* main\n  develop\n  feature/x\n"
         result = _parse_branch_output(output)
@@ -676,7 +676,7 @@ class TestParseBranchOutput:
 
     def test_ignores_empty_lines(self) -> None:
         """Blank lines should be skipped."""
-        from syncode.git import _parse_branch_output
+        from agentfiles.git import _parse_branch_output
 
         output = "* main\n\n\n  feature\n"
         result = _parse_branch_output(output)
@@ -684,7 +684,7 @@ class TestParseBranchOutput:
 
     def test_empty_string(self) -> None:
         """Empty input should produce an empty list."""
-        from syncode.git import _parse_branch_output
+        from agentfiles.git import _parse_branch_output
 
         assert _parse_branch_output("") == []
 
@@ -701,7 +701,7 @@ class TestExceptions:
         """GitError should be the base for all git exceptions."""
         assert issubclass(GitNotFoundError, GitError)
 
-    def test_git_error_inherits_syncode_error(self) -> None:
+    def test_git_error_inherits_agentfiles_error(self) -> None:
         """GitError should inherit from SyncodeError."""
         assert issubclass(GitError, SyncodeError)
 
@@ -723,7 +723,7 @@ class TestRunGitGitNotFound:
         """FileNotFoundError from subprocess should raise GitNotFoundError."""
         with (
             patch(
-                "syncode.git.subprocess.run",
+                "agentfiles.git.subprocess.run",
                 side_effect=FileNotFoundError("git not found"),
             ),
             pytest.raises(GitNotFoundError, match="git is not installed"),
@@ -734,7 +734,7 @@ class TestRunGitGitNotFound:
         """GitNotFoundError raised by _run_git should be a GitError."""
         with (
             patch(
-                "syncode.git.subprocess.run",
+                "agentfiles.git.subprocess.run",
                 side_effect=FileNotFoundError("git not found"),
             ),
             pytest.raises(GitError),
@@ -745,7 +745,7 @@ class TestRunGitGitNotFound:
         """The original FileNotFoundError should be chained as __cause__."""
         original = FileNotFoundError("git not found")
         with (
-            patch("syncode.git.subprocess.run", side_effect=original),
+            patch("agentfiles.git.subprocess.run", side_effect=original),
             pytest.raises(GitNotFoundError) as exc_info,
         ):
             _run_git("branch", "--list")
@@ -813,7 +813,7 @@ class TestIsDirty:
         mock_result.stdout = "M file.py\n"
         mock_result.stderr = ""
 
-        with patch("syncode.git._run_git", return_value=mock_result):
+        with patch("agentfiles.git._run_git", return_value=mock_result):
             assert is_dirty(tmp_path) is True
 
     def test_returns_false_when_clean(self, tmp_path: Path) -> None:
@@ -824,7 +824,7 @@ class TestIsDirty:
         mock_result.stdout = ""
         mock_result.stderr = ""
 
-        with patch("syncode.git._run_git", return_value=mock_result):
+        with patch("agentfiles.git._run_git", return_value=mock_result):
             assert is_dirty(tmp_path) is False
 
     def test_returns_false_when_not_git_repo(self, tmp_path: Path) -> None:
@@ -839,7 +839,7 @@ class TestIsDirty:
         mock_result.stdout = ""
         mock_result.stderr = "fatal: not a git repository"
 
-        with patch("syncode.git._run_git", return_value=mock_result):
+        with patch("agentfiles.git._run_git", return_value=mock_result):
             assert is_dirty(tmp_path) is False
 
 
@@ -921,8 +921,8 @@ class TestSwitchBranchErrorClassification:
         )
 
         with (
-            patch("syncode.git._run_git", return_value=mock_result),
-            patch("syncode.git.logger") as mock_logger,
+            patch("agentfiles.git._run_git", return_value=mock_result),
+            patch("agentfiles.git.logger") as mock_logger,
         ):
             result = switch_branch(tmp_path, "develop")
 
@@ -941,8 +941,8 @@ class TestSwitchBranchErrorClassification:
         mock_result.stderr = "CONFLICT (content): Merge conflict in src/main.py"
 
         with (
-            patch("syncode.git._run_git", return_value=mock_result),
-            patch("syncode.git.logger") as mock_logger,
+            patch("agentfiles.git._run_git", return_value=mock_result),
+            patch("agentfiles.git.logger") as mock_logger,
         ):
             result = switch_branch(tmp_path, "develop")
 
@@ -960,8 +960,8 @@ class TestSwitchBranchErrorClassification:
         mock_result.stderr = "error: pathspec 'xyz' did not match any file(s) known to git"
 
         with (
-            patch("syncode.git._run_git", return_value=mock_result),
-            patch("syncode.git.logger") as mock_logger,
+            patch("agentfiles.git._run_git", return_value=mock_result),
+            patch("agentfiles.git.logger") as mock_logger,
         ):
             result = switch_branch(tmp_path, "xyz")
 
@@ -979,8 +979,8 @@ class TestSwitchBranchErrorClassification:
         mock_result.stderr = "some completely novel error"
 
         with (
-            patch("syncode.git._run_git", return_value=mock_result),
-            patch("syncode.git.logger") as mock_logger,
+            patch("agentfiles.git._run_git", return_value=mock_result),
+            patch("agentfiles.git.logger") as mock_logger,
         ):
             result = switch_branch(tmp_path, "develop")
 
@@ -1008,8 +1008,8 @@ class TestSwitchBranchDirtyPreCheck:
         dirty_result.stderr = ""
 
         with (
-            patch("syncode.git._run_git", return_value=dirty_result),
-            patch("syncode.git.logger") as mock_logger,
+            patch("agentfiles.git._run_git", return_value=dirty_result),
+            patch("agentfiles.git.logger") as mock_logger,
         ):
             result = switch_branch(tmp_path, "develop")
 
@@ -1026,7 +1026,7 @@ class TestSwitchBranchDirtyPreCheck:
         dirty_result.stdout = "?? untracked.txt\n"
         dirty_result.stderr = ""
 
-        with patch("syncode.git._run_git", return_value=dirty_result) as mock_git:
+        with patch("agentfiles.git._run_git", return_value=dirty_result) as mock_git:
             switch_branch(tmp_path, "develop")
 
         # Only the is_dirty call — no checkout attempt.
@@ -1047,7 +1047,7 @@ class TestGetCurrentBranchDetachedHead:
         (tmp_path / ".git").mkdir()
         (tmp_path / ".git" / "HEAD").write_text("a1b2c3d4e5f6\n")
 
-        with patch("syncode.git.logger") as mock_logger:
+        with patch("agentfiles.git.logger") as mock_logger:
             branch = get_current_branch(tmp_path)
 
         assert branch == ""
@@ -1150,8 +1150,8 @@ class TestSwitchBranchEdgeCases:
         """Should propagate GitNotFoundError when _run_git raises it."""
         (tmp_path / ".git").mkdir()
         with (
-            patch("syncode.git._run_git", side_effect=GitNotFoundError("git not found")),
-            patch("syncode.git.logger"),
+            patch("agentfiles.git._run_git", side_effect=GitNotFoundError("git not found")),
+            patch("agentfiles.git.logger"),
             pytest.raises(GitNotFoundError),
         ):
             switch_branch(tmp_path, "develop")
@@ -1169,7 +1169,7 @@ class TestSwitchBranchEdgeCases:
         checkout_result.stderr = "error: empty string not allowed"
 
         with patch(
-            "syncode.git._run_git", side_effect=[is_dirty_result, checkout_result]
+            "agentfiles.git._run_git", side_effect=[is_dirty_result, checkout_result]
         ) as mock_git:
             result = switch_branch(tmp_path, "")
 
@@ -1191,7 +1191,7 @@ class TestSwitchBranchEdgeCases:
         checkout_result.stderr = "Already on 'main'"
 
         with patch(
-            "syncode.git._run_git", side_effect=[is_dirty_result, checkout_result]
+            "agentfiles.git._run_git", side_effect=[is_dirty_result, checkout_result]
         ) as mock_git:
             result = switch_branch(tmp_path, "main")
 
@@ -1258,7 +1258,7 @@ class TestCacheInvalidationEdgeCases:
 
         with (
             patch(
-                "syncode.git._run_git",
+                "agentfiles.git._run_git",
                 side_effect=[first_result, is_dirty_result, checkout_result, second_result],
             ),
         ):
@@ -1281,11 +1281,11 @@ class TestCacheInvalidationEdgeCases:
         mock_result.stdout = "* cached-branch\n  other\n"
         mock_result.stderr = ""
 
-        with patch("syncode.git._run_git", return_value=mock_result):
+        with patch("agentfiles.git._run_git", return_value=mock_result):
             list_branches(tmp_path)
 
         # Now get_current_branch should use cache without subprocess.
-        with patch("syncode.git._run_git") as mock_git:
+        with patch("agentfiles.git._run_git") as mock_git:
             branch = get_current_branch(tmp_path)
 
         assert branch == "cached-branch"
@@ -1341,7 +1341,7 @@ class TestIsDirtyEdgeCases:
         """Should propagate GitNotFoundError from _run_git."""
         (tmp_path / ".git").mkdir()
         with (
-            patch("syncode.git._run_git", side_effect=GitNotFoundError("git not found")),
+            patch("agentfiles.git._run_git", side_effect=GitNotFoundError("git not found")),
             pytest.raises(GitNotFoundError),
         ):
             is_dirty(tmp_path)
@@ -1354,7 +1354,7 @@ class TestIsDirtyEdgeCases:
         mock_result.stdout = "M file1.py\n?? file2.py\nA file3.py\n"
         mock_result.stderr = ""
 
-        with patch("syncode.git._run_git", return_value=mock_result):
+        with patch("agentfiles.git._run_git", return_value=mock_result):
             assert is_dirty(tmp_path) is True
 
     def test_only_staged_changes(self, tmp_path: Path) -> None:
@@ -1365,7 +1365,7 @@ class TestIsDirtyEdgeCases:
         mock_result.stdout = "A  new_file.py\n"
         mock_result.stderr = ""
 
-        with patch("syncode.git._run_git", return_value=mock_result):
+        with patch("agentfiles.git._run_git", return_value=mock_result):
             assert is_dirty(tmp_path) is True
 
     def test_whitespace_only_output_is_clean(self, tmp_path: Path) -> None:
@@ -1376,7 +1376,7 @@ class TestIsDirtyEdgeCases:
         mock_result.stdout = "   \n"
         mock_result.stderr = ""
 
-        with patch("syncode.git._run_git", return_value=mock_result):
+        with patch("agentfiles.git._run_git", return_value=mock_result):
             assert is_dirty(tmp_path) is False
 
     def test_passes_correct_args_to_git(self, tmp_path: Path) -> None:
@@ -1387,7 +1387,7 @@ class TestIsDirtyEdgeCases:
         mock_result.stdout = ""
         mock_result.stderr = ""
 
-        with patch("syncode.git._run_git", return_value=mock_result) as mock_git:
+        with patch("agentfiles.git._run_git", return_value=mock_result) as mock_git:
             is_dirty(tmp_path)
 
         mock_git.assert_called_once_with("status", "--porcelain", cwd=str(tmp_path))
@@ -1403,7 +1403,7 @@ class TestParseBranchOutputEdgeCases:
 
     def test_branch_with_slash_in_name(self) -> None:
         """Branch names containing slashes (e.g. feature/auth) should be preserved."""
-        from syncode.git import _parse_branch_output
+        from agentfiles.git import _parse_branch_output
 
         result = _parse_branch_output("* feature/auth\n  bugfix/issue-42\n")
         assert len(result) == 2
@@ -1412,7 +1412,7 @@ class TestParseBranchOutputEdgeCases:
 
     def test_line_with_only_prefix_chars(self) -> None:
         """A line with only '* ' should be skipped (empty name after strip)."""
-        from syncode.git import _parse_branch_output
+        from agentfiles.git import _parse_branch_output
 
         result = _parse_branch_output("* \n  main\n")
         # "* " → name is "" after line[2:].strip() → skipped
@@ -1421,7 +1421,7 @@ class TestParseBranchOutputEdgeCases:
 
     def test_no_current_branch_in_output(self) -> None:
         """All branches as non-current (e.g. detached HEAD)."""
-        from syncode.git import _parse_branch_output
+        from agentfiles.git import _parse_branch_output
 
         result = _parse_branch_output("  develop\n  staging\n")
         assert len(result) == 2
@@ -1429,7 +1429,7 @@ class TestParseBranchOutputEdgeCases:
 
     def test_single_current_branch_only(self) -> None:
         """Output with only the current branch."""
-        from syncode.git import _parse_branch_output
+        from agentfiles.git import _parse_branch_output
 
         result = _parse_branch_output("* main\n")
         assert len(result) == 1
@@ -1438,7 +1438,7 @@ class TestParseBranchOutputEdgeCases:
 
     def test_branch_name_with_hyphens_and_dots(self) -> None:
         """Branch names with hyphens, dots, and numbers should be preserved."""
-        from syncode.git import _parse_branch_output
+        from agentfiles.git import _parse_branch_output
 
         result = _parse_branch_output("  release-1.2.3\n")
         assert result[0].name == "release-1.2.3"
@@ -1491,7 +1491,7 @@ class TestLogSwitchFailure:
         mock_result.returncode = 1
         mock_result.stderr = "error: pathspec 'x' did not match any file(s) known to git"
 
-        with patch("syncode.git.logger") as mock_logger:
+        with patch("agentfiles.git.logger") as mock_logger:
             _log_switch_failure("x", Path("/repo"), mock_result)
 
         warning_calls = mock_logger.warning.call_args_list
@@ -1504,7 +1504,7 @@ class TestLogSwitchFailure:
         mock_result.returncode = 42
         mock_result.stderr = "some totally unknown error"
 
-        with patch("syncode.git.logger") as mock_logger:
+        with patch("agentfiles.git.logger") as mock_logger:
             _log_switch_failure("branch", Path("/repo"), mock_result)
 
         warning_calls = mock_logger.warning.call_args_list
@@ -1529,7 +1529,7 @@ class TestGetCurrentBranchEdgeCases:
         (wt_dir / "HEAD").write_text("ref: refs/heads/feature/x\n")
         (tmp_path / ".git").write_text(f"gitdir: {wt_dir}")
 
-        with patch("syncode.git._run_git") as mock_git:
+        with patch("agentfiles.git._run_git") as mock_git:
             branch = get_current_branch(tmp_path)
 
         assert branch == "feature/x"
@@ -1545,14 +1545,14 @@ class TestGetCurrentBranchEdgeCases:
         mock_result.stdout = "(HEAD detached at deadbeef)\n"
         mock_result.stderr = ""
 
-        with patch("syncode.git._run_git", return_value=mock_result):
+        with patch("agentfiles.git._run_git", return_value=mock_result):
             branch = get_current_branch(tmp_path)
 
         assert branch == ""
 
     def test_logs_debug_when_not_git_repo(self, tmp_path: Path) -> None:
         """Should log a debug message when path is not a git repo."""
-        with patch("syncode.git.logger") as mock_logger:
+        with patch("agentfiles.git.logger") as mock_logger:
             get_current_branch(tmp_path)
 
         debug_calls = [

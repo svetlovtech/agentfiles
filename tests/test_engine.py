@@ -10,8 +10,8 @@ from unittest import mock
 
 import pytest
 
-from syncode.engine import SyncEngine, SyncReport, SyncTarget, _copy_item, _remove_item
-from syncode.models import (
+from agentfiles.engine import SyncEngine, SyncReport, SyncTarget, _copy_item, _remove_item
+from agentfiles.models import (
     Item,
     ItemState,
     ItemType,
@@ -21,10 +21,9 @@ from syncode.models import (
     SyncPlan,
     SyncResult,
     SyncState,
-    compute_checksum,
     resolve_target_name,
 )
-from syncode.target import TargetDiscovery, TargetManager
+from agentfiles.target import TargetDiscovery, TargetManager
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -75,7 +74,6 @@ def _make_dir_item(
     name: str,
     item_type: ItemType = ItemType.SKILL,
     source_dir: Path | None = None,
-    checksum: str = "",
     platforms: tuple[Platform, ...] = (Platform.OPENCODE, Platform.CLAUDE_CODE),
 ) -> Item:
     """Create a directory-based Item for testing."""
@@ -84,7 +82,6 @@ def _make_dir_item(
         item_type=item_type,
         name=name,
         source_path=src,
-        checksum=checksum,
         files=("SKILL.md",) if item_type == ItemType.SKILL else (),
         supported_platforms=platforms,
     )
@@ -94,7 +91,6 @@ def _make_file_item(
     name: str,
     item_type: ItemType = ItemType.AGENT,
     source_path: Path | None = None,
-    checksum: str = "",
     platforms: tuple[Platform, ...] = (Platform.OPENCODE, Platform.CLAUDE_CODE),
 ) -> Item:
     """Create a file-based Item for testing."""
@@ -103,7 +99,6 @@ def _make_file_item(
         item_type=item_type,
         name=name,
         source_path=src,
-        checksum=checksum,
         files=(f"{name}.md",),
         supported_platforms=platforms,
     )
@@ -321,7 +316,7 @@ class TestPlanSync:
 
     def test_plan_install_new_item(self, target_manager: TargetManager) -> None:
         engine = SyncEngine(target_manager)
-        item = _make_dir_item("new-skill", checksum="abc123")
+        item = _make_dir_item("new-skill")
 
         plans = engine.plan_sync(
             [item],
@@ -336,19 +331,15 @@ class TestPlanSync:
     def test_plan_skip_up_to_date(
         self, target_manager: TargetManager, fake_home: SimpleNamespace
     ) -> None:
-        # Pre-install a skill directory with content that matches the source.
+        # Pre-install a skill directory — engine sees it as already installed.
         skill_dir = fake_home.opencode / "skill" / "existing-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text("content")
-
-        # Use the actual checksum so the engine sees the target as current.
-        actual_checksum = compute_checksum(skill_dir)
 
         engine = SyncEngine(target_manager)
         item = _make_dir_item(
             "existing-skill",
             source_dir=skill_dir,
-            checksum=actual_checksum,
         )
 
         plans = engine.plan_sync(
@@ -360,10 +351,10 @@ class TestPlanSync:
         assert len(plans) == 1
         assert plans[0].action == SyncAction.SKIP
 
-    def test_plan_update_differs(
+    def test_plan_skip_when_installed_different_content(
         self, target_manager: TargetManager, fake_home: SimpleNamespace
     ) -> None:
-        # Pre-install with different content.
+        # Pre-install with different content — engine only checks existence.
         skill_dir = fake_home.opencode / "skill" / "changed-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text("old content")
@@ -372,14 +363,10 @@ class TestPlanSync:
         src_dir.mkdir(parents=True)
         (src_dir / "SKILL.md").write_text("new content")
 
-        # Use the actual source checksum so the comparison is deterministic.
-        source_checksum = compute_checksum(src_dir)
-
         engine = SyncEngine(target_manager)
         item = _make_dir_item(
             "changed-skill",
             source_dir=src_dir,
-            checksum=source_checksum,
         )
 
         plans = engine.plan_sync(
@@ -388,8 +375,9 @@ class TestPlanSync:
             action=SyncAction.INSTALL,
         )
 
+        # Engine only checks existence, so installed item → SKIP
         assert len(plans) == 1
-        assert plans[0].action == SyncAction.UPDATE
+        assert plans[0].action == SyncAction.SKIP
 
     def test_plan_uninstall_installed(
         self, target_manager: TargetManager, fake_home: SimpleNamespace
@@ -522,7 +510,6 @@ class TestExecutePlan:
             item_type=ItemType.SKILL,
             name="my-skill",
             source_path=src_dir,
-            checksum="abc",
             files=("SKILL.md",),
             supported_platforms=(Platform.OPENCODE,),
         )
@@ -557,7 +544,6 @@ class TestExecutePlan:
             item_type=ItemType.SKILL,
             name="old-skill",
             source_path=tmp_path / "src",
-            checksum="x",
             supported_platforms=(Platform.OPENCODE,),
         )
         plan = SyncPlan(
@@ -586,7 +572,6 @@ class TestExecutePlan:
             item_type=ItemType.SKILL,
             name="symlink-skill",
             source_path=src_dir,
-            checksum="abc",
             files=("SKILL.md",),
             supported_platforms=(Platform.OPENCODE,),
         )
@@ -627,7 +612,6 @@ class TestExecutePlan:
                 item_type=ItemType.SKILL,
                 name="good-skill",
                 source_path=good_src,
-                checksum="abc",
                 files=("SKILL.md",),
                 supported_platforms=(Platform.OPENCODE,),
             ),
@@ -640,7 +624,6 @@ class TestExecutePlan:
                 item_type=ItemType.SKILL,
                 name="bad-skill",
                 source_path=bad_src,
-                checksum="xyz",
                 files=(),
                 supported_platforms=(Platform.OPENCODE,),
             ),
@@ -677,22 +660,13 @@ class TestExecutePlan:
                 item_type=ItemType.SKILL,
                 name="update-skill",
                 source_path=new_src,
-                checksum="new",
                 files=("SKILL.md",),
                 supported_platforms=(Platform.OPENCODE,),
             ),
             action=SyncAction.UPDATE,
             target_dir=target_dir,
-            reason="checksum differs",
+            reason="content differs",
         )
-        engine = SyncEngine(target_manager)
-        results = engine.execute_plan([plan])
-
-        assert len(results) == 1
-        assert results[0].is_success is True
-        # Old file should be gone.
-        assert not (old_dest / "old.txt").exists()
-        assert (old_dest / "SKILL.md").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -716,7 +690,6 @@ class TestSync:
             item_type=ItemType.SKILL,
             name="skill-a",
             source_path=src_a,
-            checksum="hash_a",
             files=("SKILL.md",),
             supported_platforms=(Platform.OPENCODE,),
         )
@@ -739,7 +712,6 @@ class TestSync:
             item_type=ItemType.SKILL,
             name="dry-skill",
             source_path=src,
-            checksum="h",
             files=("SKILL.md",),
             supported_platforms=(Platform.OPENCODE,),
         )
@@ -1031,7 +1003,7 @@ class TestAggregate:
 
 
 class TestComputeSyncPlan:
-    """Tests for the three-way sync plan computation."""
+    """Tests for sync plan computation (existence-based)."""
 
     def test_new_item_in_source(
         self,
@@ -1044,7 +1016,6 @@ class TestComputeSyncPlan:
             item_type=ItemType.AGENT,
             name="new-agent",
             source_path=Path("/src/new-agent.md"),
-            checksum="abc123",
             supported_platforms=(Platform.OPENCODE,),
         )
         state = SyncState()
@@ -1060,42 +1031,25 @@ class TestComputeSyncPlan:
         assert len(plan) == 1
         assert plan[0][2] == "pull"
 
-    def test_item_unchanged(
+    def test_installed_item_skip(
         self,
         target_manager: TargetManager,
         fake_home: SimpleNamespace,
         tmp_path: Path,
     ) -> None:
-        """Source and target have same checksum as state -> skip."""
+        """Item exists at target -> skip."""
         agent_dir = fake_home.opencode / "agent"
-        target_file = agent_dir / "unchanged.md"
-        target_file.write_text("# Same")
-
-        source_hash = "stable_source_hash"
-        target_hash = compute_checksum(target_file)
+        target_file = agent_dir / "existing.md"
+        target_file.write_text("# Existing")
 
         item = Item(
             item_type=ItemType.AGENT,
-            name="unchanged",
-            source_path=Path("/src/unchanged.md"),
-            checksum=source_hash,
+            name="existing",
+            source_path=Path("/src/existing.md"),
             supported_platforms=(Platform.OPENCODE,),
         )
 
-        item_key = "agent/unchanged"
-        state = SyncState(
-            platforms={
-                Platform.OPENCODE.value: PlatformState(
-                    path=str(fake_home.opencode),
-                    items={
-                        item_key: ItemState(
-                            source_hash=source_hash,
-                            target_hash=target_hash,
-                        ),
-                    },
-                ),
-            },
-        )
+        state = SyncState()
 
         engine = SyncEngine(target_manager)
         plan = engine.compute_sync_plan(
@@ -1107,164 +1061,6 @@ class TestComputeSyncPlan:
 
         assert len(plan) == 1
         assert plan[0][2] == "skip"
-
-    def test_source_changed_only(
-        self,
-        target_manager: TargetManager,
-        fake_home: SimpleNamespace,
-        tmp_path: Path,
-    ) -> None:
-        """Source changed, target unchanged -> pull."""
-        agent_dir = fake_home.opencode / "agent"
-        target_file = agent_dir / "src-changed.md"
-        target_file.write_text("# Original")
-        target_hash = compute_checksum(target_file)
-
-        item = Item(
-            item_type=ItemType.AGENT,
-            name="src-changed",
-            source_path=Path("/src/src-changed.md"),
-            checksum="new_source_hash",
-            supported_platforms=(Platform.OPENCODE,),
-        )
-
-        item_key = "agent/src-changed"
-        state = SyncState(
-            platforms={
-                Platform.OPENCODE.value: PlatformState(
-                    path=str(fake_home.opencode),
-                    items={
-                        item_key: ItemState(
-                            source_hash="old_source_hash",
-                            target_hash=target_hash,
-                        ),
-                    },
-                ),
-            },
-        )
-
-        engine = SyncEngine(target_manager)
-        plan = engine.compute_sync_plan(
-            [item],
-            [Platform.OPENCODE],
-            state,
-            tmp_path / "src",
-        )
-
-        assert len(plan) == 1
-        assert plan[0][2] == "pull"
-
-    def test_target_changed_only(
-        self,
-        target_manager: TargetManager,
-        fake_home: SimpleNamespace,
-        tmp_path: Path,
-    ) -> None:
-        """Target changed, source unchanged -> push."""
-        source_hash = "stable_source_hash"
-
-        agent_dir = fake_home.opencode / "agent"
-        target_file = agent_dir / "tgt-changed.md"
-        target_file.write_text("# User Modified")
-
-        item = Item(
-            item_type=ItemType.AGENT,
-            name="tgt-changed",
-            source_path=Path("/src/tgt-changed.md"),
-            checksum=source_hash,
-            supported_platforms=(Platform.OPENCODE,),
-        )
-
-        item_key = "agent/tgt-changed"
-        state = SyncState(
-            platforms={
-                Platform.OPENCODE.value: PlatformState(
-                    path=str(fake_home.opencode),
-                    items={
-                        item_key: ItemState(
-                            source_hash=source_hash,
-                            target_hash="old_target_hash",
-                        ),
-                    },
-                ),
-            },
-        )
-
-        engine = SyncEngine(target_manager)
-        plan = engine.compute_sync_plan(
-            [item],
-            [Platform.OPENCODE],
-            state,
-            tmp_path / "src",
-        )
-
-        assert len(plan) == 1
-        assert plan[0][2] == "push"
-
-    def test_both_changed_conflict(
-        self,
-        target_manager: TargetManager,
-        fake_home: SimpleNamespace,
-        tmp_path: Path,
-    ) -> None:
-        """Both source and target changed differently -> conflict."""
-        agent_dir = fake_home.opencode / "agent"
-        target_file = agent_dir / "conflict.md"
-        target_file.write_text("# Target Changed")
-
-        item = Item(
-            item_type=ItemType.AGENT,
-            name="conflict",
-            source_path=Path("/src/conflict.md"),
-            checksum="new_source_hash",
-            supported_platforms=(Platform.OPENCODE,),
-        )
-
-        item_key = "agent/conflict"
-        state = SyncState(
-            platforms={
-                Platform.OPENCODE.value: PlatformState(
-                    path=str(fake_home.opencode),
-                    items={
-                        item_key: ItemState(
-                            source_hash="old_source_hash",
-                            target_hash="old_target_hash",
-                        ),
-                    },
-                ),
-            },
-        )
-
-        engine = SyncEngine(target_manager)
-        plan = engine.compute_sync_plan(
-            [item],
-            [Platform.OPENCODE],
-            state,
-            tmp_path / "src",
-        )
-
-        assert len(plan) == 1
-        assert plan[0][2] == "conflict"
-
-
-# ---------------------------------------------------------------------------
-# SyncEngine — _resolve_target_hash
-# ---------------------------------------------------------------------------
-
-
-class TestResolveTargetHash:
-    """Tests for SyncEngine._resolve_target_hash static method."""
-
-    def test_regular_file(self, tmp_path: Path) -> None:
-        f = tmp_path / "test.md"
-        f.write_text("hello")
-        result = SyncEngine._resolve_target_hash(f)
-        assert result != ""
-        assert len(result) == 64  # SHA-256 hex digest
-
-    def test_nonexistent_path(self) -> None:
-        result = SyncEngine._resolve_target_hash(Path("/nonexistent"))
-        assert result == ""
 
 
 # ---------------------------------------------------------------------------
@@ -1365,7 +1161,7 @@ class TestAtomicCopyErrorHandling:
         dest = tmp_path / "dest.txt"
 
         with (
-            mock.patch("syncode.engine._remove_item", return_value=(False, "permission denied")),
+            mock.patch("agentfiles.engine._remove_item", return_value=(False, "permission denied")),
             mock.patch("os.path.lexists", return_value=True),
         ):
             files_copied, err = SyncEngine._atomic_copy_to(source, dest, use_symlinks=False)
@@ -1463,7 +1259,7 @@ class TestAtomicCopyErrorHandling:
 
         with (
             mock.patch.object(Path, "rename", selective_rename),
-            mock.patch("syncode.engine.logger") as mock_logger,
+            mock.patch("agentfiles.engine.logger") as mock_logger,
         ):
             files_copied, err = SyncEngine._atomic_copy_to(source, dest, use_symlinks=False)
 
@@ -1503,8 +1299,8 @@ class TestAtomicCopyErrorHandling:
             return original_remove(path)
 
         with (
-            mock.patch("syncode.engine._remove_item", side_effect=selective_remove),
-            mock.patch("syncode.engine.logger") as mock_logger,
+            mock.patch("agentfiles.engine._remove_item", side_effect=selective_remove),
+            mock.patch("agentfiles.engine.logger") as mock_logger,
         ):
             files_copied, err = SyncEngine._atomic_copy_to(source, dest, use_symlinks=False)
 
@@ -1565,7 +1361,9 @@ class TestExecuteInstallErrorHandling:
         stale = target_dir / "source.txt"
         stale.write_text("stale")
 
-        with mock.patch("syncode.engine._remove_item", return_value=(False, "permission denied")):
+        with mock.patch(
+            "agentfiles.engine._remove_item", return_value=(False, "permission denied")
+        ):
             engine = SyncEngine(mock.Mock(spec=SyncTarget))
             result = engine._execute_install(plan)
 
@@ -1683,7 +1481,6 @@ class TestMixedActionBatch:
             item_type=ItemType.SKILL,
             name="new-skill",
             source_path=install_src,
-            checksum="hash_new",
             files=("SKILL.md",),
             supported_platforms=(Platform.OPENCODE,),
         )
@@ -1693,7 +1490,6 @@ class TestMixedActionBatch:
             item_type=ItemType.SKILL,
             name="skip-me",
             source_path=Path("/src/skip-me"),
-            checksum="abc",
             supported_platforms=(Platform.OPENCODE,),
         )
 
@@ -1708,7 +1504,6 @@ class TestMixedActionBatch:
             item_type=ItemType.SKILL,
             name="update-skill",
             source_path=update_src,
-            checksum="hash_update",
             files=("SKILL.md",),
             supported_platforms=(Platform.OPENCODE,),
         )
@@ -1721,7 +1516,6 @@ class TestMixedActionBatch:
             item_type=ItemType.SKILL,
             name="remove-skill",
             source_path=Path("/src/remove-skill"),
-            checksum="x",
             supported_platforms=(Platform.OPENCODE,),
         )
 
@@ -1742,7 +1536,7 @@ class TestMixedActionBatch:
                 item=update_item,
                 action=SyncAction.UPDATE,
                 target_dir=skill_dir,
-                reason="checksum differs",
+                reason="content differs",
             ),
             SyncPlan(
                 item=uninstall_item,
@@ -1801,7 +1595,6 @@ class TestExecuteUpdate:
             item_type=ItemType.SKILL,
             name="up-skill",
             source_path=new_src,
-            checksum="new_hash",
             files=("SKILL.md",),
             supported_platforms=(Platform.OPENCODE,),
         )
@@ -1809,7 +1602,7 @@ class TestExecuteUpdate:
             item=item,
             action=SyncAction.UPDATE,
             target_dir=target_dir,
-            reason="checksum differs",
+            reason="content differs",
         )
         engine = SyncEngine(target_manager)
         results = engine.execute_plan([plan])
@@ -1839,7 +1632,6 @@ class TestExecuteUpdate:
             item_type=ItemType.AGENT,
             name="my-agent",
             source_path=new_src,
-            checksum="new_hash",
             files=("my-agent.md",),
             supported_platforms=(Platform.OPENCODE,),
         )
@@ -1847,7 +1639,7 @@ class TestExecuteUpdate:
             item=item,
             action=SyncAction.UPDATE,
             target_dir=target_dir,
-            reason="checksum differs",
+            reason="content differs",
         )
         engine = SyncEngine(target_manager, use_symlinks=True)
         results = engine.execute_plan([plan])
@@ -1876,7 +1668,6 @@ class TestExecuteUninstallFailure:
             item_type=ItemType.SKILL,
             name="protected",
             source_path=Path("/src/protected"),
-            checksum="x",
             supported_platforms=(Platform.OPENCODE,),
         )
         plan = SyncPlan(
@@ -1886,7 +1677,9 @@ class TestExecuteUninstallFailure:
             reason="removal",
         )
 
-        with mock.patch("syncode.engine._remove_item", return_value=(False, "permission denied")):
+        with mock.patch(
+            "agentfiles.engine._remove_item", return_value=(False, "permission denied")
+        ):
             engine = SyncEngine(target_manager)
             result = engine._execute_uninstall(plan)
 
@@ -1914,17 +1707,17 @@ class TestPlanSyncUpdateAction:
         # Not installed → _plan_install_or_update returns None for UPDATE.
         assert len(plans) == 0
 
-    def test_update_action_plans_update_for_installed(
+    def test_update_action_skips_installed(
         self,
         target_manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
-        """Installed items with different checksum should plan UPDATE."""
+        """Installed items are always SKIP regardless of content."""
         skill_dir = fake_home.opencode / "skill" / "diff-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text("old")
 
-        item = _make_dir_item("diff-skill", checksum="new_checksum")
+        item = _make_dir_item("diff-skill")
         engine = SyncEngine(target_manager)
         plans = engine.plan_sync(
             [item],
@@ -1933,20 +1726,19 @@ class TestPlanSyncUpdateAction:
         )
 
         assert len(plans) == 1
-        assert plans[0].action == SyncAction.UPDATE
+        assert plans[0].action == SyncAction.SKIP
 
     def test_update_action_skips_up_to_date(
         self,
         target_manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
-        """Installed items with matching checksum should plan SKIP."""
+        """Installed items are SKIP — engine only checks existence."""
         skill_dir = fake_home.opencode / "skill" / "same-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text("content")
-        actual_checksum = compute_checksum(skill_dir)
 
-        item = _make_dir_item("same-skill", checksum=actual_checksum)
+        item = _make_dir_item("same-skill")
         engine = SyncEngine(target_manager)
         plans = engine.plan_sync(
             [item],
@@ -2074,43 +1866,6 @@ class TestAtomicCopyExistingBackup:
 
 
 # ---------------------------------------------------------------------------
-# _resolve_target_hash — symlink edge cases
-# ---------------------------------------------------------------------------
-
-
-class TestResolveTargetHashSymlink:
-    """Tests for _resolve_target_hash with symlinks."""
-
-    def test_valid_symlink(self, tmp_path: Path) -> None:
-        real_file = tmp_path / "real.txt"
-        real_file.write_text("hello")
-        link = tmp_path / "link.txt"
-        link.symlink_to(real_file)
-
-        result = SyncEngine._resolve_target_hash(link)
-        assert result != ""
-        assert len(result) == 64
-
-    def test_broken_symlink(self, tmp_path: Path) -> None:
-        link = tmp_path / "broken.txt"
-        link.symlink_to(tmp_path / "nonexistent")
-
-        result = SyncEngine._resolve_target_hash(link)
-        assert result == ""
-
-    def test_symlink_to_directory(self, tmp_path: Path) -> None:
-        real_dir = tmp_path / "real_dir"
-        real_dir.mkdir()
-        (real_dir / "file.txt").write_text("data")
-        link = tmp_path / "link_dir"
-        link.symlink_to(real_dir)
-
-        result = SyncEngine._resolve_target_hash(link)
-        assert result != ""
-        assert len(result) == 64
-
-
-# ---------------------------------------------------------------------------
 # Push — additional edge cases
 # ---------------------------------------------------------------------------
 
@@ -2227,7 +1982,7 @@ class TestPushEdgeCases:
         )
 
         engine = SyncEngine(mock_target)
-        with mock.patch("syncode.engine.logger") as mock_logger:
+        with mock.patch("agentfiles.engine.logger") as mock_logger:
             report = engine.push(
                 [item],
                 [Platform.OPENCODE],
@@ -2271,7 +2026,6 @@ class TestParametrizedItemTypes:
                 item_type=item_type,
                 name=item_name,
                 source_path=item.source_path,
-                checksum="abc",
                 files=item.files,
                 supported_platforms=(Platform.OPENCODE,),
             )
@@ -2302,7 +2056,6 @@ class TestParametrizedItemTypes:
             item_type=ItemType.AGENT,
             name="test-agent",
             source_path=src,
-            checksum="abc",
             files=("agent.md",),
             supported_platforms=(Platform.OPENCODE,),
         )
@@ -2390,7 +2143,6 @@ class TestComputeSyncPlanEdgeCases:
             item_type=ItemType.AGENT,
             name="new-agent",
             source_path=Path("/src/new-agent.md"),
-            checksum="abc",
             supported_platforms=(Platform.OPENCODE,),
         )
         # Empty state — no platform info at all.
@@ -2417,7 +2169,6 @@ class TestComputeSyncPlanEdgeCases:
             item_type=ItemType.AGENT,
             name="missing-agent",
             source_path=Path("/src/missing-agent.md"),
-            checksum="abc",
             supported_platforms=(Platform.OPENCODE,),
         )
         # Platform exists in state but item does not.
@@ -2448,7 +2199,6 @@ class TestComputeSyncPlanEdgeCases:
             item_type=ItemType.COMMAND,
             name="my-cmd",
             source_path=Path("/src/my-cmd.md"),
-            checksum="abc",
             supported_platforms=(Platform.WINDSURF,),
         )
         state = SyncState()
@@ -2474,7 +2224,6 @@ class TestComputeSyncPlanEdgeCases:
             item_type=ItemType.AGENT,
             name="oc-only",
             source_path=Path("/src/oc-only.md"),
-            checksum="abc",
             supported_platforms=(Platform.OPENCODE,),
         )
         state = SyncState()
@@ -2503,8 +2252,8 @@ class TestUpdateSyncState:
         target_manager: TargetManager,
         tmp_path: Path,
     ) -> None:
-        """engine.sync() with source_dir persists checksums to state file."""
-        from syncode.config import load_sync_state
+        """engine.sync() with source_dir persists sync timestamps to state file."""
+        from agentfiles.config import load_sync_state
 
         src_dir = tmp_path / "skill_src"
         src_dir.mkdir()
@@ -2514,7 +2263,6 @@ class TestUpdateSyncState:
             item_type=ItemType.SKILL,
             name="my-skill",
             source_path=src_dir,
-            checksum="hash_a",
             files=("SKILL.md",),
             supported_platforms=(Platform.OPENCODE,),
         )
@@ -2532,7 +2280,7 @@ class TestUpdateSyncState:
         assert report.is_success
         assert len(report.installed) >= 1
 
-        # State file should now exist with checksums.
+        # State file should now exist with sync timestamps.
         state = load_sync_state(source_dir)
         assert state.last_sync != ""
 
@@ -2541,8 +2289,6 @@ class TestUpdateSyncState:
 
         item_state = oc_state.items.get("skill/my-skill")
         assert item_state is not None
-        assert item_state.source_hash == "hash_a"
-        assert item_state.target_hash != ""
         assert item_state.synced_at != ""
 
     def test_sync_without_source_dir_skips_state_update(
@@ -2551,7 +2297,7 @@ class TestUpdateSyncState:
         tmp_path: Path,
     ) -> None:
         """engine.sync() without source_dir does not create a state file."""
-        from syncode.config import get_state_path
+        from agentfiles.config import get_state_path
 
         src_dir = tmp_path / "skill_src"
         src_dir.mkdir()
@@ -2561,7 +2307,6 @@ class TestUpdateSyncState:
             item_type=ItemType.SKILL,
             name="no-state-skill",
             source_path=src_dir,
-            checksum="hash_b",
             files=("SKILL.md",),
             supported_platforms=(Platform.OPENCODE,),
         )
@@ -2579,7 +2324,7 @@ class TestUpdateSyncState:
         tmp_path: Path,
     ) -> None:
         """engine.sync() in dry-run mode does not update state."""
-        from syncode.config import get_state_path
+        from agentfiles.config import get_state_path
 
         src_dir = tmp_path / "skill_src"
         src_dir.mkdir()
@@ -2589,7 +2334,6 @@ class TestUpdateSyncState:
             item_type=ItemType.SKILL,
             name="dry-skill",
             source_path=src_dir,
-            checksum="hash_c",
             files=("SKILL.md",),
             supported_platforms=(Platform.OPENCODE,),
         )
@@ -2622,7 +2366,6 @@ class TestUpdateSyncState:
             item_type=ItemType.SKILL,
             name="graceful-skill",
             source_path=src_dir,
-            checksum="hash_d",
             files=("SKILL.md",),
             supported_platforms=(Platform.OPENCODE,),
         )
@@ -2632,7 +2375,7 @@ class TestUpdateSyncState:
 
         engine = SyncEngine(target_manager)
 
-        with mock.patch("syncode.engine.save_sync_state", side_effect=OSError("disk full")):
+        with mock.patch("agentfiles.engine.save_sync_state", side_effect=OSError("disk full")):
             report = engine.sync(
                 [item],
                 (Platform.OPENCODE,),
@@ -2649,7 +2392,7 @@ class TestUpdateSyncState:
         tmp_path: Path,
     ) -> None:
         """Syncing to multiple platforms records state for each."""
-        from syncode.config import load_sync_state
+        from agentfiles.config import load_sync_state
 
         src_dir = tmp_path / "skill_src"
         src_dir.mkdir()
@@ -2659,7 +2402,6 @@ class TestUpdateSyncState:
             item_type=ItemType.SKILL,
             name="multi-skill",
             source_path=src_dir,
-            checksum="hash_multi",
             files=("SKILL.md",),
             supported_platforms=(Platform.OPENCODE, Platform.CLAUDE_CODE),
         )
@@ -2691,19 +2433,16 @@ class TestUpdateSyncState:
         tmp_path: Path,
     ) -> None:
         """Skipped items (already up-to-date) are recorded in state."""
-        from syncode.config import load_sync_state
+        from agentfiles.config import load_sync_state
 
         skill_dir = fake_home.opencode / "skill" / "existing"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text("content")
 
-        actual_checksum = compute_checksum(skill_dir)
-
         item = Item(
             item_type=ItemType.SKILL,
             name="existing",
             source_path=skill_dir,
-            checksum=actual_checksum,
             files=("SKILL.md",),
             supported_platforms=(Platform.OPENCODE,),
         )
@@ -2733,7 +2472,7 @@ class TestUpdateSyncState:
         tmp_path: Path,
     ) -> None:
         """If state load fails, sync still succeeds and state is recreated."""
-        from syncode.config import get_state_path
+        from agentfiles.config import get_state_path
 
         src_dir = tmp_path / "skill_src"
         src_dir.mkdir()
@@ -2743,7 +2482,6 @@ class TestUpdateSyncState:
             item_type=ItemType.SKILL,
             name="recover-skill",
             source_path=src_dir,
-            checksum="hash_e",
             files=("SKILL.md",),
             supported_platforms=(Platform.OPENCODE,),
         )
@@ -2756,7 +2494,7 @@ class TestUpdateSyncState:
         state_file.write_text("{{invalid yaml::")
 
         engine = SyncEngine(target_manager)
-        with mock.patch("syncode.engine.logger") as mock_logger:
+        with mock.patch("agentfiles.engine.logger") as mock_logger:
             report = engine.sync(
                 [item],
                 (Platform.OPENCODE,),
@@ -2787,7 +2525,6 @@ class TestExecutePlanErrorIsolation:
             item_type=ItemType.AGENT,
             name="crash-agent",
             source_path=src,
-            checksum="abc",
             files=("agent.md",),
             supported_platforms=(Platform.OPENCODE,),
         )
@@ -2820,7 +2557,6 @@ class TestExecutePlanErrorIsolation:
             item_type=ItemType.AGENT,
             name="good-agent",
             source_path=src,
-            checksum="abc",
             files=("agent.md",),
             supported_platforms=(Platform.OPENCODE,),
         )

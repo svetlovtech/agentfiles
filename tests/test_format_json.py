@@ -1,7 +1,6 @@
 """Tests for --format json support across CLI commands.
 
-Covers JSON output for: status, show, pull (dry-run), push (dry-run).
-Verify already has its own tests in test_verify.py.
+Covers JSON output for: status, pull (dry-run), push (dry-run).
 """
 
 from __future__ import annotations
@@ -13,14 +12,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from syncode.cli import (
+from agentfiles.cli import (
     _format_plan_json,
     _format_results_json,
-    _format_show_json,
     _format_status_json,
 )
-from syncode.engine import SyncReport
-from syncode.models import (
+from agentfiles.engine import SyncReport
+from agentfiles.models import (
     Item,
     ItemType,
     Platform,
@@ -45,7 +43,6 @@ def _make_item(
         name=name,
         source_path=Path(f"/fake/{item_type.plural}/{name}.md"),
         version="1.0.0",
-        checksum="abc123",
         files=("file.md",),
         supported_platforms=platforms,
     )
@@ -168,56 +165,6 @@ class TestFormatStatusJson:
 
 
 # ---------------------------------------------------------------------------
-# _format_show_json
-# ---------------------------------------------------------------------------
-
-
-class TestFormatShowJson:
-    """Tests for _format_show_json."""
-
-    def test_basic_output_structure(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """JSON output has name, type, content, source_path, platforms."""
-        item = _make_item("coder", ItemType.AGENT)
-        content = "# Coder Agent\nYou are a coder."
-        file_path = Path("/fake/agents/coder.md")
-
-        result = _format_show_json(item, content, file_path)
-        assert result == 0
-
-        output = json.loads(capsys.readouterr().out)
-        assert output["name"] == "coder"
-        assert output["type"] == "agent"
-        assert output["content"] == content
-        assert output["source_path"] == "/fake/agents/coder.md"
-        assert output["platforms"] == ["opencode", "claude_code"]
-
-    def test_content_with_special_characters(
-        self,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """Content with quotes, newlines, and unicode is properly escaped."""
-        item = _make_item("unicode-agent", ItemType.AGENT)
-        content = 'Line with "quotes"\nUnicode: \u00e9\u00e8\u00ea\n\tTabs too'
-        file_path = Path("/fake/agents/unicode-agent.md")
-
-        _format_show_json(item, content, file_path)
-
-        output = json.loads(capsys.readouterr().out)
-        assert output["content"] == content
-
-    def test_skill_item(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """Skill items have type 'skill'."""
-        item = _make_item("solid-principles", ItemType.SKILL)
-        content = "# SOLID Principles"
-        file_path = Path("/fake/skills/solid-principles/SKILL.md")
-
-        _format_show_json(item, content, file_path)
-
-        output = json.loads(capsys.readouterr().out)
-        assert output["type"] == "skill"
-
-
-# ---------------------------------------------------------------------------
 # _format_plan_json
 # ---------------------------------------------------------------------------
 
@@ -265,7 +212,7 @@ class TestFormatPlanJson:
     def test_action_uppercase(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Actions are always uppercase in JSON output."""
         item = _make_item("old-agent", ItemType.AGENT)
-        plan = _make_plan(item, SyncAction.UPDATE, "checksum differs")
+        plan = _make_plan(item, SyncAction.UPDATE, "content differs")
 
         target_manager = MagicMock()
         target_manager.resolve_platform_for.return_value = Platform.OPENCODE

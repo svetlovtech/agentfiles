@@ -16,13 +16,13 @@ from unittest.mock import patch
 
 import pytest
 
-from syncode.cli import (
+from agentfiles.cli import (
     _apply_color_env,
     _apply_item_filter,
     _resolve_item_filter,
     build_parser,
 )
-from syncode.models import Item, ItemType
+from agentfiles.models import Item, ItemType
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -213,7 +213,7 @@ class TestParserColorFlag:
 
     @pytest.mark.parametrize(
         "subcommand",
-        ["pull", "push", "sync", "list", "diff", "uninstall", "branch"],
+        ["pull", "push", "status", "clean", "init"],
     )
     def test_color_available_for_all_subcommands(self, subcommand: str) -> None:
         """--color should be available regardless of which subcommand is used."""
@@ -262,7 +262,7 @@ class TestParserItemFilterFlags:
 
     @pytest.mark.parametrize(
         "subcommand",
-        ["pull", "push", "sync", "list", "diff", "uninstall", "branch"],
+        ["pull", "push", "clean"],
     )
     def test_filter_flags_available_for_common_subcommands(
         self,
@@ -338,7 +338,7 @@ class TestFilterPipelineIntegration:
     def test_only_filters_items_end_to_end(self) -> None:
         """Parse --only, resolve filter, apply to items."""
         parser = build_parser()
-        args = parser.parse_args(["list", "--only", "coder,debugger"])
+        args = parser.parse_args(["pull", "--only", "coder,debugger"])
         only_set, except_set = _resolve_item_filter(args)
         items = _make_items()
         filtered = _apply_item_filter(items, only_set, except_set)
@@ -348,7 +348,7 @@ class TestFilterPipelineIntegration:
     def test_except_filters_items_end_to_end(self) -> None:
         """Parse --except, resolve filter, apply to items."""
         parser = build_parser()
-        args = parser.parse_args(["list", "--except", "autopilot"])
+        args = parser.parse_args(["pull", "--except", "autopilot"])
         only_set, except_set = _resolve_item_filter(args)
         items = _make_items()
         filtered = _apply_item_filter(items, only_set, except_set)
@@ -359,7 +359,7 @@ class TestFilterPipelineIntegration:
     def test_no_filter_passes_all_items_end_to_end(self) -> None:
         """No --only / --except should pass all items through."""
         parser = build_parser()
-        args = parser.parse_args(["list"])
+        args = parser.parse_args(["pull"])
         only_set, except_set = _resolve_item_filter(args)
         items = _make_items()
         filtered = _apply_item_filter(items, only_set, except_set)

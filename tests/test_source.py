@@ -8,9 +8,9 @@ from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
-from syncode.git import is_git_repo
-from syncode.models import SourceError, SourceInfo, SourceType
-from syncode.source import (
+from agentfiles.git import is_git_repo
+from agentfiles.models import SourceError, SourceInfo, SourceType
+from agentfiles.source import (
     GitBackend,
     SourceResolver,
     SubprocessGitBackend,
@@ -236,7 +236,7 @@ class TestSourceResolverDetect:
 
     def test_detect_auto_from_cwd(self, tmp_path: Path) -> None:
         project = _make_dir_with_subdirs(tmp_path / "project", ["agents", "commands"])
-        with patch("syncode.source.Path.cwd", return_value=project):
+        with patch("agentfiles.source.Path.cwd", return_value=project):
             resolver = SourceResolver()
             info = resolver.detect()
         assert info.source_type == SourceType.LOCAL_DIR
@@ -246,7 +246,7 @@ class TestSourceResolverDetect:
     def test_detect_auto_with_git_repo(self, tmp_path: Path) -> None:
         project = _make_dir_with_subdirs(tmp_path / "project", ["skills", "plugins"])
         (project / ".git").mkdir()
-        with patch("syncode.source.Path.cwd", return_value=project):
+        with patch("agentfiles.source.Path.cwd", return_value=project):
             resolver = SourceResolver()
             info = resolver.detect()
         assert info.source_type == SourceType.GIT_DIR
@@ -255,7 +255,7 @@ class TestSourceResolverDetect:
     def test_detect_auto_raises_when_no_source_found(self, tmp_path: Path) -> None:
         empty = tmp_path / "empty"
         empty.mkdir()
-        with patch("syncode.source.Path.cwd", return_value=empty):
+        with patch("agentfiles.source.Path.cwd", return_value=empty):
             resolver = SourceResolver()
             with pytest.raises(SourceError, match="cannot auto-detect"):
                 resolver.detect()
@@ -275,7 +275,7 @@ class TestSourceResolverDetect:
     def test_detect_expands_tilde(self, tmp_path: Path) -> None:
         """Ensure that a ``~/...`` path gets expanded."""
         tmp_path.mkdir(exist_ok=True)
-        with patch("syncode.source.Path.expanduser", return_value=tmp_path.resolve()):
+        with patch("agentfiles.source.Path.expanduser", return_value=tmp_path.resolve()):
             resolver = SourceResolver()
             info = resolver.detect("~/some/path")
             assert info.source_type in (SourceType.LOCAL_DIR, SourceType.GIT_DIR)
@@ -411,7 +411,7 @@ class TestSourceResolverResolve:
         cache = tmp_path / "cache"
         # Inject a malicious repo name that resolves outside cache via symlink-style traversal.
         with (
-            patch("syncode.source._repo_name_from_url", return_value="../../../etc/evil"),
+            patch("agentfiles.source._repo_name_from_url", return_value="../../../etc/evil"),
             pytest.raises(SourceError, match="resolves outside the cache"),
         ):
             resolver.resolve(info, cache_dir=cache)
@@ -446,13 +446,13 @@ class TestCacheRoot:
     def test_uses_default_when_none(self, tmp_path: Path) -> None:
         """When no cache_dir is given, the module-level default is returned."""
         expected = tmp_path / ".cache" / "agentfiles" / "repos"
-        with patch("syncode.source._DEFAULT_CACHE_ROOT", expected):
+        with patch("agentfiles.source._DEFAULT_CACHE_ROOT", expected):
             result = SourceResolver._cache_root(None)
         assert result == expected
 
     def test_expands_user(self, tmp_path: Path) -> None:
         tilde_path = Path("~/my-cache")
-        with patch("syncode.source.Path.expanduser", return_value=tmp_path):
+        with patch("agentfiles.source.Path.expanduser", return_value=tmp_path):
             result = SourceResolver._cache_root(tilde_path)
         assert result == tmp_path.resolve()
 
@@ -506,7 +506,7 @@ class TestGitBackendProtocol:
         mock_git.is_git_repo.return_value = False
         resolver = SourceResolver(git_backend=mock_git)
 
-        with patch("syncode.source.Path.cwd", return_value=project):
+        with patch("agentfiles.source.Path.cwd", return_value=project):
             info = resolver.detect()
 
         assert info.source_type == SourceType.LOCAL_DIR
@@ -520,7 +520,7 @@ class TestGitBackendProtocol:
         mock_result.returncode = 0
         mock_result.stderr = ""
 
-        with patch("syncode.source.run_git", return_value=mock_result) as mock_git:
+        with patch("agentfiles.source.run_git", return_value=mock_result) as mock_git:
             backend = SubprocessGitBackend()
             backend.clone("https://example.com/repo.git", target)
 
@@ -541,7 +541,7 @@ class TestGitBackendProtocol:
         mock_result.returncode = 128
         mock_result.stderr = "fatal: not found"
 
-        with patch("syncode.source.run_git", return_value=mock_result):
+        with patch("agentfiles.source.run_git", return_value=mock_result):
             backend = SubprocessGitBackend()
             with pytest.raises(SourceError, match="git clone failed"):
                 backend.clone("https://example.com/repo.git", target)
@@ -561,7 +561,7 @@ class TestGitBackendProtocol:
         mock_fetch_head.stdout = "abc123def456"
 
         with patch(
-            "syncode.source.run_git", side_effect=[mock_fetch, mock_head, mock_fetch_head]
+            "agentfiles.source.run_git", side_effect=[mock_fetch, mock_head, mock_fetch_head]
         ) as mock_git:
             backend = SubprocessGitBackend()
             backend.pull(tmp_path)
@@ -590,7 +590,7 @@ class TestGitBackendProtocol:
         mock_reset.stderr = ""
 
         with patch(
-            "syncode.source.run_git",
+            "agentfiles.source.run_git",
             side_effect=[mock_fetch, mock_head, mock_fetch_head, mock_reset],
         ) as mock_git:
             backend = SubprocessGitBackend()
@@ -605,7 +605,7 @@ class TestGitBackendProtocol:
         mock_result.returncode = 1
         mock_result.stderr = "network error"
 
-        with patch("syncode.source.run_git", return_value=mock_result):
+        with patch("agentfiles.source.run_git", return_value=mock_result):
             backend = SubprocessGitBackend()
             with pytest.raises(SourceError, match="git fetch failed"):
                 backend.pull(tmp_path)
@@ -629,7 +629,7 @@ class TestGitBackendProtocol:
         mock_reset.stderr = "reset error"
 
         with patch(
-            "syncode.source.run_git",
+            "agentfiles.source.run_git",
             side_effect=[mock_fetch, mock_head, mock_fetch_head, mock_reset],
         ):
             backend = SubprocessGitBackend()
@@ -650,7 +650,7 @@ class TestRevParse:
         mock_result.returncode = 0
         mock_result.stdout = "abc123\n"
 
-        with patch("syncode.source.run_git", return_value=mock_result):
+        with patch("agentfiles.source.run_git", return_value=mock_result):
             sha = SubprocessGitBackend._rev_parse(tmp_path, "HEAD")
 
         assert sha == "abc123"
@@ -660,7 +660,7 @@ class TestRevParse:
         mock_result.returncode = 128
         mock_result.stdout = ""
 
-        with patch("syncode.source.run_git", return_value=mock_result):
+        with patch("agentfiles.source.run_git", return_value=mock_result):
             sha = SubprocessGitBackend._rev_parse(tmp_path, "HEAD")
 
         assert sha == ""
@@ -860,7 +860,7 @@ class TestSubprocessGitBackendExceptionHandling:
         match: str,
     ) -> None:
         """clone() should raise SourceError for various subprocess failures."""
-        with patch("syncode.source.run_git", side_effect=side_effect):
+        with patch("agentfiles.source.run_git", side_effect=side_effect):
             backend = SubprocessGitBackend()
             with pytest.raises(SourceError, match=match):
                 backend.clone("https://example.com/repo.git", tmp_path / "repo")
@@ -881,7 +881,7 @@ class TestSubprocessGitBackendExceptionHandling:
         match: str,
     ) -> None:
         """pull() should raise SourceError for various subprocess failures."""
-        with patch("syncode.source.run_git", side_effect=side_effect):
+        with patch("agentfiles.source.run_git", side_effect=side_effect):
             backend = SubprocessGitBackend()
             with pytest.raises(SourceError, match=match):
                 backend.pull(tmp_path)
@@ -901,7 +901,7 @@ class TestSubprocessGitBackendExceptionHandling:
         mock_fetch_head.stdout = "bbb"
 
         with patch(
-            "syncode.source.run_git",
+            "agentfiles.source.run_git",
             side_effect=[
                 mock_fetch,
                 mock_head,
@@ -919,7 +919,7 @@ class TestSubprocessGitBackendExceptionHandling:
         mock_result.returncode = 128
         mock_result.stderr = "fatal: could not read Username for 'https://github.com'"
 
-        with patch("syncode.source.run_git", return_value=mock_result):
+        with patch("agentfiles.source.run_git", return_value=mock_result):
             backend = SubprocessGitBackend()
             with pytest.raises(SourceError, match="credentials|permissions") as exc_info:
                 backend.clone("https://github.com/private/repo.git", tmp_path / "repo")
@@ -931,7 +931,7 @@ class TestSubprocessGitBackendExceptionHandling:
         mock_result.returncode = 128
         mock_result.stderr = "fatal: unable to access 'https://github.com/': Could not resolve host"
 
-        with patch("syncode.source.run_git", return_value=mock_result):
+        with patch("agentfiles.source.run_git", return_value=mock_result):
             backend = SubprocessGitBackend()
             with pytest.raises(SourceError, match="network") as exc_info:
                 backend.clone("https://github.com/user/repo.git", tmp_path / "repo")
@@ -943,7 +943,7 @@ class TestSubprocessGitBackendExceptionHandling:
         mock_result.returncode = 1
         mock_result.stderr = "some unknown error"
 
-        with patch("syncode.source.run_git", return_value=mock_result):
+        with patch("agentfiles.source.run_git", return_value=mock_result):
             backend = SubprocessGitBackend()
             with pytest.raises(SourceError, match="git clone failed") as exc_info:
                 backend.clone("https://example.com/repo.git", tmp_path / "repo")
@@ -955,7 +955,7 @@ class TestSubprocessGitBackendExceptionHandling:
         mock_result.returncode = 128
         mock_result.stderr = "Permission denied (publickey)."
 
-        with patch("syncode.source.run_git", return_value=mock_result):
+        with patch("agentfiles.source.run_git", return_value=mock_result):
             backend = SubprocessGitBackend()
             with pytest.raises(SourceError, match="credentials|permissions") as exc_info:
                 backend.pull(tmp_path)
@@ -1123,7 +1123,7 @@ class TestCountAndFindSourceDirEdgeCases:
 
     def test_count_source_dirs_oserror_returns_zero(self, tmp_path: Path) -> None:
         """OSError during scandir should be silently handled as 0."""
-        with patch("syncode.source.os.scandir", side_effect=OSError("permission denied")):
+        with patch("agentfiles.source.os.scandir", side_effect=OSError("permission denied")):
             assert _count_source_dirs(tmp_path) == 0
 
     def test_count_source_dirs_mixed_dirs(self, tmp_path: Path) -> None:
@@ -1279,7 +1279,7 @@ class TestCacheDirectoryEdgeCases:
 
     def test_resolve_default_cache_root_uses_home(self) -> None:
         """When cache_dir is None, _cache_root returns the module default."""
-        from syncode.source import _DEFAULT_CACHE_ROOT
+        from agentfiles.source import _DEFAULT_CACHE_ROOT
 
         result = SourceResolver._cache_root(None)
         assert result == _DEFAULT_CACHE_ROOT
@@ -1471,7 +1471,7 @@ class TestRunGitChecked:
         mock_result = MagicMock(spec=subprocess.CompletedProcess)
         mock_result.returncode = 0
 
-        with patch("syncode.source.run_git", return_value=mock_result) as mock_git:
+        with patch("agentfiles.source.run_git", return_value=mock_result) as mock_git:
             backend = SubprocessGitBackend()
             result = backend._run_git_checked(
                 "clone", "url", 120, "clone", "--depth", "1", "url", "/tmp/repo"
@@ -1493,7 +1493,7 @@ class TestRunGitChecked:
         mock_result = MagicMock(spec=subprocess.CompletedProcess)
         mock_result.returncode = 0
 
-        with patch("syncode.source.run_git", return_value=mock_result) as mock_git:
+        with patch("agentfiles.source.run_git", return_value=mock_result) as mock_git:
             backend = SubprocessGitBackend()
             backend._run_git_checked(
                 "fetch",
@@ -1528,7 +1528,7 @@ class TestRunGitChecked:
         match: str,
     ) -> None:
         """Subprocess exceptions should be translated to SourceError."""
-        with patch("syncode.source.run_git", side_effect=side_effect):
+        with patch("agentfiles.source.run_git", side_effect=side_effect):
             backend = SubprocessGitBackend()
             with pytest.raises(SourceError, match=match):
                 backend._run_git_checked("fetch", "/repo", 30, "fetch")
@@ -1539,7 +1539,7 @@ class TestRunGitChecked:
         mock_result.returncode = 128
         mock_result.stderr = "fatal: could not read Username"
 
-        with patch("syncode.source.run_git", return_value=mock_result):
+        with patch("agentfiles.source.run_git", return_value=mock_result):
             backend = SubprocessGitBackend()
             with pytest.raises(SourceError) as exc_info:
                 backend._run_git_checked("clone", "url", 120, "clone", "url")
@@ -1551,7 +1551,7 @@ class TestRunGitChecked:
         mock_result.returncode = 1
         mock_result.stderr = "something unexpected"
 
-        with patch("syncode.source.run_git", return_value=mock_result):
+        with patch("agentfiles.source.run_git", return_value=mock_result):
             backend = SubprocessGitBackend()
             with pytest.raises(SourceError) as exc_info:
                 backend._run_git_checked("clone", "url", 120, "clone", "url")

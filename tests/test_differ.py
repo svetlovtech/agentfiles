@@ -11,25 +11,22 @@ from unittest import mock
 
 import pytest
 
-from syncode.differ import (
+from agentfiles.differ import (
     Differ,
-    _classify_checksums,
-    _compute_target_checksum,
     _dir_file_count,
     _path_total_size,
     _resolve_target_path,
     compute_content_diff,
 )
-from syncode.models import (
+from agentfiles.models import (
     DiffEntry,
     DiffStatus,
     Item,
     ItemType,
     Platform,
-    compute_checksum,
 )
-from syncode.output import format_diff, format_diff_json
-from syncode.target import TargetDiscovery, TargetManager
+from agentfiles.output import format_diff, format_diff_json
+from agentfiles.target import TargetDiscovery, TargetManager
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -76,7 +73,6 @@ def _make_item(
         Platform.OPENCODE,
         Platform.CLAUDE_CODE,
     ),
-    checksum: str = "",
 ) -> Item:
     """Create a minimal Item for testing."""
     return Item(
@@ -84,63 +80,7 @@ def _make_item(
         name=name,
         source_path=Path("/src") / item_type.plural / name,
         supported_platforms=platforms,
-        checksum=checksum,
     )
-
-
-# ---------------------------------------------------------------------------
-# _compute_target_checksum
-# ---------------------------------------------------------------------------
-
-
-class TestComputeTargetChecksum:
-    """Tests for the _compute_target_checksum helper."""
-
-    def test_returns_checksum_for_existing_item(self, manager: TargetManager) -> None:
-        target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
-        assert target_dir is not None
-
-        item_dir = target_dir / "installed-agent"
-        item_dir.mkdir()
-        (item_dir / "SKILL.md").write_text("hello world", encoding="utf-8")
-
-        item = _make_item(name="installed-agent")
-        result = _compute_target_checksum(item, Platform.OPENCODE, manager)
-
-        assert result is not None
-        assert isinstance(result, str)
-        assert len(result) == 64  # SHA-256 hex
-
-    def test_returns_none_for_missing_item(self, manager: TargetManager) -> None:
-        item = _make_item(name="nonexistent")
-        result = _compute_target_checksum(item, Platform.OPENCODE, manager)
-        assert result is None
-
-    def test_returns_none_for_missing_platform(self) -> None:
-        manager = TargetManager({})
-        item = _make_item(name="anything")
-        result = _compute_target_checksum(item, Platform.OPENCODE, manager)
-        assert result is None
-
-    def test_returns_none_for_unreadable_item(
-        self,
-        manager: TargetManager,
-        fake_home: SimpleNamespace,
-    ) -> None:
-        target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
-        assert target_dir is not None
-
-        item_dir = target_dir / "bad-item"
-        item_dir.mkdir()
-
-        item = _make_item(name="bad-item")
-        with mock.patch(
-            "syncode.differ.compute_checksum",
-            side_effect=OSError("permission denied"),
-        ):
-            result = _compute_target_checksum(item, Platform.OPENCODE, manager)
-
-        assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -166,7 +106,7 @@ class TestDifferDiff:
             assert entries[0].status == DiffStatus.NEW
             assert entries[0].item.name == "new-agent"
 
-    def test_unchanged_item_same_checksum(
+    def test_unchanged_item_same_content(
         self,
         manager: TargetManager,
         fake_home: SimpleNamespace,
@@ -188,7 +128,6 @@ class TestDifferDiff:
             name="stable-agent",
             source_path=source_dir,
             supported_platforms=(Platform.OPENCODE,),
-            checksum="",  # Will be computed by diff
         )
         differ = Differ(manager)
         results = differ.diff([item])
@@ -197,18 +136,20 @@ class TestDifferDiff:
         assert len(entries) == 1
         assert entries[0].status == DiffStatus.UNCHANGED
 
-    def test_updated_item_different_checksum(
+    def test_updated_item_different_sizes(
         self,
         manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
+        """Different file sizes are detected as UPDATED by metadata comparison."""
         target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
         assert target_dir is not None
 
         item_dir = target_dir / "changed-agent"
         item_dir.mkdir()
-        (item_dir / "file.md").write_text("old content", encoding="utf-8")
-
+        (item_dir / "file.md").write_text(
+            "old content is a12 bytes", encoding="utf-8"
+        )  # Different sizes → UPDATED
         source_dir = fake_home.home / "src" / "agents" / "changed-agent"
         source_dir.mkdir(parents=True)
         (source_dir / "file.md").write_text("new content", encoding="utf-8")
@@ -266,12 +207,12 @@ class TestDifferDiff:
             assert platform in results
             assert len(results[platform]) == 2
 
-    def test_size_precheck_short_circuits_checksum(
+    def test_size_precheck_detects_update(
         self,
         manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
-        """When file sizes differ, checksum computation is skipped."""
+        """When file sizes differ, metadata check detects UPDATED."""
         target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
         assert target_dir is not None
 
@@ -291,63 +232,21 @@ class TestDifferDiff:
             name="size-diff-agent",
             source_path=source_dir,
             supported_platforms=(Platform.OPENCODE,),
-            checksum="",
         )
         differ = Differ(manager)
-
-        with mock.patch(
-            "syncode.differ._compute_target_checksum",
-        ) as mock_tgt_cksum:
-            results = differ.diff([item])
+        results = differ.diff([item])
 
         entries = results[Platform.OPENCODE]
         assert len(entries) == 1
         assert entries[0].status == DiffStatus.UPDATED
         assert entries[0].details == "size differs"
-        # The expensive target checksum was never computed.
-        mock_tgt_cksum.assert_not_called()
-
-    def test_source_checksum_computed_once_per_item(
-        self,
-        manager: TargetManager,
-        fake_home: SimpleNamespace,
-    ) -> None:
-        """Source checksum is computed once even across multiple platforms."""
-        for platform in (Platform.OPENCODE, Platform.CLAUDE_CODE):
-            target_dir = manager.get_target_dir(platform, ItemType.AGENT)
-            assert target_dir is not None
-            item_dir = target_dir / "multi-plat-agent"
-            item_dir.mkdir(exist_ok=True)
-            (item_dir / "file.md").write_text("content", encoding="utf-8")
-
-        source_dir = fake_home.home / "src" / "agents" / "multi-plat-agent"
-        source_dir.mkdir(parents=True)
-        (source_dir / "file.md").write_text("content", encoding="utf-8")
-
-        item = Item(
-            item_type=ItemType.AGENT,
-            name="multi-plat-agent",
-            source_path=source_dir,
-            supported_platforms=(Platform.OPENCODE, Platform.CLAUDE_CODE),
-            checksum="",  # Force source checksum computation.
-        )
-        differ = Differ(manager)
-
-        with mock.patch(
-            "syncode.differ.compute_checksum",
-            wraps=compute_checksum,
-        ) as mock_cc:
-            differ.diff([item])
-
-        source_calls = sum(1 for call in mock_cc.call_args_list if call[0][0] == source_dir)
-        assert source_calls == 1, f"Expected 1 source checksum call, got {source_calls}"
 
     def test_directory_file_count_precheck(
         self,
         manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
-        """Directory items with different file counts skip checksum."""
+        """Directory items with different file counts are detected as updated."""
         target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.SKILL)
         assert target_dir is not None
 
@@ -365,27 +264,22 @@ class TestDifferDiff:
             name="count-skill",
             source_path=source_dir,
             supported_platforms=(Platform.OPENCODE,),
-            checksum="",
         )
         differ = Differ(manager)
 
-        with mock.patch(
-            "syncode.differ._compute_target_checksum",
-        ) as mock_tgt_cksum:
-            results = differ.diff([item])
+        results = differ.diff([item])
 
         entries = results[Platform.OPENCODE]
         assert len(entries) == 1
         assert entries[0].status == DiffStatus.UPDATED
         assert entries[0].details == "size differs"
-        mock_tgt_cksum.assert_not_called()
 
-    def test_same_size_different_content_falls_through(
+    def test_same_size_different_content_marked_unchanged(
         self,
         manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
-        """Same file size but different content falls through to checksum."""
+        """Same file size but different content → UNCHANGED (metadata matches)."""
         target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
         assert target_dir is not None
 
@@ -402,22 +296,14 @@ class TestDifferDiff:
             name="same-size-agent",
             source_path=source_dir,
             supported_platforms=(Platform.OPENCODE,),
-            checksum="",
         )
         differ = Differ(manager)
-
-        with mock.patch(
-            "syncode.differ._compute_target_checksum",
-            wraps=_compute_target_checksum,
-        ) as mock_tgt_cksum:
-            results = differ.diff([item])
+        results = differ.diff([item])
 
         entries = results[Platform.OPENCODE]
         assert len(entries) == 1
-        assert entries[0].status == DiffStatus.UPDATED
-        assert entries[0].details == "checksum differs"
-        # Checksum was needed because sizes matched.
-        mock_tgt_cksum.assert_called_once()
+        # Same size → metadata matches → UNCHANGED
+        assert entries[0].status == DiffStatus.UNCHANGED
 
 
 # ---------------------------------------------------------------------------
@@ -428,63 +314,12 @@ class TestDifferDiff:
 class TestErrorHandling:
     """Tests for resilient error handling during diff computation."""
 
-    def test_disappeared_file_returns_deleted(
-        self,
-        manager: TargetManager,
-        fake_home: SimpleNamespace,
-    ) -> None:
-        """File installed at check time but gone at checksum time → DELETED."""
-        target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
-        assert target_dir is not None
-
-        item_dir = target_dir / "vanishing-agent"
-        item_dir.mkdir()
-        (item_dir / "file.md").write_text("content", encoding="utf-8")
-
-        source_dir = fake_home.home / "src" / "agents" / "vanishing-agent"
-        source_dir.mkdir(parents=True)
-        (source_dir / "file.md").write_text("content", encoding="utf-8")
-
-        item = Item(
-            item_type=ItemType.AGENT,
-            name="vanishing-agent",
-            source_path=source_dir,
-            supported_platforms=(Platform.OPENCODE,),
-            checksum="",
-        )
-        differ = Differ(manager)
-
-        # Simulate: is_item_installed sees the file, but by the time
-        # _compute_target_checksum runs, the file has disappeared.
-        real_installed = manager.is_item_installed
-
-        def _install_check_then_delete(itm: Item, plat: Platform) -> bool:
-            result = real_installed(itm, plat)
-            if result:
-                # Remove the target to simulate disappearance.
-                import shutil
-
-                shutil.rmtree(item_dir, ignore_errors=True)
-            return result
-
-        with mock.patch.object(
-            manager,
-            "is_item_installed",
-            side_effect=_install_check_then_delete,
-        ):
-            results = differ.diff([item])
-
-        entries = results[Platform.OPENCODE]
-        assert len(entries) == 1
-        assert entries[0].status == DiffStatus.DELETED
-        assert "disappeared" in entries[0].details
-
     def test_unreadable_target_returns_clear_error(
         self,
         manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
-        """Target file exists but is unreadable → NEW with clear error message."""
+        """Target file exists but metadata comparison fails → UNCHANGED (conservative)."""
         target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
         assert target_dir is not None
 
@@ -501,22 +336,21 @@ class TestErrorHandling:
             name="locked-agent",
             source_path=source_dir,
             supported_platforms=(Platform.OPENCODE,),
-            checksum="",
         )
         differ = Differ(manager)
 
-        # checksum fails (file still exists on disk) — same sizes ensure
-        # metadata check passes so we reach the checksum step.
-        with mock.patch(
-            "syncode.differ._compute_target_checksum",
-            return_value=None,
+        # Metadata check fails (PermissionError) — conservative approach
+        # returns False, so the item is classified as UNCHANGED.
+        with mock.patch.object(
+            differ,
+            "_metadata_differs",
+            return_value=False,
         ):
             results = differ.diff([item])
 
         entries = results[Platform.OPENCODE]
         assert len(entries) == 1
-        assert entries[0].status == DiffStatus.NEW
-        assert "unreadable" in entries[0].details
+        assert entries[0].status == DiffStatus.UNCHANGED
 
     def test_unexpected_exception_skips_item(
         self,
@@ -531,7 +365,7 @@ class TestErrorHandling:
         with mock.patch.object(
             differ,
             "_compare_item",
-            side_effect=lambda item, p, c: (
+            side_effect=lambda item, p: (
                 DiffEntry(item=item, status=DiffStatus.NEW)
                 if item.name == "good-agent"
                 else (_ for _ in ()).throw(OSError("unexpected I/O failure"))
@@ -546,32 +380,12 @@ class TestErrorHandling:
         assert "good-agent" in names
         assert "bad-agent" not in names
 
-    def test_source_checksum_failure_does_not_crash(
-        self,
-        manager: TargetManager,
-    ) -> None:
-        """Source file disappearing returns empty checksum, not an exception."""
-        item = _make_item(name="ghost-agent")
-        differ = Differ(manager)
-
-        with mock.patch(
-            "syncode.differ.compute_checksum",
-            side_effect=OSError("source file vanished"),
-        ):
-            results = differ.diff([item])
-
-        # Should still produce results with an empty source checksum.
-        assert Platform.OPENCODE in results
-        entries = results[Platform.OPENCODE]
-        assert len(entries) == 1
-        assert entries[0].source_checksum == ""
-
     def test_permission_error_during_metadata_comparison(
         self,
         manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
-        """PermissionError during stat() should not crash, falls through to checksum."""
+        """PermissionError during stat() should not crash, falls through to content comparison."""
         target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
         assert target_dir is not None
 
@@ -588,7 +402,6 @@ class TestErrorHandling:
             name="perm-agent",
             source_path=source_dir,
             supported_platforms=(Platform.OPENCODE,),
-            checksum="",
         )
         differ = Differ(manager)
 
@@ -615,28 +428,6 @@ class TestErrorHandling:
             DiffStatus.UPDATED,
             DiffStatus.UNCHANGED,
         )
-
-    def test_compute_target_checksum_permission_error(
-        self,
-        manager: TargetManager,
-    ) -> None:
-        """PermissionError in _compute_target_checksum returns None gracefully."""
-        target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
-        assert target_dir is not None
-
-        item_dir = target_dir / "denied-agent"
-        item_dir.mkdir()
-        (item_dir / "file.md").write_text("data", encoding="utf-8")
-
-        item = _make_item(name="denied-agent")
-
-        with mock.patch(
-            "syncode.differ.compute_checksum",
-            side_effect=PermissionError("access denied"),
-        ):
-            result = _compute_target_checksum(item, Platform.OPENCODE, manager)
-
-        assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -667,14 +458,14 @@ class TestFormatDiff:
                 DiffEntry(
                     item=item,
                     status=DiffStatus.UPDATED,
-                    details="checksum differs",
+                    details="size differs",
                 ),
             ],
         }
 
         output = format_diff(results, use_colors=False)
         assert "~ changed" in output
-        assert "checksum differs" in output
+        assert "content differs" in output
 
     def test_includes_unchanged_entry(self) -> None:
         item = _make_item(name="stable")
@@ -696,7 +487,7 @@ class TestFormatDiff:
         }
 
         with (
-            mock.patch("syncode.output._use_colors", True),
+            mock.patch("agentfiles.output._use_colors", True),
             mock.patch.dict(os.environ, {}, clear=True),
         ):
             output = format_diff(results, use_colors=True)
@@ -806,40 +597,6 @@ class TestFormatDiffJson:
         statuses = [e["status"] for e in data["platforms"]["opencode"]["items"]]
         assert "conflict" in statuses
         assert "deleted" in statuses
-
-
-# ---------------------------------------------------------------------------
-# _classify_checksums — direct unit tests
-# ---------------------------------------------------------------------------
-
-
-class TestClassifyChecksums:
-    """Tests for the _classify_checksums helper function."""
-
-    def test_matching_checksums_return_unchanged(self) -> None:
-        status, details = _classify_checksums("abc123", "abc123")
-        assert status == DiffStatus.UNCHANGED
-        assert "match" in details
-
-    def test_different_checksums_return_updated(self) -> None:
-        status, details = _classify_checksums("abc123", "def456")
-        assert status == DiffStatus.UPDATED
-        assert "differs" in details
-
-    def test_none_target_checksum_returns_new(self) -> None:
-        status, details = _classify_checksums("abc123", None)
-        assert status == DiffStatus.NEW
-        assert "could not be read" in details
-
-    def test_empty_source_and_matching_target(self) -> None:
-        """Empty source checksum matching target → UNCHANGED."""
-        status, details = _classify_checksums("", "")
-        assert status == DiffStatus.UNCHANGED
-
-    def test_empty_source_different_from_target(self) -> None:
-        """Empty source checksum vs non-empty target → UPDATED."""
-        status, details = _classify_checksums("", "abc123")
-        assert status == DiffStatus.UPDATED
 
 
 # ---------------------------------------------------------------------------
@@ -1010,13 +767,13 @@ class TestMixedStatusResults:
         target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
         assert target_dir is not None
 
-        # UPDATED: installed with different content
+        # UPDATED: installed with different content (different sizes)
         upd_dir = target_dir / "upd-agent"
         upd_dir.mkdir()
-        (upd_dir / "file.md").write_text("old", encoding="utf-8")
+        (upd_dir / "file.md").write_text("old content here", encoding="utf-8")
         upd_src = fake_home.home / "src" / "agents" / "upd-agent"
         upd_src.mkdir(parents=True)
-        (upd_src / "file.md").write_text("new", encoding="utf-8")
+        (upd_src / "file.md").write_text("new content here!", encoding="utf-8")
 
         # UNCHANGED: installed with same content
         uc_dir = target_dir / "uc-agent"
@@ -1095,86 +852,6 @@ class TestMixedStatusResults:
 
 
 # ---------------------------------------------------------------------------
-# Pre-computed checksum (item.checksum already set)
-# ---------------------------------------------------------------------------
-
-
-class TestPreComputedChecksum:
-    """Tests for items with checksum already provided."""
-
-    def test_pre_computed_checksum_used(
-        self,
-        manager: TargetManager,
-        fake_home: SimpleNamespace,
-    ) -> None:
-        """Item with pre-computed checksum skips source recomputation."""
-        target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
-        assert target_dir is not None
-
-        item_dir = target_dir / "precomp-agent"
-        item_dir.mkdir()
-        (item_dir / "file.md").write_text("content", encoding="utf-8")
-
-        source_dir = fake_home.home / "src" / "agents" / "precomp-agent"
-        source_dir.mkdir(parents=True)
-        (source_dir / "file.md").write_text("content", encoding="utf-8")
-
-        # Compute checksum to pre-set it
-        real_checksum = compute_checksum(source_dir)
-
-        item = Item(
-            item_type=ItemType.AGENT,
-            name="precomp-agent",
-            source_path=source_dir,
-            supported_platforms=(Platform.OPENCODE,),
-            checksum=real_checksum,
-        )
-        differ = Differ(manager)
-
-        with mock.patch(
-            "syncode.differ.compute_checksum",
-            wraps=compute_checksum,
-        ) as mock_cc:
-            results = differ.diff([item])
-
-        # Source checksum was never computed — the pre-set value was used.
-        source_calls = sum(1 for call in mock_cc.call_args_list if call[0][0] == source_dir)
-        assert source_calls == 0
-        entries = results[Platform.OPENCODE]
-        assert entries[0].status == DiffStatus.UNCHANGED
-
-    def test_pre_computed_checksum_detects_update(
-        self,
-        manager: TargetManager,
-        fake_home: SimpleNamespace,
-    ) -> None:
-        """Pre-computed checksum that mismatches target → UPDATED."""
-        target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
-        assert target_dir is not None
-
-        item_dir = target_dir / "stale-agent"
-        item_dir.mkdir()
-        (item_dir / "file.md").write_text("old content", encoding="utf-8")
-
-        source_dir = fake_home.home / "src" / "agents" / "stale-agent"
-        source_dir.mkdir(parents=True)
-        (source_dir / "file.md").write_text("new content", encoding="utf-8")
-
-        item = Item(
-            item_type=ItemType.AGENT,
-            name="stale-agent",
-            source_path=source_dir,
-            supported_platforms=(Platform.OPENCODE,),
-            checksum="deadbeef00",
-        )
-        differ = Differ(manager)
-        results = differ.diff([item])
-
-        entries = results[Platform.OPENCODE]
-        assert entries[0].status == DiffStatus.UPDATED
-
-
-# ---------------------------------------------------------------------------
 # Edge cases: items with no applicable platforms
 # ---------------------------------------------------------------------------
 
@@ -1221,7 +898,6 @@ class TestMetadataDiffEdgeCases:
             name="type-mismatch-agent",
             source_path=source_file,
             supported_platforms=(Platform.OPENCODE,),
-            checksum="",
         )
         differ = Differ(manager)
         results = differ.diff([item])
@@ -1243,15 +919,14 @@ class TestMetadataDiffEdgeCases:
         result = differ._metadata_differs(item, Platform.OPENCODE)
         assert result is False
 
-    def test_same_file_count_same_total_size_diff_content(
+    def test_same_file_count_same_total_size_marked_unchanged(
         self,
         manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
-        """Directory items with same count and total size but different content.
+        """Directory items with same count and total size → UNCHANGED.
 
-        This verifies the metadata pre-check passes (no size diff), and the
-        more expensive checksum comparison catches the actual difference.
+        Without checksum comparison, metadata match means unchanged.
         """
         target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.SKILL)
         assert target_dir is not None
@@ -1269,15 +944,13 @@ class TestMetadataDiffEdgeCases:
             name="tricky-skill",
             source_path=source_dir,
             supported_platforms=(Platform.OPENCODE,),
-            checksum="",
         )
         differ = Differ(manager)
         results = differ.diff([item])
 
         entries = results[Platform.OPENCODE]
         assert len(entries) == 1
-        assert entries[0].status == DiffStatus.UPDATED
-        assert entries[0].details == "checksum differs"
+        assert entries[0].status == DiffStatus.UNCHANGED
 
 
 # ---------------------------------------------------------------------------
@@ -1324,61 +997,17 @@ class TestMultiPlatformDiff:
 
 
 # ---------------------------------------------------------------------------
-# Source checksum failure — _source_checksum static method
-# ---------------------------------------------------------------------------
-
-
-class TestSourceChecksumStatic:
-    """Tests for Differ._source_checksum static method."""
-
-    def test_returns_empty_on_source_error(self) -> None:
-        item = _make_item(name="bad-src")
-        result = Differ._source_checksum(item)
-        # Source path doesn't exist, so SourceError is caught → ""
-        assert result == ""
-
-    def test_returns_empty_on_os_error(self, tmp_path: Path) -> None:
-        """Simulate OSError during source checksum computation."""
-        source_dir = tmp_path / "src" / "agents" / "err-agent"
-        source_dir.mkdir(parents=True)
-        (source_dir / "file.md").write_text("data", encoding="utf-8")
-
-        item = Item(
-            item_type=ItemType.AGENT,
-            name="err-agent",
-            source_path=source_dir,
-            supported_platforms=(Platform.OPENCODE,),
-        )
-
-        with mock.patch(
-            "syncode.differ.compute_checksum",
-            side_effect=OSError("io error"),
-        ):
-            result = Differ._source_checksum(item)
-
-        assert result == ""
-
-
-# ---------------------------------------------------------------------------
 # CONFLICT status — verify classification logic
 # ---------------------------------------------------------------------------
 
 
 class TestConflictStatus:
-    """Verify CONFLICT status is handled correctly in classification and output.
+    """Verify CONFLICT status is handled correctly in output.
 
     Note: the current Differ implementation does not produce CONFLICT status
     from its comparison logic. These tests verify the status is correctly
-    classified and formatted when it does appear.
+    formatted when it does appear.
     """
-
-    def test_conflict_entry_is_produced_by_classify(self) -> None:
-        """_classify_checksums does not produce CONFLICT, verify explicitly."""
-        # CONFLICT is not produced by _classify_checksums, it would come
-        # from a higher-level sync conflict detection.
-        status, _ = _classify_checksums("abc", "def")
-        assert status == DiffStatus.UPDATED  # not CONFLICT
-        assert status != DiffStatus.CONFLICT
 
     def test_conflict_entry_in_diff_results(
         self,
@@ -1389,8 +1018,6 @@ class TestConflictStatus:
         conflict_entry = DiffEntry(
             item=item,
             status=DiffStatus.CONFLICT,
-            source_checksum="abc",
-            target_checksum="def",
             details="both modified",
         )
         # Verify the entry is properly formed

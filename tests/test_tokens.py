@@ -1,4 +1,4 @@
-"""Tests for syncode.tokens — TUI-focused token counting utilities."""
+"""Tests for agentfiles.tokens — TUI-focused token counting utilities."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from syncode.tokens import count_item_tokens, estimate_tokens_from_content, format_token_count
+from agentfiles.tokens import count_item_tokens, estimate_tokens_from_content, format_token_count
 
 
 class TestEstimateTokensFromContent:
@@ -147,7 +147,7 @@ class TestCountItemTokens:
         content = "a" * 40
         f.write_text(content, encoding="utf-8")
 
-        from syncode.tokens import estimate_tokens_from_files
+        from agentfiles.tokens import estimate_tokens_from_files
 
         size_based = count_item_tokens(f)
         content_based = estimate_tokens_from_files([f])

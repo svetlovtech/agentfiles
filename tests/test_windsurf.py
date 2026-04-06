@@ -13,9 +13,9 @@ from unittest import mock
 
 import pytest
 
-from syncode.models import Item, ItemType, Platform
-from syncode.scanner import _SCANNER_REGISTRY
-from syncode.target import TargetDiscovery, TargetManager, build_target_manager
+from agentfiles.models import Item, ItemType, Platform
+from agentfiles.scanner import _SCANNER_REGISTRY
+from agentfiles.target import TargetDiscovery, TargetManager, build_target_manager
 
 # ---------------------------------------------------------------------------
 # Platform enum

@@ -9,9 +9,9 @@ from unittest import mock
 
 import pytest
 
-from syncode.engine import SyncEngine
-from syncode.models import Item, ItemType, Platform
-from syncode.target import TargetDiscovery, TargetManager
+from agentfiles.engine import SyncEngine
+from agentfiles.models import Item, ItemType, Platform
+from agentfiles.target import TargetDiscovery, TargetManager
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -214,7 +214,7 @@ class TestCmdCleanCLI:
         stdin_response: str = "y\n",
     ) -> int:
         """Run agentfiles clean with the given arguments."""
-        from syncode.cli import build_parser
+        from agentfiles.cli import build_parser
 
         args_list = ["clean", "--yes", "--config", str(source_repo / ".agentfiles.yaml")]
         if extra_args:
@@ -228,7 +228,7 @@ class TestCmdCleanCLI:
             mock.patch.object(Path, "home", return_value=fake_home.home),
             mock.patch.dict(os.environ, {}, clear=True),
         ):
-            from syncode.cli import cmd_clean
+            from agentfiles.cli import cmd_clean
 
             return cmd_clean(args)
 
@@ -370,6 +370,6 @@ class TestCmdCleanCLI:
 
     def test_clean_subparser_registered(self) -> None:
         """The 'clean' subcommand is registered in the parser."""
-        from syncode.cli import _COMMAND_MAP
+        from agentfiles.cli import _COMMAND_MAP
 
         assert "clean" in _COMMAND_MAP

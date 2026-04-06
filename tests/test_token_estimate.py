@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from syncode.models import (
+from agentfiles.models import (
     CHARS_PER_TOKEN,
     Item,
     ItemMeta,
@@ -535,7 +535,7 @@ class TestTokenEstimateFunction:
 
     def test_size_matches_content_for_ascii(self, tmp_path: Path) -> None:
         """For ASCII text, byte size and char length agree."""
-        from syncode.tokens import count_item_tokens
+        from agentfiles.tokens import count_item_tokens
 
         f = tmp_path / "agent.md"
         content = "a" * 40

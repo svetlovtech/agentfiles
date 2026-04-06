@@ -8,8 +8,8 @@ from unittest import mock
 
 import pytest
 
-from syncode.cli import _COMMAND_MAP, build_parser, cmd_pull
-from syncode.models import Item, ItemType, Platform
+from agentfiles.cli import _COMMAND_MAP, build_parser, cmd_pull
+from agentfiles.models import Item, ItemType, Platform
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -19,14 +19,12 @@ from syncode.models import Item, ItemType, Platform
 def _make_item(
     name: str = "coder",
     item_type: ItemType = ItemType.AGENT,
-    checksum: str = "a" * 64,
 ) -> Item:
     return Item(
         item_type=item_type,
         name=name,
         source_path=Path("/src") / item_type.plural / name,
         supported_platforms=(Platform.OPENCODE, Platform.CLAUDE_CODE),
-        checksum=checksum,
     )
 
 
@@ -121,9 +119,9 @@ class TestPullParser:
 class TestCmdPullIntegration:
     """Integration tests for cmd_pull with mocked dependencies."""
 
-    @mock.patch("syncode.cli._update_sync_state_from_results")
-    @mock.patch("syncode.cli._display_update_indicators")
-    @mock.patch("syncode.cli._build_context")
+    @mock.patch("agentfiles.cli._update_sync_state_from_results")
+    @mock.patch("agentfiles.cli._display_update_indicators")
+    @mock.patch("agentfiles.cli._build_context")
     def test_pull_no_items_returns_0(
         self,
         mock_build_ctx: mock.MagicMock,
@@ -155,9 +153,9 @@ class TestCmdPullIntegration:
 
         assert result == 0
 
-    @mock.patch("syncode.cli._update_sync_state_from_results")
-    @mock.patch("syncode.cli._display_update_indicators")
-    @mock.patch("syncode.cli._build_context")
+    @mock.patch("agentfiles.cli._update_sync_state_from_results")
+    @mock.patch("agentfiles.cli._display_update_indicators")
+    @mock.patch("agentfiles.cli._build_context")
     def test_pull_non_interactive_success(
         self,
         mock_build_ctx: mock.MagicMock,
@@ -203,9 +201,9 @@ class TestCmdPullIntegration:
         assert result == 0
         engine.plan_sync.assert_called_once()
 
-    @mock.patch("syncode.cli._update_sync_state_from_results")
-    @mock.patch("syncode.cli._display_update_indicators")
-    @mock.patch("syncode.cli._build_context")
+    @mock.patch("agentfiles.cli._update_sync_state_from_results")
+    @mock.patch("agentfiles.cli._display_update_indicators")
+    @mock.patch("agentfiles.cli._build_context")
     def test_pull_dry_run_no_changes(
         self,
         mock_build_ctx: mock.MagicMock,
@@ -253,10 +251,10 @@ class TestCmdPullIntegration:
         output = capsys.readouterr().out
         assert "Dry-run" in output
 
-    @mock.patch("syncode.cli._format_plan_json", return_value=0)
-    @mock.patch("syncode.cli._update_sync_state_from_results")
-    @mock.patch("syncode.cli._display_update_indicators")
-    @mock.patch("syncode.cli._build_context")
+    @mock.patch("agentfiles.cli._format_plan_json", return_value=0)
+    @mock.patch("agentfiles.cli._update_sync_state_from_results")
+    @mock.patch("agentfiles.cli._display_update_indicators")
+    @mock.patch("agentfiles.cli._build_context")
     def test_pull_json_dry_run_outputs_plan(
         self,
         mock_build_ctx: mock.MagicMock,
@@ -297,9 +295,9 @@ class TestCmdPullIntegration:
         mock_format_plan.assert_called_once_with([plan], target_manager, dry_run=True)
         engine.execute_plan.assert_not_called()
 
-    @mock.patch("syncode.cli._update_sync_state_from_results")
-    @mock.patch("syncode.cli._display_update_indicators")
-    @mock.patch("syncode.cli._build_context")
+    @mock.patch("agentfiles.cli._update_sync_state_from_results")
+    @mock.patch("agentfiles.cli._display_update_indicators")
+    @mock.patch("agentfiles.cli._build_context")
     def test_pull_with_failure_returns_1(
         self,
         mock_build_ctx: mock.MagicMock,

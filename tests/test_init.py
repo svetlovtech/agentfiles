@@ -1,4 +1,4 @@
-"""Tests for syncode.cli — commands, helpers, and edge cases."""
+"""Tests for agentfiles.cli — commands, helpers, and edge cases."""
 
 from __future__ import annotations
 
@@ -10,10 +10,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from syncode.cli import (
+from agentfiles.cli import (
     _create_init_structure,
     _discover_installed_from_targets,
-    _execute_sync_actions,
     _filter_items,
     _filter_items_by_installed,
     _format_list_json,
@@ -24,7 +23,7 @@ from syncode.cli import (
     build_parser,
     cmd_init,
 )
-from syncode.models import (
+from agentfiles.models import (
     Item,
     ItemType,
     Platform,
@@ -32,7 +31,7 @@ from syncode.models import (
     TargetPaths,
     TokenEstimate,
 )
-from syncode.target import TargetManager
+from agentfiles.target import TargetManager
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -64,7 +63,6 @@ def _make_item(
         name=name,
         source_path=source_path or Path(f"/fake/{item_type.value}/{name}"),
         version=version,
-        checksum="abc123",
         files=files,
         supported_platforms=platforms,
     )
@@ -545,7 +543,7 @@ class TestFormatListJson:
             overhead_tokens=10,
             total_tokens=60,
         )
-        with patch("syncode.tokens.token_estimate", return_value=estimate):
+        with patch("agentfiles.tokens.token_estimate", return_value=estimate):
             _format_list_json(items, show_tokens=True)
         data = json.loads(capsys.readouterr().out)
         assert "token_estimate" in data[0]
@@ -611,7 +609,7 @@ class TestFormatListText:
             overhead_tokens=20,
             total_tokens=120,
         )
-        with patch("syncode.tokens.token_estimate", return_value=estimate):
+        with patch("agentfiles.tokens.token_estimate", return_value=estimate):
             result = _format_list_text(items, show_tokens=True)
         output = capsys.readouterr().out
         assert result == 0
@@ -815,122 +813,6 @@ class TestResolvePlatformFor:
 
 
 # ---------------------------------------------------------------------------
-# _execute_sync_actions
-# ---------------------------------------------------------------------------
-
-
-class TestExecuteSyncActions:
-    """Tests for _execute_sync_actions helper."""
-
-    def test_pulls_items(self) -> None:
-        item = _make_item("pull-me")
-        engine = MagicMock()
-        engine.plan_sync.return_value = []
-        engine.execute_plan.return_value = []
-
-        sync_plan = [(item, Platform.OPENCODE, "pull")]
-        results = _execute_sync_actions(
-            sync_plan,
-            [Platform.OPENCODE],
-            engine,
-            Path("/source"),
-            dry_run=False,
-            skip_conflicts=False,
-        )
-        engine.plan_sync.assert_called_once()
-        assert results == []
-
-    def test_pushes_items(self) -> None:
-        item = _make_item("push-me")
-        push_report = MagicMock()
-        push_report.installed = []
-        push_report.updated = []
-        push_report.failed = []
-        push_report.success_count = 1
-        engine = MagicMock()
-        engine.push.return_value = push_report
-
-        sync_plan = [(item, Platform.OPENCODE, "push")]
-        _execute_sync_actions(
-            sync_plan,
-            [Platform.OPENCODE],
-            engine,
-            Path("/source"),
-            dry_run=False,
-            skip_conflicts=False,
-        )
-        engine.push.assert_called_once()
-
-    def test_skips_conflicts_with_skip_flag(self, capsys: pytest.CaptureFixture[str]) -> None:
-        item = _make_item("conflict-item")
-        engine = MagicMock()
-
-        sync_plan = [(item, Platform.OPENCODE, "conflict")]
-        _execute_sync_actions(
-            sync_plan,
-            [Platform.OPENCODE],
-            engine,
-            Path("/source"),
-            dry_run=False,
-            skip_conflicts=True,
-        )
-        output = capsys.readouterr().out
-        assert "Conflict skipped" in output
-
-    def test_shows_conflict_without_skip_flag(self, capsys: pytest.CaptureFixture[str]) -> None:
-        item = _make_item("conflict-item")
-        engine = MagicMock()
-
-        sync_plan = [(item, Platform.OPENCODE, "conflict")]
-        _execute_sync_actions(
-            sync_plan,
-            [Platform.OPENCODE],
-            engine,
-            Path("/source"),
-            dry_run=False,
-            skip_conflicts=False,
-        )
-        output = capsys.readouterr().out
-        assert "Conflict:" in output
-
-    def test_empty_sync_plan_returns_empty(self) -> None:
-        engine = MagicMock()
-        results = _execute_sync_actions(
-            [],
-            [Platform.OPENCODE],
-            engine,
-            Path("/source"),
-            dry_run=False,
-            skip_conflicts=False,
-        )
-        assert results == []
-        engine.plan_sync.assert_not_called()
-        engine.push.assert_not_called()
-
-    def test_dry_run_passed_to_push(self) -> None:
-        item = _make_item("push-dry")
-        push_report = MagicMock()
-        push_report.installed = []
-        push_report.updated = []
-        push_report.failed = []
-        push_report.success_count = 0
-        engine = MagicMock()
-        engine.push.return_value = push_report
-
-        sync_plan = [(item, Platform.OPENCODE, "push")]
-        _execute_sync_actions(
-            sync_plan,
-            [Platform.OPENCODE],
-            engine,
-            Path("/source"),
-            dry_run=True,
-            skip_conflicts=False,
-        )
-        _, kwargs = engine.push.call_args
-        assert kwargs["dry_run"] is True
-
-
-# ---------------------------------------------------------------------------
 # build_parser
 # ---------------------------------------------------------------------------
 
@@ -949,17 +831,11 @@ class TestBuildParser:
         for cmd in [
             "pull",
             "push",
-            "sync",
             "status",
-            "list",
-            "diff",
-            "uninstall",
+            "clean",
             "init",
-            "update",
-            "branch",
-            "show",
         ]:
-            args = parser.parse_args([cmd] if cmd != "show" else ["show", "x"])
+            args = parser.parse_args([cmd])
             assert args.command == cmd
 
     def test_init_default_path_is_dot(self) -> None:
@@ -977,31 +853,6 @@ class TestBuildParser:
         args = parser.parse_args(["pull", "--dry-run"])
         assert args.dry_run is True
 
-    def test_list_format_default_is_text(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args(["list"])
-        assert args.format == "text"
-
-    def test_list_format_json(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args(["list", "--format", "json"])
-        assert args.format == "json"
-
-    def test_show_requires_item_name(self) -> None:
-        parser = build_parser()
-        with pytest.raises(SystemExit):
-            parser.parse_args(["show"])
-
-    def test_branch_with_switch(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args(["branch", "--switch", "main"])
-        assert args.switch == "main"
-
-    def test_uninstall_with_force(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args(["uninstall", "--force"])
-        assert args.force is True
-
     def test_verbose_and_quiet_flags(self) -> None:
         parser = build_parser()
         args = parser.parse_args(["--verbose", "status"])
@@ -1014,21 +865,13 @@ class TestBuildParser:
         args = parser.parse_args(["pull", "--symlinks"])
         assert args.symlinks is True
 
-    def test_list_with_tokens(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args(["list", "--tokens"])
-        assert args.tokens is True
-
     def test_no_command_sets_command_to_none(self) -> None:
         parser = build_parser()
         args = parser.parse_args([])
         assert args.command is None
 
-    @pytest.mark.parametrize("cmd", ["pull", "push", "sync", "diff", "uninstall"])
+    @pytest.mark.parametrize("cmd", ["pull", "push", "clean"])
     def test_yes_flag_sets_non_interactive(self, cmd: str) -> None:
         parser = build_parser()
-        if cmd == "uninstall":
-            args = parser.parse_args([cmd, "--yes"])
-        else:
-            args = parser.parse_args([cmd, "--yes"])
+        args = parser.parse_args([cmd, "--yes"])
         assert args.non_interactive is True

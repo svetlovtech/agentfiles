@@ -10,8 +10,8 @@ from unittest import mock
 
 import pytest
 
-from syncode.models import Item, ItemType, Platform, TargetError, TargetPaths
-from syncode.target import TargetDiscovery, TargetManager, build_target_manager
+from agentfiles.models import Item, ItemType, Platform, TargetError, TargetPaths
+from agentfiles.target import TargetDiscovery, TargetManager, build_target_manager
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -467,7 +467,7 @@ class TestPermissionErrorHandling:
         fake_home: SimpleNamespace,
     ) -> None:
         """_find_existing skips candidates that raise PermissionError."""
-        from syncode.target import _find_existing
+        from agentfiles.target import _find_existing
 
         inaccessible = fake_home.home / ".config" / "opencode"
         # Make is_dir raise PermissionError on the first call.
@@ -482,7 +482,7 @@ class TestPermissionErrorHandling:
 
     def test_find_existing_skips_oserror(self, fake_home: SimpleNamespace) -> None:
         """_find_existing skips candidates that raise OSError."""
-        from syncode.target import _find_existing
+        from agentfiles.target import _find_existing
 
         inaccessible = fake_home.home / ".config" / "opencode"
         with mock.patch.object(
@@ -499,7 +499,7 @@ class TestPermissionErrorHandling:
         fake_home: SimpleNamespace,
     ) -> None:
         """_find_existing continues past errors and returns a valid candidate."""
-        from syncode.target import _find_existing
+        from agentfiles.target import _find_existing
 
         bad_dir = fake_home.home / "bad"
         good_dir = fake_home.opencode
@@ -528,7 +528,7 @@ class TestPermissionErrorHandling:
             mock.patch.object(Path, "home", return_value=fake_home.home),
             mock.patch.dict(os.environ, {}, clear=True),
             mock.patch(
-                "syncode.target._find_existing",
+                "agentfiles.target._find_existing",
                 side_effect=RuntimeError("surprise"),
             ),
         ):
@@ -545,7 +545,7 @@ class TestPermissionErrorHandling:
             mock.patch.object(Path, "home", return_value=fake_home.home),
             mock.patch.dict(os.environ, {}, clear=True),
             mock.patch(
-                "syncode.target._resolve_subdirs",
+                "agentfiles.target._resolve_subdirs",
                 side_effect=RuntimeError("boom"),
             ),
         ):
@@ -840,7 +840,7 @@ class TestPlatformSubdirResolvers:
 
     def test_opencode_subdirs_maps_all_item_types(self) -> None:
         """OpenCode subdirs covers agents, skills, commands, and plugins."""
-        from syncode.target import _opencode_subdirs
+        from agentfiles.target import _opencode_subdirs
 
         config_dir = Path("/fake/opencode")
         subdirs = _opencode_subdirs(config_dir)
@@ -854,7 +854,7 @@ class TestPlatformSubdirResolvers:
 
     def test_claude_code_subdirs_maps_supported_types(self) -> None:
         """Claude Code subdirs covers agents, skills, commands, and plugins."""
-        from syncode.target import _claude_code_subdirs
+        from agentfiles.target import _claude_code_subdirs
 
         config_dir = Path("/fake/claude")
         subdirs = _claude_code_subdirs(config_dir)
@@ -868,7 +868,7 @@ class TestPlatformSubdirResolvers:
 
     def test_skills_only_subdirs_returns_skills_key(self) -> None:
         """Skills-only platforms return a single 'skills' key."""
-        from syncode.target import _skills_only_subdirs
+        from agentfiles.target import _skills_only_subdirs
 
         config_dir = Path("/fake/windsurf")
         subdirs = _skills_only_subdirs(config_dir)
@@ -877,7 +877,7 @@ class TestPlatformSubdirResolvers:
 
     def test_resolve_subdirs_unknown_platform_returns_empty(self) -> None:
         """_resolve_subdirs returns empty dict for unregistered platforms."""
-        from syncode.target import _PLATFORM_SUBDIR_RESOLVERS, _resolve_subdirs
+        from agentfiles.target import _PLATFORM_SUBDIR_RESOLVERS, _resolve_subdirs
 
         # Temporarily remove all resolvers to test unknown platform.
         saved = dict(_PLATFORM_SUBDIR_RESOLVERS)
@@ -950,7 +950,7 @@ class TestInstalledItemsEdgeCases:
 
     def test_is_item_installed_with_no_subdir_mapping(self) -> None:
         """is_item_installed returns False when item type has no subdirectory."""
-        from syncode.models import TargetPaths
+        from agentfiles.models import TargetPaths
 
         targets = {
             Platform.OPENCODE: TargetPaths(
@@ -1000,14 +1000,14 @@ class TestFindExistingEdgeCases:
 
     def test_find_existing_empty_candidates(self) -> None:
         """_find_existing returns None when candidates list is empty."""
-        from syncode.target import _find_existing
+        from agentfiles.target import _find_existing
 
         result = _find_existing([])
         assert result is None
 
     def test_get_candidates_unknown_platform(self) -> None:
         """_get_candidates returns empty list for unregistered platforms."""
-        from syncode.target import _PLATFORM_CANDIDATE_RESOLVERS, TargetDiscovery
+        from agentfiles.target import _PLATFORM_CANDIDATE_RESOLVERS, TargetDiscovery
 
         discovery = TargetDiscovery()
         saved = dict(_PLATFORM_CANDIDATE_RESOLVERS)
@@ -1020,7 +1020,7 @@ class TestFindExistingEdgeCases:
 
     def test_discover_with_empty_candidates(self, tmp_path: Path) -> None:
         """discover returns None when platform has no candidate resolver."""
-        from syncode.target import _PLATFORM_CANDIDATE_RESOLVERS, TargetDiscovery
+        from agentfiles.target import _PLATFORM_CANDIDATE_RESOLVERS, TargetDiscovery
 
         empty_home = tmp_path / "empty"
         empty_home.mkdir()

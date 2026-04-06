@@ -9,8 +9,8 @@ from unittest import mock
 
 import pytest
 
-from syncode.models import Item, ItemType, Platform
-from syncode.target import TargetDiscovery, TargetManager, build_target_manager
+from agentfiles.models import Item, ItemType, Platform
+from agentfiles.target import TargetDiscovery, TargetManager, build_target_manager
 
 # ---------------------------------------------------------------------------
 # Fixtures

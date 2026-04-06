@@ -12,9 +12,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import syncode.output as _output_module
-from syncode.models import DiffEntry, DiffStatus, Item, ItemType, Platform
-from syncode.output import (
+import agentfiles.output as _output_module
+from agentfiles.models import DiffEntry, DiffStatus, Item, ItemType, Platform
+from agentfiles.output import (
     Colors,
     _diff_status_symbol,
     _fit_cell,
@@ -64,13 +64,13 @@ class TestColorize:
 
     def test_returns_plain_text_when_colors_disabled(self) -> None:
         """When _use_colors is False, colorize returns text unchanged."""
-        with patch("syncode.output._use_colors", False):
+        with patch("agentfiles.output._use_colors", False):
             result = colorize("hello", Colors.GREEN)
         assert result == "hello"
 
     def test_wraps_text_in_codes_when_colors_enabled(self) -> None:
         """When _use_colors is True, result starts with code and ends with RESET."""
-        with patch("syncode.output._use_colors", True):
+        with patch("agentfiles.output._use_colors", True):
             result = colorize("hello", Colors.GREEN)
         assert result.startswith(Colors.GREEN)
         assert result.endswith(Colors.RESET)
@@ -78,14 +78,14 @@ class TestColorize:
 
     def test_supports_multiple_codes(self) -> None:
         """colorize should concatenate multiple ANSI codes before text."""
-        with patch("syncode.output._use_colors", True):
+        with patch("agentfiles.output._use_colors", True):
             result = colorize("bold-green", Colors.BOLD, Colors.GREEN)
         assert result.startswith(Colors.BOLD + Colors.GREEN)
         assert result.endswith(Colors.RESET)
         assert "bold-green" in result
 
     def test_empty_string_just_returns_codes_and_reset(self) -> None:
-        with patch("syncode.output._use_colors", True):
+        with patch("agentfiles.output._use_colors", True):
             result = colorize("", Colors.RED)
         assert result == Colors.RED + Colors.RESET
 
@@ -176,19 +176,19 @@ class TestSuccess:
     """Tests for success() output."""
 
     def test_prints_message_to_stdout(self, capsys: pytest.CaptureFixture) -> None:
-        with patch("syncode.output._use_colors", True):
+        with patch("agentfiles.output._use_colors", True):
             success("all good")
         captured = capsys.readouterr()
         assert "all good" in captured.out
 
     def test_includes_green_color_when_enabled(self, capsys: pytest.CaptureFixture) -> None:
-        with patch("syncode.output._use_colors", True):
+        with patch("agentfiles.output._use_colors", True):
             success("ok")
         captured = capsys.readouterr()
         assert Colors.GREEN in captured.out
 
     def test_plain_output_when_colors_disabled(self, capsys: pytest.CaptureFixture) -> None:
-        with patch("syncode.output._use_colors", False):
+        with patch("agentfiles.output._use_colors", False):
             success("plain")
         captured = capsys.readouterr()
         assert captured.out.strip() == "plain"
@@ -199,19 +199,19 @@ class TestError:
     """Tests for error() output."""
 
     def test_prints_message_to_stderr(self, capsys: pytest.CaptureFixture) -> None:
-        with patch("syncode.output._use_colors", True):
+        with patch("agentfiles.output._use_colors", True):
             error("something failed")
         captured = capsys.readouterr()
         assert "something failed" in captured.err
 
     def test_includes_red_color_when_enabled(self, capsys: pytest.CaptureFixture) -> None:
-        with patch("syncode.output._use_colors", True):
+        with patch("agentfiles.output._use_colors", True):
             error("fail")
         captured = capsys.readouterr()
         assert Colors.RED in captured.err
 
     def test_plain_output_when_colors_disabled(self, capsys: pytest.CaptureFixture) -> None:
-        with patch("syncode.output._use_colors", False):
+        with patch("agentfiles.output._use_colors", False):
             error("fail")
         captured = capsys.readouterr()
         assert captured.err.strip() == "fail"
@@ -221,19 +221,19 @@ class TestWarning:
     """Tests for warning() output."""
 
     def test_prints_message_to_stdout(self, capsys: pytest.CaptureFixture) -> None:
-        with patch("syncode.output._use_colors", True):
+        with patch("agentfiles.output._use_colors", True):
             warning("careful!")
         captured = capsys.readouterr()
         assert "careful!" in captured.out
 
     def test_includes_yellow_color_when_enabled(self, capsys: pytest.CaptureFixture) -> None:
-        with patch("syncode.output._use_colors", True):
+        with patch("agentfiles.output._use_colors", True):
             warning("warn")
         captured = capsys.readouterr()
         assert Colors.YELLOW in captured.out
 
     def test_plain_output_when_colors_disabled(self, capsys: pytest.CaptureFixture) -> None:
-        with patch("syncode.output._use_colors", False):
+        with patch("agentfiles.output._use_colors", False):
             warning("caution")
         captured = capsys.readouterr()
         assert captured.out.strip() == "caution"
@@ -243,25 +243,25 @@ class TestDim:
     """Tests for dim() output."""
 
     def test_prints_message_to_stdout(self, capsys: pytest.CaptureFixture) -> None:
-        with patch("syncode.output._use_colors", True):
+        with patch("agentfiles.output._use_colors", True):
             dim("subtle text")
         captured = capsys.readouterr()
         assert "subtle text" in captured.out
 
     def test_includes_dim_color_when_enabled(self, capsys: pytest.CaptureFixture) -> None:
-        with patch("syncode.output._use_colors", True):
+        with patch("agentfiles.output._use_colors", True):
             dim("subtle")
         captured = capsys.readouterr()
         assert Colors.DIM in captured.out
 
 
 class TestInfo:
-    """Tests for info() output — imported from syncode.output directly."""
+    """Tests for info() output — imported from agentfiles.output directly."""
 
     def test_info_prints_blue_when_colors_enabled(self, capsys: pytest.CaptureFixture) -> None:
-        from syncode.output import info
+        from agentfiles.output import info
 
-        with patch("syncode.output._use_colors", True):
+        with patch("agentfiles.output._use_colors", True):
             info("info message")
         captured = capsys.readouterr()
         assert "info message" in captured.out
@@ -362,7 +362,7 @@ class TestPrintBanner:
         assert captured.out == ""
 
     def test_single_line_banner(self, capsys: pytest.CaptureFixture) -> None:
-        with patch("syncode.output._use_colors", False):
+        with patch("agentfiles.output._use_colors", False):
             print_banner(["Hello"])
         captured = capsys.readouterr()
         lines = captured.out.strip().splitlines()
@@ -372,7 +372,7 @@ class TestPrintBanner:
         assert "Hello" in lines[1]
 
     def test_multi_line_banner_aligns_box(self, capsys: pytest.CaptureFixture) -> None:
-        with patch("syncode.output._use_colors", False):
+        with patch("agentfiles.output._use_colors", False):
             print_banner(["short", "a much longer line here"])
         captured = capsys.readouterr()
         lines = captured.out.strip().splitlines()
@@ -381,7 +381,7 @@ class TestPrintBanner:
 
     def test_banner_strips_ansi_for_width_calculation(self, capsys: pytest.CaptureFixture) -> None:
         """Coloured text inside banner should not break box alignment."""
-        with patch("syncode.output._use_colors", True):
+        with patch("agentfiles.output._use_colors", True):
             print_banner([colorize("Coloured", Colors.GREEN)])
         captured = capsys.readouterr()
         lines = captured.out.strip().splitlines()
@@ -400,14 +400,14 @@ class TestBold:
     """Tests for bold() output."""
 
     def test_wraps_in_bold_ansi(self, capsys: pytest.CaptureFixture) -> None:
-        with patch("syncode.output._use_colors", True):
+        with patch("agentfiles.output._use_colors", True):
             bold("hello")
         captured = capsys.readouterr()
         assert "hello" in captured.out
         assert "\033[1" in captured.out
 
     def test_plain_when_colors_disabled(self, capsys: pytest.CaptureFixture) -> None:
-        with patch("syncode.output._use_colors", False):
+        with patch("agentfiles.output._use_colors", False):
             bold("hello")
         captured = capsys.readouterr()
         assert "hello" in captured.out
@@ -426,30 +426,30 @@ class TestSetupFileLogging:
     def _cleanup_loggers(self, tmp_path: object) -> Generator[None, None, None]:
         """Remove any handlers we add during tests to avoid leaking state."""
         yield
-        test_logger = logging.getLogger("syncode.test_file_logging")
+        test_logger = logging.getLogger("agentfiles.test_file_logging")
         test_logger.handlers.clear()
         test_logger.setLevel(logging.WARNING)
 
     def test_creates_log_directory(self, tmp_path: Path) -> None:
         """setup_file_logging should create the log directory if missing."""
         log_dir = tmp_path / "nested" / "logs"
-        from syncode.output import setup_file_logging
+        from agentfiles.output import setup_file_logging
 
         setup_file_logging(
             log_dir=log_dir,
             prefix="test",
-            module_names=("syncode.test_file_logging",),
+            module_names=("agentfiles.test_file_logging",),
         )
         assert log_dir.is_dir()
 
     def test_creates_log_file(self, tmp_path: Path) -> None:
         """A log file with the correct prefix should be created."""
-        from syncode.output import setup_file_logging
+        from agentfiles.output import setup_file_logging
 
         log_file = setup_file_logging(
             log_dir=tmp_path,
             prefix="mytest",
-            module_names=("syncode.test_file_logging",),
+            module_names=("agentfiles.test_file_logging",),
         )
         assert log_file.exists()
         assert log_file.name.startswith("mytest-")
@@ -457,12 +457,12 @@ class TestSetupFileLogging:
 
     def test_returns_log_file_path(self, tmp_path: Path) -> None:
         """Return value should be a Path inside log_dir."""
-        from syncode.output import setup_file_logging
+        from agentfiles.output import setup_file_logging
 
         log_file = setup_file_logging(
             log_dir=tmp_path,
             prefix="test",
-            module_names=("syncode.test_file_logging",),
+            module_names=("agentfiles.test_file_logging",),
         )
         assert isinstance(log_file, Path)
         assert log_file.parent == tmp_path
@@ -471,41 +471,41 @@ class TestSetupFileLogging:
         """The specified module logger should receive a RotatingFileHandler."""
         from logging.handlers import RotatingFileHandler
 
-        from syncode.output import setup_file_logging
+        from agentfiles.output import setup_file_logging
 
         setup_file_logging(
             log_dir=tmp_path,
             prefix="test",
-            module_names=("syncode.test_file_logging",),
+            module_names=("agentfiles.test_file_logging",),
         )
 
-        test_logger = logging.getLogger("syncode.test_file_logging")
+        test_logger = logging.getLogger("agentfiles.test_file_logging")
         assert any(isinstance(h, RotatingFileHandler) for h in test_logger.handlers)
 
     def test_sets_logger_to_debug_level(self, tmp_path: Path) -> None:
         """Module logger level should be set to DEBUG."""
-        from syncode.output import setup_file_logging
+        from agentfiles.output import setup_file_logging
 
         setup_file_logging(
             log_dir=tmp_path,
             prefix="test",
-            module_names=("syncode.test_file_logging",),
+            module_names=("agentfiles.test_file_logging",),
         )
 
-        test_logger = logging.getLogger("syncode.test_file_logging")
+        test_logger = logging.getLogger("agentfiles.test_file_logging")
         assert test_logger.level == logging.DEBUG
 
     def test_writes_log_messages_to_file(self, tmp_path: Path) -> None:
         """Log messages should appear in the created file."""
-        from syncode.output import setup_file_logging
+        from agentfiles.output import setup_file_logging
 
         log_file = setup_file_logging(
             log_dir=tmp_path,
             prefix="test",
-            module_names=("syncode.test_file_logging",),
+            module_names=("agentfiles.test_file_logging",),
         )
 
-        test_logger = logging.getLogger("syncode.test_file_logging")
+        test_logger = logging.getLogger("agentfiles.test_file_logging")
         test_logger.info("hello from test")
 
         # Flush handlers
@@ -519,16 +519,16 @@ class TestSetupFileLogging:
         """Should attach the handler to all specified module loggers."""
         from logging.handlers import RotatingFileHandler
 
-        from syncode.output import setup_file_logging
+        from agentfiles.output import setup_file_logging
 
         setup_file_logging(
             log_dir=tmp_path,
             prefix="multi",
-            module_names=("syncode.test_file_logging", "syncode.test_file_logging_other"),
+            module_names=("agentfiles.test_file_logging", "agentfiles.test_file_logging_other"),
         )
 
-        logger_a = logging.getLogger("syncode.test_file_logging")
-        logger_b = logging.getLogger("syncode.test_file_logging_other")
+        logger_a = logging.getLogger("agentfiles.test_file_logging")
+        logger_b = logging.getLogger("agentfiles.test_file_logging_other")
 
         assert any(isinstance(h, RotatingFileHandler) for h in logger_a.handlers)
         assert any(isinstance(h, RotatingFileHandler) for h in logger_b.handlers)
@@ -668,7 +668,7 @@ class TestConvenienceResilience:
         ids=["success", "error", "warning", "info"],
     )
     def test_survives_broken_pipe(self, func: object, message: str) -> None:
-        with patch("syncode.output._safe_write") as mock_write:
+        with patch("agentfiles.output._safe_write") as mock_write:
             func(message)
         mock_write.assert_called_once()
 
@@ -683,7 +683,7 @@ class TestTableBannerResilience:
 
     def test_print_table_uses_safe_write(self) -> None:
         """print_table should route through _safe_write."""
-        with patch("syncode.output._safe_write") as mock_write:
+        with patch("agentfiles.output._safe_write") as mock_write:
             print_table(["A"], [["x"]])
         mock_write.assert_called_once()
         written = mock_write.call_args[0][0]
@@ -692,7 +692,7 @@ class TestTableBannerResilience:
 
     def test_print_banner_uses_safe_write(self) -> None:
         """print_banner should route through _safe_write."""
-        with patch("syncode.output._safe_write") as mock_write:
+        with patch("agentfiles.output._safe_write") as mock_write:
             print_banner(["Hello"])
         mock_write.assert_called_once()
         written = mock_write.call_args[0][0]
@@ -700,13 +700,13 @@ class TestTableBannerResilience:
 
     def test_print_table_survives_broken_pipe(self) -> None:
         """BrokenPipeError in print_table must not propagate."""
-        with patch("syncode.output._safe_write"):
+        with patch("agentfiles.output._safe_write"):
             # _safe_write itself handles the error; we verify no crash.
             print_table(["Col"], [["val"]])
 
     def test_print_banner_survives_broken_pipe(self) -> None:
         """BrokenPipeError in print_banner must not propagate."""
-        with patch("syncode.output._safe_write"):
+        with patch("agentfiles.output._safe_write"):
             print_banner(["Banner text"])
 
 
@@ -730,7 +730,7 @@ class TestColorFunctionsEdgeCases:
     def test_colorize_long_string(self) -> None:
         """colorize should handle strings longer than typical terminal width."""
         long_text = "x" * 500
-        with patch("syncode.output._use_colors", True):
+        with patch("agentfiles.output._use_colors", True):
             result = colorize(long_text, Colors.GREEN)
         assert result.startswith(Colors.GREEN)
         assert result.endswith(Colors.RESET)
@@ -739,7 +739,7 @@ class TestColorFunctionsEdgeCases:
     def test_colorize_long_string_no_colors(self) -> None:
         """Long string is returned unchanged when colors disabled."""
         long_text = "y" * 500
-        with patch("syncode.output._use_colors", False):
+        with patch("agentfiles.output._use_colors", False):
             result = colorize(long_text, Colors.RED)
         assert result == long_text
 
@@ -754,7 +754,7 @@ class TestColorFunctionsEdgeCases:
         capsys: pytest.CaptureFixture,
     ) -> None:
         """All convenience print helpers should handle empty strings gracefully."""
-        with patch("syncode.output._use_colors", False):
+        with patch("agentfiles.output._use_colors", False):
             func("")
         captured = capsys.readouterr()
         # Empty string produces just a newline (stdout or stderr)
@@ -764,7 +764,7 @@ class TestColorFunctionsEdgeCases:
     def test_success_long_string(self, capsys: pytest.CaptureFixture) -> None:
         """success() should print long strings without truncation."""
         long_msg = "done: " + "x" * 300
-        with patch("syncode.output._use_colors", False):
+        with patch("agentfiles.output._use_colors", False):
             success(long_msg)
         captured = capsys.readouterr()
         assert long_msg in captured.out
@@ -772,7 +772,7 @@ class TestColorFunctionsEdgeCases:
     def test_error_long_string(self, capsys: pytest.CaptureFixture) -> None:
         """error() should print long strings without truncation."""
         long_msg = "failed: " + "y" * 300
-        with patch("syncode.output._use_colors", False):
+        with patch("agentfiles.output._use_colors", False):
             error(long_msg)
         captured = capsys.readouterr()
         assert long_msg in captured.err
@@ -782,7 +782,7 @@ class TestColorFunctionsEdgeCases:
         capsys: pytest.CaptureFixture,
     ) -> None:
         """dim() should output plain text when colors are off."""
-        with patch("syncode.output._use_colors", False):
+        with patch("agentfiles.output._use_colors", False):
             dim("subtle")
         captured = capsys.readouterr()
         assert captured.out.strip() == "subtle"
@@ -793,7 +793,7 @@ class TestColorFunctionsEdgeCases:
         capsys: pytest.CaptureFixture,
     ) -> None:
         """info() should output plain text when colors are off."""
-        with patch("syncode.output._use_colors", False):
+        with patch("agentfiles.output._use_colors", False):
             info("information")
         captured = capsys.readouterr()
         assert captured.out.strip() == "information"
@@ -891,7 +891,7 @@ class TestDiffStatusSymbol:
 
     def test_returns_colored_symbol_when_enabled(self) -> None:
         """Symbol should be wrapped in ANSI codes."""
-        with patch("syncode.output._use_colors", True):
+        with patch("agentfiles.output._use_colors", True):
             result = _diff_status_symbol(DiffStatus.NEW, use_colors=True)
         assert "+" in result
         assert Colors.GREEN in result
@@ -932,7 +932,7 @@ class TestFormatDiff:
 
     def test_empty_dict_with_colors_returns_dimmed(self) -> None:
         """Empty diff with colors should dim the message."""
-        with patch("syncode.output._use_colors", True):
+        with patch("agentfiles.output._use_colors", True):
             result = format_diff({}, use_colors=True)
         assert "No differences found." in result
         assert Colors.DIM in result
@@ -1009,7 +1009,7 @@ class TestFormatDiff:
 
     def test_colors_enabled_includes_ansi(self) -> None:
         """When use_colors=True, output should contain ANSI codes."""
-        with patch("syncode.output._use_colors", True):
+        with patch("agentfiles.output._use_colors", True):
             entry = DiffEntry(item=_make_item("x"), status=DiffStatus.NEW)
             result = format_diff({Platform.OPENCODE: [entry]}, use_colors=True)
         assert "\033[" in result
@@ -1125,7 +1125,7 @@ class TestFormatDiffVerbose:
             " context",
         ]
         content_diffs = {("agent/colored", "opencode"): diff_lines}
-        with patch("syncode.output._use_colors", True):
+        with patch("agentfiles.output._use_colors", True):
             result = format_diff(
                 {Platform.OPENCODE: [entry]},
                 use_colors=True,
@@ -1249,7 +1249,7 @@ class TestPrintBannerEdgeCases:
 
     def test_banner_with_empty_string_line(self, capsys: pytest.CaptureFixture) -> None:
         """An empty string in lines should produce a blank content line."""
-        with patch("syncode.output._use_colors", False):
+        with patch("agentfiles.output._use_colors", False):
             print_banner([""])
         captured = capsys.readouterr()
         lines = captured.out.strip().splitlines()
@@ -1259,7 +1259,7 @@ class TestPrintBannerEdgeCases:
 
     def test_banner_with_special_characters(self, capsys: pytest.CaptureFixture) -> None:
         """Special characters like tabs should not break box drawing."""
-        with patch("syncode.output._use_colors", False):
+        with patch("agentfiles.output._use_colors", False):
             print_banner(["Tab\there"])
         captured = capsys.readouterr()
         lines = captured.out.strip().splitlines()
@@ -1269,7 +1269,7 @@ class TestPrintBannerEdgeCases:
 
     def test_banner_with_embedded_newline(self, capsys: pytest.CaptureFixture) -> None:
         """A string containing \\n produces extra output lines (actual newlines)."""
-        with patch("syncode.output._use_colors", False):
+        with patch("agentfiles.output._use_colors", False):
             print_banner(["Line1\nLine2"])
         captured = capsys.readouterr()
         # The embedded \n creates an actual newline in output, splitting the box
@@ -1279,7 +1279,7 @@ class TestPrintBannerEdgeCases:
     def test_banner_with_very_long_line(self, capsys: pytest.CaptureFixture) -> None:
         """Very long lines should be handled without error."""
         long_line = "x" * 300
-        with patch("syncode.output._use_colors", False):
+        with patch("agentfiles.output._use_colors", False):
             print_banner([long_line])
         captured = capsys.readouterr()
         assert long_line in captured.out
@@ -1289,7 +1289,7 @@ class TestPrintBannerEdgeCases:
         capsys: pytest.CaptureFixture,
     ) -> None:
         """All content lines in the banner should have same visible width."""
-        with patch("syncode.output._use_colors", False):
+        with patch("agentfiles.output._use_colors", False):
             print_banner(["short", "medium length", "a very long line here"])
         captured = capsys.readouterr()
         import re
@@ -1305,7 +1305,7 @@ class TestPrintBannerEdgeCases:
 
     def test_banner_uses_box_drawing_chars(self, capsys: pytest.CaptureFixture) -> None:
         """Banner should use Unicode box-drawing characters."""
-        with patch("syncode.output._use_colors", False):
+        with patch("agentfiles.output._use_colors", False):
             print_banner(["test"])
         captured = capsys.readouterr()
         assert "\u2500" in captured.out  # horizontal line ─
@@ -1316,7 +1316,7 @@ class TestPrintBannerEdgeCases:
         capsys: pytest.CaptureFixture,
     ) -> None:
         """Mix of colored and plain lines should still align."""
-        with patch("syncode.output._use_colors", True):
+        with patch("agentfiles.output._use_colors", True):
             print_banner(
                 [
                     colorize("colored", Colors.GREEN),
@@ -1342,12 +1342,12 @@ class TestBrokenPipeAdditional:
     """Additional broken-pipe resilience tests for dim/bold."""
 
     def test_dim_survives_broken_pipe(self) -> None:
-        with patch("syncode.output._safe_write") as mock_write:
+        with patch("agentfiles.output._safe_write") as mock_write:
             dim("faded")
         mock_write.assert_called_once()
 
     def test_bold_survives_broken_pipe(self) -> None:
-        with patch("syncode.output._safe_write") as mock_write:
+        with patch("agentfiles.output._safe_write") as mock_write:
             bold("strong")
         mock_write.assert_called_once()
 
@@ -1495,7 +1495,7 @@ class TestPrintSection:
     def test_prints_section_header(self, capsys: pytest.CaptureFixture) -> None:
         """Should output a line starting with ── and containing the title."""
         with patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))):
-            with patch("syncode.output._use_colors", False):
+            with patch("agentfiles.output._use_colors", False):
                 print_section("Scanning source")
         captured = capsys.readouterr()
         assert "Scanning source" in captured.out
@@ -1504,7 +1504,7 @@ class TestPrintSection:
     def test_pads_to_terminal_width(self, capsys: pytest.CaptureFixture) -> None:
         """Line should span the terminal width (or 80, whichever is smaller)."""
         with patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))):
-            with patch("syncode.output._use_colors", False):
+            with patch("agentfiles.output._use_colors", False):
                 print_section("Test")
         captured = capsys.readouterr()
         line = captured.out.rstrip("\n")
@@ -1515,10 +1515,13 @@ class TestPrintSection:
         capsys: pytest.CaptureFixture,
     ) -> None:
         """Even on a 200-char terminal, section header caps at 80."""
-        with patch(
-            "shutil.get_terminal_size",
-            return_value=os.terminal_size((200, 24)),
-        ), patch("syncode.output._use_colors", False):
+        with (
+            patch(
+                "shutil.get_terminal_size",
+                return_value=os.terminal_size((200, 24)),
+            ),
+            patch("agentfiles.output._use_colors", False),
+        ):
             print_section("Wide terminal")
         captured = capsys.readouterr()
         line = captured.out.rstrip("\n")
@@ -1530,7 +1533,7 @@ class TestPrintSection:
     ) -> None:
         """A short title should have ─ padding on the right."""
         with patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))):
-            with patch("syncode.output._use_colors", False):
+            with patch("agentfiles.output._use_colors", False):
                 print_section("Go")
         captured = capsys.readouterr()
         line = captured.out.rstrip("\n")
@@ -1541,7 +1544,7 @@ class TestPrintSection:
         """print_section should route through dim → _safe_write."""
         with (
             patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))),
-            patch("syncode.output._safe_write") as mock_write,
+            patch("agentfiles.output._safe_write") as mock_write,
         ):
             print_section("Test")
         # dim() calls _safe_write once
@@ -1570,9 +1573,9 @@ class TestPrintItemStatus:
 
     def test_with_detail(self, capsys: pytest.CaptureFixture) -> None:
         """Detail text should appear after em-dash."""
-        print_item_status("agent/coder", "⚠️", ["opencode"], detail="checksum differs")
+        print_item_status("agent/coder", "⚠️", ["opencode"], detail="content differs")
         captured = capsys.readouterr()
-        assert "checksum differs" in captured.out
+        assert "content differs" in captured.out
         assert "\u2014" in captured.out  # em-dash
 
     def test_no_platforms_omits_brackets(
@@ -1596,16 +1599,16 @@ class TestPrintItemStatus:
             "skill/python-review",
             "✅",
             ["opencode"],
-            detail="checksums match",
+            detail="up to date",
         )
         captured = capsys.readouterr()
         line = captured.out.rstrip("\n")
         assert line.startswith("  ✅ skill/python-review [opencode]")
-        assert line.endswith("checksums match")
+        assert line.endswith("up to date")
 
     def test_routes_through_safe_write(self) -> None:
         """print_item_status should route through _safe_write."""
-        with patch("syncode.output._safe_write") as mock_write:
+        with patch("agentfiles.output._safe_write") as mock_write:
             print_item_status("x", "✅", ["opencode"], detail="ok")
         mock_write.assert_called_once()
         written = mock_write.call_args[0][0]

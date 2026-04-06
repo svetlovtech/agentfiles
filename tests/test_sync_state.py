@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from syncode.config import load_sync_state, save_sync_state
-from syncode.models import ItemState, PlatformState, SyncState
+from agentfiles.config import load_sync_state, save_sync_state
+from agentfiles.models import ItemState, PlatformState, SyncState
 
 # ---------------------------------------------------------------------------
 # ItemState
@@ -20,28 +20,22 @@ class TestItemState:
 
     def test_default_values(self) -> None:
         state = ItemState()
-        assert state.source_hash == ""
-        assert state.target_hash == ""
         assert state.synced_at == ""
 
     def test_custom_values(self) -> None:
         state = ItemState(
-            source_hash="abc123",
-            target_hash="def456",
             synced_at="2025-01-01T00:00:00Z",
         )
-        assert state.source_hash == "abc123"
-        assert state.target_hash == "def456"
         assert state.synced_at == "2025-01-01T00:00:00Z"
 
     def test_frozen(self) -> None:
-        state = ItemState(source_hash="abc")
+        state = ItemState(synced_at="abc")
         with pytest.raises(AttributeError):
-            state.source_hash = "changed"  # type: ignore[misc]
+            state.synced_at = "changed"  # type: ignore[misc]
 
     def test_equality(self) -> None:
-        a = ItemState(source_hash="abc", target_hash="def")
-        b = ItemState(source_hash="abc", target_hash="def")
+        a = ItemState(synced_at="2025-01-01T00:00:00Z")
+        b = ItemState(synced_at="2025-01-01T00:00:00Z")
         assert a == b
 
 
@@ -59,7 +53,7 @@ class TestPlatformState:
         assert state.items == {}
 
     def test_custom_values(self) -> None:
-        items = {"agent/coder": ItemState(source_hash="abc")}
+        items = {"agent/coder": ItemState(synced_at="2025-01-01T00:00:00Z")}
         state = PlatformState(path="/home/user/.config/opencode", items=items)
         assert state.path == "/home/user/.config/opencode"
         assert len(state.items) == 1
@@ -109,7 +103,7 @@ class TestSyncState:
         assert "test" not in b.platforms
 
     def test_with_platforms(self) -> None:
-        items = {"skill/reviewer": ItemState(source_hash="aaa", target_hash="bbb")}
+        items = {"skill/reviewer": ItemState(synced_at="2025-01-01T00:00:00Z")}
         platforms = {
             "opencode": PlatformState(
                 path="/home/user/.config/opencode",
@@ -144,8 +138,6 @@ class TestLoadSyncState:
                     "path": "/home/user/.config/opencode",
                     "items": {
                         "agent/coder": {
-                            "source_hash": "abc123",
-                            "target_hash": "def456",
                             "synced_at": "2025-06-01T11:00:00Z",
                         },
                     },
@@ -165,8 +157,6 @@ class TestLoadSyncState:
         assert "agent/coder" in platform.items
 
         item = platform.items["agent/coder"]
-        assert item.source_hash == "abc123"
-        assert item.target_hash == "def456"
         assert item.synced_at == "2025-06-01T11:00:00Z"
 
     def test_loads_empty_state_file(self, tmp_path: Path) -> None:
@@ -232,7 +222,7 @@ class TestLoadSyncState:
             "platforms": {
                 "opencode": {
                     "path": "/test",
-                    "items": {"agent/minimal": {"source_hash": "abc"}},
+                    "items": {"agent/minimal": {}},
                 },
             },
         }
@@ -241,8 +231,6 @@ class TestLoadSyncState:
 
         state = load_sync_state(tmp_path)
         item = state.platforms["opencode"].items["agent/minimal"]
-        assert item.source_hash == "abc"
-        assert item.target_hash == ""
         assert item.synced_at == ""
 
     def test_handles_missing_platform_path(self, tmp_path: Path) -> None:
@@ -298,8 +286,6 @@ class TestSaveSyncState:
                     path="/home/user/.config/opencode",
                     items={
                         "agent/coder": ItemState(
-                            source_hash="abc123",
-                            target_hash="def456",
                             synced_at="2025-06-01T11:00:00Z",
                         ),
                     },
@@ -319,8 +305,6 @@ class TestSaveSyncState:
         assert "agent/coder" in platform["items"]
 
         item = platform["items"]["agent/coder"]
-        assert item["source_hash"] == "abc123"
-        assert item["target_hash"] == "def456"
         assert item["synced_at"] == "2025-06-01T11:00:00Z"
 
 
@@ -350,13 +334,9 @@ class TestSyncStateRoundTrip:
                     path="/home/user/.config/opencode",
                     items={
                         "agent/coder": ItemState(
-                            source_hash="abc",
-                            target_hash="def",
                             synced_at="2025-06-01T11:00:00Z",
                         ),
                         "skill/reviewer": ItemState(
-                            source_hash="111",
-                            target_hash="222",
                             synced_at="2025-06-01T10:00:00Z",
                         ),
                     },
@@ -365,8 +345,6 @@ class TestSyncStateRoundTrip:
                     path="/home/user/.claude",
                     items={
                         "agent/architect": ItemState(
-                            source_hash="ccc",
-                            target_hash="ddd",
                             synced_at="2025-06-01T09:00:00Z",
                         ),
                     },
@@ -383,8 +361,6 @@ class TestSyncStateRoundTrip:
         assert set(loaded.platforms["claude_code"].items.keys()) == {"agent/architect"}
 
         item = loaded.platforms["opencode"].items["agent/coder"]
-        assert item.source_hash == "abc"
-        assert item.target_hash == "def"
         assert item.synced_at == "2025-06-01T11:00:00Z"
 
     def test_round_trip_preserves_multiple_platforms(self, tmp_path: Path) -> None:
@@ -397,8 +373,6 @@ class TestSyncStateRoundTrip:
                     path="/home/user/.config/opencode",
                     items={
                         "agent/coder": ItemState(
-                            source_hash="s1",
-                            target_hash="t1",
                             synced_at="2025-09-01T08:00:00Z",
                         ),
                     },
@@ -407,8 +381,6 @@ class TestSyncStateRoundTrip:
                     path="/home/user/.claude",
                     items={
                         "skill/reviewer": ItemState(
-                            source_hash="s2",
-                            target_hash="t2",
                             synced_at="2025-09-01T07:00:00Z",
                         ),
                     },
@@ -449,17 +421,15 @@ class TestSyncStateRoundTripEdgeCases:
     """Edge cases for sync state save/load roundtrips."""
 
     def test_roundtrip_with_special_characters_in_hashes(self, tmp_path: Path) -> None:
-        """Hashes with long hex values survive save/load roundtrip."""
-        long_hash = "a" * 64  # SHA-256 length
+        """Long synced_at values survive save/load roundtrip."""
+        long_ts = "2025-12-31T23:59:59.123456Z"
         original = SyncState(
             platforms={
                 "opencode": PlatformState(
                     path="/test",
                     items={
                         "agent/special": ItemState(
-                            source_hash=long_hash,
-                            target_hash=long_hash,
-                            synced_at="2025-12-31T23:59:59Z",
+                            synced_at=long_ts,
                         ),
                     },
                 ),
@@ -468,7 +438,7 @@ class TestSyncStateRoundTripEdgeCases:
         save_sync_state(tmp_path, original)
         loaded = load_sync_state(tmp_path)
 
-        assert loaded.platforms["opencode"].items["agent/special"].source_hash == long_hash
+        assert loaded.platforms["opencode"].items["agent/special"].synced_at == long_ts
 
     def test_roundtrip_with_unicode_paths(self, tmp_path: Path) -> None:
         """Unicode characters in paths survive save/load roundtrip."""
@@ -492,9 +462,9 @@ class TestSyncStateRoundTripEdgeCases:
                 "opencode": PlatformState(
                     path="/test",
                     items={
-                        "agent/coder": ItemState(source_hash="h1"),
-                        "skill/python-reviewer": ItemState(source_hash="h2"),
-                        "command/build": ItemState(source_hash="h3"),
+                        "agent/coder": ItemState(synced_at="2025-01-01T00:00:00Z"),
+                        "skill/python-reviewer": ItemState(synced_at="2025-01-02T00:00:00Z"),
+                        "command/build": ItemState(synced_at="2025-01-03T00:00:00Z"),
                     },
                 ),
             },
@@ -520,7 +490,7 @@ class TestSyncStateRoundTripEdgeCases:
             platforms={
                 "opencode": PlatformState(
                     path="/test",
-                    items={"agent/coder": ItemState(source_hash="new_hash")},
+                    items={"agent/coder": ItemState(synced_at="2025-06-15T12:00:00Z")},
                 ),
             },
         )
@@ -528,7 +498,7 @@ class TestSyncStateRoundTripEdgeCases:
 
         loaded = load_sync_state(tmp_path)
         assert loaded.last_sync == "2025-06-15T12:00:00Z"
-        assert loaded.platforms["opencode"].items["agent/coder"].source_hash == "new_hash"
+        assert loaded.platforms["opencode"].items["agent/coder"].synced_at == "2025-06-15T12:00:00Z"
 
     def test_state_file_is_valid_yaml(self, tmp_path: Path) -> None:
         """The saved state file is valid YAML that can be parsed externally."""
@@ -538,7 +508,7 @@ class TestSyncStateRoundTripEdgeCases:
             platforms={
                 "opencode": PlatformState(
                     path="/test",
-                    items={"agent/coder": ItemState(source_hash="abc")},
+                    items={"agent/coder": ItemState(synced_at="2025-07-01T00:00:00Z")},
                 ),
             },
         )
