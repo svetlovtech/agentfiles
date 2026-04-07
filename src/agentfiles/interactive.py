@@ -273,7 +273,8 @@ class MenuRenderer:
                     else:  # unchanged
                         status_marker = " " + self._c("·", Colors.DIM)
                 buf.append(
-                    f"    [{counter}]{status_marker} {item.name}{token_str}  {self._c(str(location), Colors.DIM)}"
+                    f"    [{counter}]{status_marker} {item.name}{token_str}"
+                    f"  {self._c(str(location), Colors.DIM)}"
                 )
                 index_map[counter] = item
                 counter += 1

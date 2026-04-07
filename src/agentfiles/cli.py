@@ -501,6 +501,8 @@ def _filter_items_by_installed(
         Filtered list of items.
 
     """
+    from agentfiles.models import TargetError
+
     result = []
     for item in items:
         for platform in platforms:
@@ -701,7 +703,7 @@ def _format_list_text(items: list[Any], show_tokens: bool) -> int:
     Returns:
         Exit code (always ``0``).
     """
-    from agentfiles.models import ItemType, _DEFAULT_VERSION
+    from agentfiles.models import _DEFAULT_VERSION, ItemType
     from agentfiles.output import Colors, bold, colorize
     from agentfiles.tokens import estimate_name_description_tokens, token_estimate
 
@@ -1003,7 +1005,7 @@ def cmd_push(args: argparse.Namespace) -> int:
     """
     from agentfiles.config import AgentfilesConfig
     from agentfiles.interactive import InteractiveSession
-    from agentfiles.output import bold, info, warning
+    from agentfiles.output import info, warning
 
     config = AgentfilesConfig.load(args.config)
     source_dir = _get_source(

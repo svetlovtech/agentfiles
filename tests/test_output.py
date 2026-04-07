@@ -1494,18 +1494,22 @@ class TestPrintSection:
 
     def test_prints_section_header(self, capsys: pytest.CaptureFixture) -> None:
         """Should output a line starting with ── and containing the title."""
-        with patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))):
-            with patch("agentfiles.output._use_colors", False):
-                print_section("Scanning source")
+        with (
+            patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))),
+            patch("agentfiles.output._use_colors", False),
+        ):
+            print_section("Scanning source")
         captured = capsys.readouterr()
         assert "Scanning source" in captured.out
         assert captured.out.startswith("\u2500\u2500")
 
     def test_pads_to_terminal_width(self, capsys: pytest.CaptureFixture) -> None:
         """Line should span the terminal width (or 80, whichever is smaller)."""
-        with patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))):
-            with patch("agentfiles.output._use_colors", False):
-                print_section("Test")
+        with (
+            patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))),
+            patch("agentfiles.output._use_colors", False),
+        ):
+            print_section("Test")
         captured = capsys.readouterr()
         line = captured.out.rstrip("\n")
         assert len(line) == 80
@@ -1532,9 +1536,11 @@ class TestPrintSection:
         capsys: pytest.CaptureFixture,
     ) -> None:
         """A short title should have ─ padding on the right."""
-        with patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))):
-            with patch("agentfiles.output._use_colors", False):
-                print_section("Go")
+        with (
+            patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))),
+            patch("agentfiles.output._use_colors", False),
+        ):
+            print_section("Go")
         captured = capsys.readouterr()
         line = captured.out.rstrip("\n")
         # Line should end with ─ characters

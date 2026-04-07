@@ -267,14 +267,11 @@ def _compare_push_item(local_path: Path, dest_path: Path) -> str:
     return "changed"
 
 
-def _dir_differs(dcmp: filecmp.dircmp) -> bool:
+def _dir_differs(dcmp: filecmp.dircmp[str]) -> bool:
     """Recursively check if dircmp shows any differences."""
     if dcmp.left_only or dcmp.right_only or dcmp.diff_files:
         return True
-    for sub_dcmp in dcmp.subdirs.values():
-        if _dir_differs(sub_dcmp):
-            return True
-    return False
+    return any(_dir_differs(sub_dcmp) for sub_dcmp in dcmp.subdirs.values())
 
 
 def _format_size_diff(local_path: Path, dest_path: Path) -> str:

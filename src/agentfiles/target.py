@@ -685,9 +685,14 @@ class TargetManager:
                     # Plugins: only accept known extensions to skip
                     # extensionless duplicates (e.g. "memory-compact"
                     # alongside "memory-compact.ts").
-                    if item_type == ItemType.PLUGIN:
-                        if entry.suffix not in (".ts", ".yaml", ".yml", ".py", ".js"):
-                            continue
+                    if item_type == ItemType.PLUGIN and entry.suffix not in (
+                        ".ts",
+                        ".yaml",
+                        ".yml",
+                        ".py",
+                        ".js",
+                    ):
+                        continue
                     name = entry.stem
                 else:
                     if not is_dir:

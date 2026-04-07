@@ -40,6 +40,7 @@ dev = [
     "pytest-cov>=4.0",
     "ruff>=0.1.0",
     "mypy>=1.0",
+    "types-PyYAML>=6.0",
     "commitizen",
 ]
 
@@ -68,6 +69,7 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM"]
 [tool.mypy]
 python_version = "3.10"
 strict = true
+exclude = ["src/syncode/"]
 
 [tool.commitizen]
 name = "cz_conventional_commits"

@@ -6,6 +6,11 @@ from pathlib import Path
 
 import pytest
 
+from agentfiles.frontmatter import (
+    _is_quoted,
+    _quote_colon_values,
+    _validate_field_type,
+)
 from agentfiles.models import (
     CHARS_PER_TOKEN,
     PLATFORM_ALIASES,
@@ -40,11 +45,6 @@ from agentfiles.models import (
     parse_frontmatter,
     resolve_platform,
     resolve_target_name,
-)
-from agentfiles.frontmatter import (
-    _is_quoted,
-    _quote_colon_values,
-    _validate_field_type,
 )
 from agentfiles.scanner import GitIgnoreMatcher, parse_gitignore
 

@@ -654,7 +654,7 @@ class TestExecutePlan:
         new_src.mkdir()
         (new_src / "SKILL.md").write_text("fresh")
 
-        plan = SyncPlan(
+        SyncPlan(
             item=Item(
                 item_type=ItemType.SKILL,
                 name="update-skill",
@@ -2493,7 +2493,7 @@ class TestUpdateSyncState:
         state_file.write_text("{{invalid yaml::")
 
         engine = SyncEngine(target_manager)
-        with mock.patch("agentfiles.engine.logger") as mock_logger:
+        with mock.patch("agentfiles.engine.logger"):
             report = engine.sync(
                 [item],
                 (Platform.OPENCODE,),
