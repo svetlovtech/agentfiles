@@ -203,16 +203,42 @@ class MenuRenderer:
         lines.extend(f"  {idx}) {t.plural.title()}" for idx, t in enumerate(types, start=1))
         sys.stdout.write("\n".join(lines) + "\n")
 
-    def show_items_grouped(self, items: list[Item]) -> dict[int, Item]:
+    def show_items_grouped(
+        self,
+        items: list[Item],
+        source_dir: Path | None = None,
+    ) -> dict[int, Item]:
         """Display items grouped by type with continuous numbering.
 
+        When *source_dir* is provided, each item is compared against the
+        source repository and annotated with a push-status marker:
+
+        - ``+`` (green) — new (not in repo)
+        - ``~`` (yellow) — changed (differs from repo)
+        - ``·`` (dim) — unchanged (already in repo)
+
+        Args:
+            items: Items to display.
+            source_dir: Optional source-repository root for push-status
+                comparison.
+
         Returns:
-            Mapping of 1-based index to :class:`Item`.
+            Mapping of 1-based index to :class:`Item}.
 
         """
         by_type: dict[ItemType, list[Item]] = defaultdict(list)
         for item in items:
             by_type[item.item_type].append(item)
+
+        # Pre-compute push statuses when source_dir is given.
+        push_statuses: dict[int, str] = {}
+        if source_dir is not None:
+            from agentfiles.engine import _compare_push_item
+            from agentfiles.paths import get_push_dest_path
+
+            for idx, item in enumerate(items):
+                dest = get_push_dest_path(source_dir, item)
+                push_statuses[idx] = _compare_push_item(item.source_path, dest)
 
         index_map: dict[int, Item] = {}
         counter = 1
@@ -235,8 +261,19 @@ class MenuRenderer:
 
                     tokens = count_item_tokens(item.source_path)
                     token_str = f"  ~{tokens:,} tokens"
+                # Push-status marker
+                status_marker = ""
+                item_idx = next((i for i, it in enumerate(items) if it is item), None)
+                if item_idx is not None and item_idx in push_statuses:
+                    status = push_statuses[item_idx]
+                    if status == "new":
+                        status_marker = " " + self._c("+", Colors.GREEN)
+                    elif status == "changed":
+                        status_marker = " " + self._c("~", Colors.YELLOW)
+                    else:  # unchanged
+                        status_marker = " " + self._c("·", Colors.DIM)
                 buf.append(
-                    f"    [{counter}] {item.name}{token_str}  {self._c(str(location), Colors.DIM)}"
+                    f"    [{counter}]{status_marker} {item.name}{token_str}  {self._c(str(location), Colors.DIM)}"
                 )
                 index_map[counter] = item
                 counter += 1
@@ -644,23 +681,33 @@ class InteractiveSession:
             fallback=types,
         )
 
-    def select_items(self, items: list[Item]) -> list[Item]:
+    def select_items(
+        self,
+        items: list[Item],
+        source_dir: Path | None = None,
+    ) -> list[Item]:
         """Let the user pick items from a grouped, numbered list.
 
         Items are grouped by :class:`ItemType` with continuous numbering
         across groups.  Supports ranges like ``1,3,5-10,21-30`` and the
         keyword ``all``.
 
-        Re-prompts on non-empty input that resolves to no valid indices.
+        When *source_dir* is provided, each item is annotated with a
+        push-status marker (new / changed / unchanged).
+
+        Args:
+            items: Items to choose from.
+            source_dir: Optional source-repository root for push-status
+                comparison.
 
         Returns:
-            List of selected :class:`Item` instances.
+            List of selected :class:`Item} instances.
 
         """
         if not items:
             return []
 
-        index_map = self._renderer.show_items_grouped(items)
+        index_map = self._renderer.show_items_grouped(items, source_dir=source_dir)
         total = len(items)
         prompt_msg = f"Select items to load (ranges ok: 1,3,5-10,{total}): "
         raw = self._parser.prompt(prompt_msg)

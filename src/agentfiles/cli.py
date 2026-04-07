@@ -504,7 +504,11 @@ def _filter_items_by_installed(
     result = []
     for item in items:
         for platform in platforms:
-            if target_manager.is_item_installed(item, platform) == installed:
+            try:
+                is_installed = target_manager.is_item_installed(item, platform)
+            except TargetError:
+                continue
+            if is_installed == installed:
                 result.append(item)
                 break
     return result
@@ -533,14 +537,19 @@ def _discover_installed_from_targets(
         ``supported_platforms``.
 
     """
-    from agentfiles.models import Item
+    from agentfiles.models import Item, TargetError
     from agentfiles.paths import get_installed_item_path
 
     # Collect (item_type, name) → (first on-disk path, all platforms).
     registry: dict[tuple[ItemType, str], tuple[Path, list[Platform]]] = {}
 
     for platform in platforms:
-        for item_type, name in target_manager.get_installed_items(platform):
+        try:
+            installed = target_manager.get_installed_items(platform)
+        except TargetError:
+            # Platform not discovered on this machine — skip gracefully.
+            continue
+        for item_type, name in installed:
             if item_type not in item_types:
                 continue
 
@@ -692,7 +701,7 @@ def _format_list_text(items: list[Any], show_tokens: bool) -> int:
     Returns:
         Exit code (always ``0``).
     """
-    from agentfiles.models import ItemType
+    from agentfiles.models import ItemType, _DEFAULT_VERSION
     from agentfiles.output import Colors, bold, colorize
     from agentfiles.tokens import estimate_name_description_tokens, token_estimate
 
@@ -705,20 +714,18 @@ def _format_list_text(items: list[Any], show_tokens: bool) -> int:
             current_type = item.item_type
             print()
             bold(f"{current_type.plural}:")
+        ver = f"  v{item.version}" if item.version != _DEFAULT_VERSION else ""
         if show_tokens and item.item_type in (ItemType.AGENT, ItemType.SKILL):
             est = token_estimate(item)
             estimates.append(est)
             name_desc_total += estimate_name_description_tokens(item)
             print(
-                f"  {colorize(item.name, Colors.GREEN)}  "
-                f"v{item.version}  "
+                f"  {colorize(item.name, Colors.GREEN)}{ver}  "
                 f"({len(item.files)} files)  "
                 f"~{est.total_tokens:,} tokens"
             )
         else:
-            print(
-                f"  {colorize(item.name, Colors.GREEN)}  v{item.version}  ({len(item.files)} files)"
-            )
+            print(f"  {colorize(item.name, Colors.GREEN)}{ver}  ({len(item.files)} files)")
 
     if show_tokens and estimates:
         _print_token_summary(estimates, name_desc_total)
@@ -1028,7 +1035,7 @@ def cmd_push(args: argparse.Namespace) -> int:
     if not args.non_interactive:
         session = InteractiveSession()
         try:
-            installed_items = session.select_items(installed_items)
+            installed_items = session.select_items(installed_items, source_dir=source_dir)
         except KeyboardInterrupt:
             print()
             warning("Aborted.")
