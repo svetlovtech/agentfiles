@@ -97,6 +97,32 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
+def _expand_platform_name(name: str, config: AgentfilesConfig) -> list[str]:
+    """Expand a single platform name or group name to a list of canonical platform names.
+
+    If *name* matches a key in ``config.platform_groups``, the group's
+    members are expanded (each resolved through :func:`resolve_platform`).
+    Otherwise *name* is treated as a direct platform name/alias.
+
+    Args:
+        name: A platform name, alias, or group name.
+        config: Loaded config providing ``platform_groups``.
+
+    Returns:
+        List of canonical platform value strings.
+
+    Raises:
+        ValueError: When *name* is not a known platform, alias, or group.
+
+    """
+    from agentfiles.models import resolve_platform
+
+    groups: dict[str, list[str]] = getattr(config, "platform_groups", {})
+    if name in groups:
+        return [resolve_platform(m) for m in groups[name]]
+    return [resolve_platform(name)]
+
+
 def _resolve_platforms(
     target_flag: str | None,
     config: AgentfilesConfig,
@@ -106,33 +132,45 @@ def _resolve_platforms(
     Resolution order:
 
     1. ``"all"`` — return every known platform.
-    2. Explicit flag value — return a single-element list.
+    2. Explicit flag value — check if it matches a group in
+       ``config.platform_groups`` first; if so, expand to those platforms.
+       Otherwise treat as a direct platform name/alias.
     3. ``None`` — fall back to ``config.default_platforms``; if that list
        is empty or contains only unknown names, return every platform.
 
     Args:
         target_flag: Value of the ``--target`` CLI flag (``"all"``, a
-            platform name, or ``None``).
-        config: Loaded ``AgentfilesConfig`` providing ``default_platforms``.
+            platform name, group name, or ``None``).
+        config: Loaded ``AgentfilesConfig`` providing ``default_platforms``
+            and ``platform_groups``.
 
     Returns:
         List of ``Platform`` enums to operate on.
 
     """
-    from agentfiles.models import Platform, resolve_platform
+    from agentfiles.models import Platform
 
     if target_flag == "all":
         return list(Platform)
 
     if target_flag is not None:
-        canonical = resolve_platform(target_flag)
-        return [Platform(canonical)]
+        canonicals = _expand_platform_name(target_flag, config)
+        # Deduplicate while preserving order.
+        seen: set[str] = set()
+        result: list[Platform] = []
+        for c in canonicals:
+            if c not in seen:
+                seen.add(c)
+                result.append(Platform(c))
+        return result
 
-    result: list[Platform] = []
+    result = []
     for name in config.default_platforms:
         try:
-            canonical = resolve_platform(name)
-            result.append(Platform(canonical))
+            for canonical in _expand_platform_name(name, config):
+                platform = Platform(canonical)
+                if platform not in result:
+                    result.append(platform)
         except ValueError:
             logger.warning("Unknown platform in config: %s", name)
     # If config yielded no valid platforms, operate on all of them.
@@ -1869,7 +1907,6 @@ def _add_common_args(
         ``"sync"``) to their ``_ArgumentGroup`` objects so that callers
         can attach additional arguments to the same visual section.
     """
-    from agentfiles.models import PLATFORM_NAMES
 
     source_group = parser.add_argument_group("Source options")
     source_group.add_argument(
@@ -1894,9 +1931,12 @@ def _add_common_args(
     filter_group = parser.add_argument_group("Filter options")
     filter_group.add_argument(
         "--target",
-        choices=sorted(PLATFORM_NAMES) + ["all"],
+        metavar="TARGET",
         default=None,
-        help="Target platform(s)",
+        help=(
+            "Target platform, alias, or group name defined in platform_groups "
+            "(e.g. opencode, cc, dev). Use 'all' for every platform."
+        ),
     )
     filter_group.add_argument(
         "--type",

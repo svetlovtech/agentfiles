@@ -23,6 +23,7 @@ from typing import Any
 import yaml
 
 from agentfiles.models import (
+    PLATFORM_ALIASES,
     AgentfilesError,
     ConfigError,
     ItemState,
@@ -45,6 +46,7 @@ _FIELD_COERCERS: dict[str, type] = {
     "use_symlinks": bool,
     "cache_dir": str,
     "custom_paths": dict,
+    "platform_groups": dict,
 }
 
 
@@ -148,6 +150,7 @@ class AgentfilesConfig:
         use_symlinks: Create symlinks instead of copying files.
         cache_dir: Override the default cache directory for git clones.
         custom_paths: Mapping of platform name to config directory path.
+        platform_groups: Named groups of platforms (e.g. ``dev: [claude_code, cursor]``).
 
     """
 
@@ -157,6 +160,7 @@ class AgentfilesConfig:
     use_symlinks: bool = False
     cache_dir: str | None = None
     custom_paths: dict[str, str] = field(default_factory=dict)
+    platform_groups: dict[str, list[str]] = field(default_factory=dict)
 
     @classmethod
     def load(cls, config_path: Path | None = None) -> AgentfilesConfig:
@@ -260,6 +264,32 @@ def _validate_config_dict(data: dict[str, Any], path: Path) -> None:
                 f"invalid 'custom_paths' in '{path}': "
                 f"expected a mapping, got {type(value).__name__}"
             )
+
+    if "platform_groups" in data:
+        value = data["platform_groups"]
+        if not isinstance(value, dict):
+            raise ConfigError(
+                f"invalid 'platform_groups' in '{path}': "
+                f"expected a mapping, got {type(value).__name__}"
+            )
+        for group_name, members in value.items():
+            if not isinstance(members, list):
+                raise ConfigError(
+                    f"invalid 'platform_groups.{group_name}' in '{path}': "
+                    f"expected a list, got {type(members).__name__}"
+                )
+            for i, member in enumerate(members):
+                if not isinstance(member, str):
+                    raise ConfigError(
+                        f"invalid 'platform_groups.{group_name}[{i}]' in '{path}': "
+                        f"expected a string, got {type(member).__name__}"
+                    )
+                if member.lower().strip() not in PLATFORM_ALIASES:
+                    valid = ", ".join(sorted(PLATFORM_ALIASES.keys()))
+                    raise ConfigError(
+                        f"invalid platform {member!r} in group {group_name!r} in '{path}'. "
+                        f"Valid names and aliases: {valid}"
+                    )
 
 
 # ---------------------------------------------------------------------------
