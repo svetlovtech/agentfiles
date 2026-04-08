@@ -673,6 +673,75 @@ def _log_switch_failure(
         )
 
 
+def shallow_clone(
+    url: str,
+    dest: Path,
+    branch: str | None = None,
+    depth: int = 1,
+    timeout: int = 120,
+) -> subprocess.CompletedProcess[str]:
+    """Shallow-clone *url* into *dest* with ``--depth``.
+
+    Args:
+        url: Remote repository URL.
+        dest: Local directory to clone into.
+        branch: If given, clone only this branch (``--branch``).
+        depth: History depth (default ``1``).
+        timeout: Seconds before timeout.
+
+    Returns:
+        The completed process result.
+
+    Raises:
+        GitError: On timeout.
+        GitNotFoundError: When git is not installed.
+
+    """
+    args: list[str] = ["clone", "--depth", str(depth)]
+    if branch is not None:
+        args.extend(["--branch", branch])
+    args.extend([url, str(dest)])
+    return run_git(*args, timeout=timeout)
+
+
+def sparse_checkout_init(
+    repo_dir: Path,
+    dirs: list[str],
+    timeout: int = 30,
+) -> None:
+    """Enable sparse-checkout in *repo_dir* for only *dirs*.
+
+    Runs ``git sparse-checkout init --cone`` followed by
+    ``git sparse-checkout set <dirs...>``.
+
+    Args:
+        repo_dir: Root of an existing git clone.
+        dirs: Directory names to include in the sparse checkout.
+        timeout: Seconds before timeout per command.
+
+    Raises:
+        GitError: On timeout or command failure.
+        GitNotFoundError: When git is not installed.
+
+    """
+    cwd = str(repo_dir)
+    result = run_git("sparse-checkout", "init", "--cone", cwd=cwd, timeout=timeout)
+    if result.returncode != 0:
+        logger.warning(
+            "sparse-checkout init failed (exit %d): %s",
+            result.returncode,
+            result.stderr.strip(),
+        )
+        return
+    result = run_git("sparse-checkout", "set", *dirs, cwd=cwd, timeout=timeout)
+    if result.returncode != 0:
+        logger.warning(
+            "sparse-checkout set failed (exit %d): %s",
+            result.returncode,
+            result.stderr.strip(),
+        )
+
+
 def _parse_branch_output(output: str) -> list[BranchInfo]:
     """Parse ``git branch --list`` output into :class:`BranchInfo` instances.
 

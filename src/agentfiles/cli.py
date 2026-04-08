@@ -408,7 +408,8 @@ def _get_source(
     from agentfiles.output import info
     from agentfiles.source import SourceResolver
 
-    resolver = SourceResolver()
+    full_clone = getattr(args, "full_clone", False)
+    resolver = SourceResolver(full_clone=full_clone)
     source_arg = getattr(args, "source", None)
     try:
         source_info = resolver.detect(source_arg)
@@ -2090,6 +2091,11 @@ examples:
         "-u",
         action="store_true",
         help="Run git pull in source repository before syncing",
+    )
+    pull_groups["sync"].add_argument(
+        "--full-clone",
+        action="store_true",
+        help="Disable shallow/sparse-checkout optimisation for git clones",
     )
     _add_format_arg(pull_p, group=pull_groups["output"])
 

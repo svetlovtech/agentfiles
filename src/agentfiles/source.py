@@ -39,7 +39,7 @@ import subprocess
 from pathlib import Path
 from typing import Final, Protocol, runtime_checkable
 
-from agentfiles.git import is_git_repo, run_git
+from agentfiles.git import is_git_repo, run_git, shallow_clone, sparse_checkout_init
 from agentfiles.models import ItemType, SourceError, SourceInfo, SourceType
 
 logger = logging.getLogger(__name__)
@@ -60,6 +60,8 @@ _GIT_URL_PREFIXES: Final = (
 )
 
 _AGENTFILES_CONFIG_NAMES: Final = (".agentfiles.yaml", ".agentfiles.yml")
+
+_SPARSE_CHECKOUT_DIRS: Final[list[str]] = [t.plural for t in ItemType]
 
 # ---------------------------------------------------------------------------
 # Git error classification — maps known stderr patterns to actionable hints
@@ -178,7 +180,7 @@ class GitBackend(Protocol):
     by ``SourceResolver``.
     """
 
-    def clone(self, url: str, target: Path) -> None:
+    def clone(self, url: str, target: Path, *, full_clone: bool = False) -> None:
         """Shallow-clone *url* into *target* directory.
 
         Args:
@@ -186,6 +188,7 @@ class GitBackend(Protocol):
             target: Local directory to create.  May or may not exist
                 when the method is called; the implementation must handle
                 both cases.
+            full_clone: When ``True``, skip sparse-checkout optimisation.
 
         Raises:
             SourceError: When the clone fails (network, auth, disk, etc.).
@@ -301,21 +304,43 @@ class SubprocessGitBackend:
 
         return result
 
-    def clone(self, url: str, target: Path) -> None:
-        """Shallow-clone *url* into *target*."""
-        # --depth 1 fetches only the latest commit, not the full history.
-        # Sync operations only need current file content, so the history
-        # would be wasted bandwidth and disk space for a cache clone.
-        self._run_git_checked(
-            "clone",
-            url,
-            self._CLONE_TIMEOUT,
-            "clone",
-            "--depth",
-            "1",
-            url,
-            str(target),
-        )
+    def clone(
+        self,
+        url: str,
+        target: Path,
+        *,
+        full_clone: bool = False,
+    ) -> None:
+        """Shallow-clone *url* into *target*.
+
+        When *full_clone* is ``False`` (default), uses ``--depth 1`` and
+        sets up sparse-checkout to fetch only the item-type directories
+        (agents/, skills/, commands/, plugins/, workflows/, configs/).
+
+        When *full_clone* is ``True``, performs a regular ``--depth 1``
+        clone without sparse-checkout filtering.
+        """
+        try:
+            result = shallow_clone(url, target, depth=1, timeout=self._CLONE_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            raise _git_error_from_timeout("clone", url, self._CLONE_TIMEOUT) from None
+        except FileNotFoundError:
+            raise _git_error_from_file_not_found("clone", url) from None
+        except OSError as exc:
+            raise _git_error_from_os_error("clone", url, exc) from exc
+
+        if result.returncode != 0:
+            stderr = result.stderr.strip()
+            hint = _classify_git_stderr(stderr)
+            parts = [f"git clone failed for '{url}' (exit {result.returncode})"]
+            if stderr:
+                parts.append(stderr)
+            if hint:
+                parts.append(f"→ {hint}")
+            raise SourceError(": ".join(parts))
+
+        if not full_clone:
+            sparse_checkout_init(target, _SPARSE_CHECKOUT_DIRS)
 
     _FETCH_TIMEOUT: int = 120  # seconds
     _RESET_TIMEOUT: int = 30  # seconds
@@ -526,10 +551,23 @@ class SourceResolver:
 
     """
 
-    def __init__(self, git_backend: GitBackend | None = None) -> None:
-        """Initialise the resolver with an optional git backend."""
+    def __init__(
+        self,
+        git_backend: GitBackend | None = None,
+        *,
+        full_clone: bool = False,
+    ) -> None:
+        """Initialise the resolver with an optional git backend.
+
+        Args:
+            git_backend: Backend for git operations.  Defaults to
+                :class:`SubprocessGitBackend`.
+            full_clone: When ``True``, disable sparse-checkout optimisation
+                for new git clones.  Existing clones are not affected.
+        """
         self._git: GitBackend = git_backend or SubprocessGitBackend()
         self._git_repo_cache: dict[Path, bool] = {}
+        self._full_clone = full_clone
 
     # -- public API ---------------------------------------------------------
 
@@ -712,7 +750,7 @@ class SourceResolver:
             return target
 
         logger.info("Cloning %s into %s", url, target)
-        self._git.clone(url, target)
+        self._git.clone(url, target, full_clone=self._full_clone)
         # Prime the cache — we just created a git repo.
         self._git_repo_cache[target.resolve()] = True
         return target

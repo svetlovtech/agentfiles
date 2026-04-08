@@ -333,6 +333,7 @@ class TestSourceResolverResolve:
         mock_git.clone.assert_called_once_with(
             "https://github.com/user/repo.git",
             result,
+            full_clone=False,
         )
         # is_git_repo is not called because target doesn't exist on disk
         # (short-circuit: `target.exists() and self._git.is_git_repo(target)`).
@@ -514,25 +515,26 @@ class TestGitBackendProtocol:
         mock_git.is_git_repo.assert_called_once_with(project.resolve())
 
     def test_subprocess_backend_clone_success(self, tmp_path: Path) -> None:
-        """SubprocessGitBackend.clone delegates to run_git."""
+        """SubprocessGitBackend.clone delegates to shallow_clone."""
         target = tmp_path / "repo"
         mock_result = MagicMock(spec=subprocess.CompletedProcess)
         mock_result.returncode = 0
         mock_result.stderr = ""
 
-        with patch("agentfiles.source.run_git", return_value=mock_result) as mock_git:
+        with (
+            patch("agentfiles.source.shallow_clone", return_value=mock_result) as mock_sc,
+            patch("agentfiles.source.sparse_checkout_init") as mock_sparse,
+        ):
             backend = SubprocessGitBackend()
             backend.clone("https://example.com/repo.git", target)
 
-        mock_git.assert_called_once_with(
-            "clone",
-            "--depth",
-            "1",
+        mock_sc.assert_called_once_with(
             "https://example.com/repo.git",
-            str(target),
-            cwd=None,
+            target,
+            depth=1,
             timeout=ANY,
         )
+        mock_sparse.assert_called_once()
 
     def test_subprocess_backend_clone_failure(self, tmp_path: Path) -> None:
         """SubprocessGitBackend.clone raises SourceError on failure."""
@@ -860,7 +862,7 @@ class TestSubprocessGitBackendExceptionHandling:
         match: str,
     ) -> None:
         """clone() should raise SourceError for various subprocess failures."""
-        with patch("agentfiles.source.run_git", side_effect=side_effect):
+        with patch("agentfiles.source.shallow_clone", side_effect=side_effect):
             backend = SubprocessGitBackend()
             with pytest.raises(SourceError, match=match):
                 backend.clone("https://example.com/repo.git", tmp_path / "repo")
@@ -919,7 +921,7 @@ class TestSubprocessGitBackendExceptionHandling:
         mock_result.returncode = 128
         mock_result.stderr = "fatal: could not read Username for 'https://github.com'"
 
-        with patch("agentfiles.source.run_git", return_value=mock_result):
+        with patch("agentfiles.source.shallow_clone", return_value=mock_result):
             backend = SubprocessGitBackend()
             with pytest.raises(SourceError, match="credentials|permissions") as exc_info:
                 backend.clone("https://github.com/private/repo.git", tmp_path / "repo")
@@ -931,7 +933,7 @@ class TestSubprocessGitBackendExceptionHandling:
         mock_result.returncode = 128
         mock_result.stderr = "fatal: unable to access 'https://github.com/': Could not resolve host"
 
-        with patch("agentfiles.source.run_git", return_value=mock_result):
+        with patch("agentfiles.source.shallow_clone", return_value=mock_result):
             backend = SubprocessGitBackend()
             with pytest.raises(SourceError, match="network") as exc_info:
                 backend.clone("https://github.com/user/repo.git", tmp_path / "repo")
@@ -943,7 +945,7 @@ class TestSubprocessGitBackendExceptionHandling:
         mock_result.returncode = 1
         mock_result.stderr = "some unknown error"
 
-        with patch("agentfiles.source.run_git", return_value=mock_result):
+        with patch("agentfiles.source.shallow_clone", return_value=mock_result):
             backend = SubprocessGitBackend()
             with pytest.raises(SourceError, match="git clone failed") as exc_info:
                 backend.clone("https://example.com/repo.git", tmp_path / "repo")
