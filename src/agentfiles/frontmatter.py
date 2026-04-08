@@ -33,12 +33,10 @@ compatibility.
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-# Lazy import from models to avoid circular dependency at module load time.
-# models.py imports from this module after defining AgentfilesError, ItemMeta,
-# and _DEFAULT_VERSION, so the circular import resolves correctly.
-from agentfiles.models import _DEFAULT_VERSION, AgentfilesError, ItemMeta
+if TYPE_CHECKING:
+    from agentfiles.models import ItemMeta
 
 # ---------------------------------------------------------------------------
 # Shared constants
@@ -128,6 +126,8 @@ def parse_frontmatter(content: str) -> dict[str, Any]:
 
     import yaml
 
+    from agentfiles.models import AgentfilesError
+
     try:
         parsed = yaml.safe_load(yaml_block)
     except yaml.YAMLError:
@@ -145,6 +145,8 @@ def parse_frontmatter(content: str) -> dict[str, Any]:
             ) from exc
 
     if not isinstance(parsed, dict):
+        from agentfiles.models import AgentfilesError
+
         raise AgentfilesError(
             f"frontmatter must be a YAML mapping (key: value pairs), "
             f"got {type(parsed).__name__}. "
@@ -187,6 +189,8 @@ def _meta_from_frontmatter(raw: dict[str, Any]) -> ItemMeta:
             (e.g. ``tools`` is a string instead of a mapping).
 
     """
+    from agentfiles.models import _DEFAULT_VERSION, ItemMeta
+
     for field_name, expected in _SCALAR_FIELD_TYPES.items():
         _validate_field_type(raw, field_name, expected)
 
@@ -249,6 +253,8 @@ def _validate_field_type(
 
     if isinstance(value, expected):
         return
+
+    from agentfiles.models import AgentfilesError
 
     type_label = (
         " or ".join(t.__name__ for t in expected)

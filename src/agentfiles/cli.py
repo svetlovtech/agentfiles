@@ -21,8 +21,13 @@ Subcommands:
 - ``agentfiles init``       — Scaffold a new agentfiles repository with
   ``agents/``, ``skills/``, ``commands/``, ``plugins/`` directories and a
   ``.agentfiles.yaml`` config file.
+- ``agentfiles verify``     — CI-friendly drift detection: compare source vs
+  installed items, exit 0 if no drift, exit 1 if drift detected.  Supports
+  ``--format json`` and ``--quiet``.
 - ``agentfiles doctor``     — Run environment diagnostics (config, platforms,
   git, state file, tool binaries).
+- ``agentfiles completion``  — Generate shell completion scripts for bash, zsh,
+  or fish.
 
 Common usage patterns::
 
@@ -1470,6 +1475,116 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# cmd_verify
+# ---------------------------------------------------------------------------
+
+
+def cmd_verify(args: argparse.Namespace) -> int:
+    """CI-friendly drift detection between source and installed items.
+
+    Compares source items against installed items on target platforms and
+    returns a meaningful exit code:
+
+    * ``0`` — no drift (all items UNCHANGED).
+    * ``1`` — drift detected (at least one NEW, UPDATED, or MISSING item).
+
+    Supports ``--format json`` for machine-readable output and ``--quiet``
+    to suppress all output (only the exit code matters).
+
+    Args:
+        args: Parsed CLI namespace.  Relevant flags: ``config``, ``source``,
+            ``target``, ``item_type``, ``format``, ``quiet``.
+
+    Returns:
+        ``0`` if no drift, ``1`` if drift detected.
+    """
+    from agentfiles.config import AgentfilesConfig
+    from agentfiles.differ import Differ
+    from agentfiles.models import DiffStatus
+    from agentfiles.scanner import SourceScanner
+
+    quiet = getattr(args, "quiet", False)
+    fmt = getattr(args, "format", "text")
+
+    config = AgentfilesConfig.load(getattr(args, "config", None))
+    source_dir = _get_source(args, config.cache_dir, quiet=(quiet or fmt == "json"))
+    scanner = SourceScanner(source_dir)
+    item_types = _resolve_item_types(getattr(args, "item_type", None))
+    items = _scan_filtered(scanner, item_types)
+    _, target_manager, _ = _create_sync_pipeline(source_dir, config, args)
+    platforms = _resolve_platforms(getattr(args, "target", None), config)
+    platform_tuple = tuple(platforms) if platforms else None
+
+    differ = Differ(target_manager)
+    diff_results = differ.diff(items, platforms=platform_tuple)
+
+    # Classify drift
+    drift_entries: list[dict[str, str]] = []
+    for platform, entries in diff_results.items():
+        for entry in entries:
+            if entry.status != DiffStatus.UNCHANGED:
+                drift_entries.append(
+                    {
+                        "platform": platform.value,
+                        "item": entry.item.name,
+                        "type": entry.item.item_type.value,
+                        "status": entry.status.value,
+                        "details": entry.details or "",
+                    }
+                )
+
+    has_drift = len(drift_entries) > 0
+
+    if not quiet:
+        if fmt == "json":
+            result = {
+                "drift": has_drift,
+                "total_items": sum(len(e) for e in diff_results.values()),
+                "drifted_items": len(drift_entries),
+                "details": drift_entries,
+            }
+            print(json.dumps(result, indent=2))
+        else:
+            if has_drift:
+                print(f"Drift detected: {len(drift_entries)} item(s) out of sync")
+                for d in drift_entries:
+                    print(f"  [{d['status']}] {d['item']} ({d['platform']})")
+            else:
+                total = sum(len(e) for e in diff_results.values())
+                print(f"No drift detected ({total} item(s) in sync)")
+
+    return 1 if has_drift else 0
+
+
+def cmd_completion(args: argparse.Namespace) -> int:
+    """Output a shell completion script to stdout.
+
+    The *shell* positional argument selects which script to emit
+    (``bash``, ``zsh``, or ``fish``).
+
+    Returns:
+        ``0`` on success, ``1`` if the shell argument is missing or invalid.
+    """
+    from agentfiles.completion import get_completion_script
+
+    shell: str | None = getattr(args, "shell", None)
+    if not shell:
+        from agentfiles.output import error
+
+        error("Usage: agentfiles completion {bash,zsh,fish}")
+        return 1
+
+    try:
+        print(get_completion_script(shell))
+    except ValueError as exc:
+        from agentfiles.output import error
+
+        error(str(exc))
+        return 1
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Command dispatch map (single source of truth)
 # ---------------------------------------------------------------------------
 
@@ -1480,6 +1595,8 @@ _COMMAND_MAP: dict[str, Callable[[argparse.Namespace], int]] = {
     "clean": cmd_clean,
     "init": cmd_init,
     "doctor": cmd_doctor,
+    "verify": cmd_verify,
+    "completion": cmd_completion,
 }
 
 
@@ -1838,6 +1955,54 @@ examples:
         "-c",
         default=None,
         help="Explicit path to config file",
+    )
+
+    # verify
+    verify_p = subs.add_parser(
+        "verify",
+        help="CI-friendly drift detection (exit 0 = no drift, exit 1 = drift)",
+        description="Compare source items vs installed items and exit with a meaningful code.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""\
+examples:
+  agentfiles verify                       Check for drift (human output)
+  agentfiles verify --format json         Machine-readable JSON output
+  agentfiles verify --quiet               Only exit code, no output
+  agentfiles verify --target claude-code   Check a specific platform
+""",
+    )
+    _add_common_args(verify_p)
+    verify_p.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format (default: text)",
+    )
+    verify_p.add_argument(
+        "--quiet",
+        "-q",
+        action="store_true",
+        default=False,
+        help="Suppress output; only the exit code matters",
+    )
+
+    # completion
+    completion_p = subs.add_parser(
+        "completion",
+        help="Generate shell completion scripts",
+        description="Output a completion script for the given shell to stdout.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""\
+examples:
+  agentfiles completion bash               Print bash completions
+  agentfiles completion zsh >> ~/.zshrc    Install zsh completions
+  agentfiles completion fish > ~/.config/fish/completions/agentfiles.fish
+""",
+    )
+    completion_p.add_argument(
+        "shell",
+        choices=["bash", "zsh", "fish"],
+        help="Shell to generate completions for",
     )
 
     return parser
