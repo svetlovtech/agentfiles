@@ -121,6 +121,13 @@ class GitIgnoreMatcher:
     * Negation — ``!important.pyc``
     * Simple globs via :mod:`fnmatch`
 
+    **Limitations** (intentional — keeps the implementation dependency-free):
+
+    * ``**`` recursive globs are not supported; use directory patterns instead.
+    * Negation (``!``) always wins regardless of order (real gitignore is
+      order-dependent).
+    * Leading ``/`` (anchor to repo root) is not distinguished from a bare name.
+
     Args:
         root_dir: Repository root used to resolve relative paths.
         patterns: List of gitignore patterns.  When empty the matcher

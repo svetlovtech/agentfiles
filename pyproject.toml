@@ -69,7 +69,6 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM"]
 [tool.mypy]
 python_version = "3.10"
 strict = true
-exclude = ["src/syncode/"]
 
 [tool.commitizen]
 name = "cz_conventional_commits"

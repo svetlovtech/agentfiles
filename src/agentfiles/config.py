@@ -13,6 +13,7 @@ This module handles three clearly separated concerns:
 from __future__ import annotations
 
 import logging
+import tempfile
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -327,12 +328,15 @@ def load_sync_state(repo_path: Path) -> SyncState:
         data = _read_yaml_file(state_file)
         return _parse_sync_state(data)
     except AgentfilesError as exc:
+        backup_path = _backup_corrupted_state(state_file)
         logger.warning(
-            "Corrupted state file '%s': %s. Backing up and resetting.",
+            "Corrupted state file '%s': %s. "
+            "Backed up to '%s'. Sync history has been reset — "
+            "next pull will treat all items as new.",
             state_file,
             exc,
+            backup_path,
         )
-        _backup_corrupted_state(state_file)
         return SyncState()
 
 
@@ -345,12 +349,19 @@ def save_sync_state(repo_path: Path, state: SyncState) -> None:
 
     """
     state_file = get_state_path(repo_path)
+    state_file.parent.mkdir(parents=True, exist_ok=True)
     data = _serialize_sync_state(state)
 
-    with open(state_file, "w", encoding="utf-8") as f:
-        f.write("# Sync state — auto-generated, do not edit manually\n")
-        f.write("# Use 'agentfiles pull', 'agentfiles push', or 'agentfiles sync'\n")
-        yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    fd, tmp_path = tempfile.mkstemp(dir=state_file.parent, suffix=".tmp", prefix=".state-")
+    try:
+        with open(fd, "w", encoding="utf-8") as f:
+            f.write("# Sync state — auto-generated, do not edit manually\n")
+            f.write("# Use 'agentfiles pull', 'agentfiles push', or 'agentfiles sync'\n")
+            yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        Path(tmp_path).replace(state_file)
+    except BaseException:
+        Path(tmp_path).unlink(missing_ok=True)
+        raise
 
 
 def _parse_item_state(raw: dict[str, Any]) -> ItemState:
@@ -424,7 +435,7 @@ def _serialize_sync_state(state: SyncState) -> dict[str, Any]:
     }
 
 
-def _backup_corrupted_state(state_file: Path) -> None:
+def _backup_corrupted_state(state_file: Path) -> Path:
     """Rename a corrupted state file to preserve it for debugging.
 
     Appends a ``.corrupted`` suffix.  If that file already exists, a
@@ -432,6 +443,9 @@ def _backup_corrupted_state(state_file: Path) -> None:
 
     Args:
         state_file: Path to the corrupted state file.
+
+    Returns:
+        Path to the backup file.
 
     """
     backup = Path(f"{state_file}.corrupted")
@@ -445,6 +459,7 @@ def _backup_corrupted_state(state_file: Path) -> None:
         logger.info("Corrupted state backed up to '%s'", backup)
     except OSError as exc:
         logger.error("Failed to backup corrupted state '%s': %s", state_file, exc)
+    return backup
 
 
 def get_state_path(repo_path: Path) -> Path:

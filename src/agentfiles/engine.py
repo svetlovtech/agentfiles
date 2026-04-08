@@ -174,7 +174,15 @@ def _copy_item(source: Path, dest: Path, use_symlinks: bool) -> tuple[int, str |
     """
     try:
         if use_symlinks:
-            real_source = os.path.realpath(source)
+            real_source = Path(os.path.realpath(source))
+            # Guard against symlinks escaping the source tree.
+            try:
+                real_source.relative_to(source.parent)
+            except ValueError:
+                msg = f"Symlink target escapes source tree: {real_source}"
+                logger.error(msg)
+                return 0, msg
+            dest.parent.mkdir(parents=True, exist_ok=True)
             os.symlink(real_source, dest)
             logger.debug("Symlinked %s -> %s", dest, real_source)
             return 0, None
@@ -189,7 +197,10 @@ def _copy_item(source: Path, dest: Path, use_symlinks: bool) -> tuple[int, str |
                 # Clean up partial directory copy so the filesystem is not
                 # left in an inconsistent state with half-copied files.
                 if dest.is_dir():
-                    shutil.rmtree(dest, ignore_errors=True)
+                    try:
+                        shutil.rmtree(dest)
+                    except OSError as rm_exc:
+                        logger.error("Partial copy cleanup failed at %s: %s", dest, rm_exc)
                 msg = f"Cannot copy directory {source} -> {dest}: {copy_exc}"
                 logger.error(msg)
                 return 0, msg
