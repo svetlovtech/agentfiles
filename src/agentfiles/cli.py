@@ -263,6 +263,33 @@ def _apply_item_filter(
     return items
 
 
+def _apply_item_key_filter(
+    items: list[Item],
+    item_keys: list[str] | None,
+) -> list[Item]:
+    """Filter items by their full item key (``type/name``).
+
+    When *item_keys* is provided, only items whose :attr:`Item.item_key`
+    matches one of the given keys are kept.
+
+    Args:
+        items: Items to filter.
+        item_keys: List of item keys like ``"agent/coder"`` (or ``None``).
+
+    Returns:
+        Filtered list of items.
+    """
+    if not item_keys:
+        return items
+    key_set = set(item_keys)
+    filtered = [i for i in items if i.item_key in key_set]
+    if not filtered:
+        logging.getLogger(__name__).warning(
+            "No items matched --item filter: %s", ", ".join(sorted(key_set))
+        )
+    return filtered
+
+
 def _apply_color_env(color: str) -> None:
     """Apply color preference to environment variables.
 
@@ -428,6 +455,7 @@ class CommandContext:
     fmt: str
     only_set: set[str] | None
     except_set: set[str] | None
+    item_keys: list[str] | None
 
 
 def _build_context(
@@ -476,6 +504,7 @@ def _build_context(
     item_types = _resolve_item_types(getattr(args, "item_type", None))
     platforms = _resolve_platforms(getattr(args, "target", None), config)
     only_set, except_set = _resolve_item_filter(args)
+    item_keys: list[str] | None = getattr(args, "item", None)
 
     return CommandContext(
         config=config,
@@ -489,6 +518,7 @@ def _build_context(
         fmt=getattr(args, "format", "text"),
         only_set=only_set,
         except_set=except_set,
+        item_keys=item_keys,
     )
 
 
@@ -879,6 +909,9 @@ def cmd_pull(args: argparse.Namespace) -> int:
     # Apply --only / --except item-name filters
     items = _apply_item_filter(items, ctx.only_set, ctx.except_set)
 
+    # Apply --item key filters
+    items = _apply_item_key_filter(items, ctx.item_keys)
+
     # Interactive by default, non-interactive with --yes
     if not args.non_interactive:
         result = _run_pull_interactive(items, target_manager, platforms)
@@ -1039,6 +1072,10 @@ def cmd_push(args: argparse.Namespace) -> int:
     # Apply --only / --except item-name filters
     only_set, except_set = _resolve_item_filter(args)
     installed_items = _apply_item_filter(installed_items, only_set, except_set)
+
+    # Apply --item key filters
+    item_keys: list[str] | None = getattr(args, "item", None)
+    installed_items = _apply_item_key_filter(installed_items, item_keys)
 
     if not installed_items:
         info("No installed items to push.")
@@ -1275,6 +1312,10 @@ def cmd_clean(args: argparse.Namespace) -> int:
         if item.item_type in item_types:
             orphan_items.append(item)
             orphan_platforms_map[key] = [p for p in item_platforms if p in platforms]
+
+    # Apply --item key filters
+    item_keys: list[str] | None = getattr(args, "item", None)
+    orphan_items = _apply_item_key_filter(orphan_items, item_keys)
 
     if not orphan_items:
         info("No orphaned items found (after type filter).")
@@ -1677,6 +1718,13 @@ def _add_common_args(
         default=None,
         dest="except_items",
         help="Exclude these items from sync (comma-separated: old-plugin,deprecated)",
+    )
+    filter_group.add_argument(
+        "--item",
+        metavar="KEY",
+        action="append",
+        default=None,
+        help="Select specific items by key (type/name, e.g. agent/coder). Repeatable.",
     )
 
     output_group = parser.add_argument_group("Output options")
