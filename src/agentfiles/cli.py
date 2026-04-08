@@ -21,6 +21,8 @@ Subcommands:
 - ``agentfiles init``       — Scaffold a new agentfiles repository with
   ``agents/``, ``skills/``, ``commands/``, ``plugins/`` directories and a
   ``.agentfiles.yaml`` config file.
+- ``agentfiles doctor``     — Run environment diagnostics (config, platforms,
+  git, state file, tool binaries).
 
 Common usage patterns::
 
@@ -1442,6 +1444,32 @@ def _update_sync_state_from_results(
 
 
 # ---------------------------------------------------------------------------
+# cmd_doctor
+# ---------------------------------------------------------------------------
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """Run environment diagnostics and report results.
+
+    Returns:
+        ``0`` if all checks pass, ``1`` if any ERROR-level check fails.
+    """
+    from agentfiles.doctor import format_doctor_report, run_doctor
+
+    config_path: Path | None = getattr(args, "config", None)
+    source_dir: Path | None = None
+    source_str: str | None = getattr(args, "source", None)
+    if source_str is not None:
+        candidate = Path(source_str).expanduser()
+        if candidate.is_dir():
+            source_dir = candidate
+
+    report = run_doctor(config_path=config_path, source_dir=source_dir)
+    print(format_doctor_report(report))
+    return report.exit_code
+
+
+# ---------------------------------------------------------------------------
 # Command dispatch map (single source of truth)
 # ---------------------------------------------------------------------------
 
@@ -1451,6 +1479,7 @@ _COMMAND_MAP: dict[str, Callable[[argparse.Namespace], int]] = {
     "status": cmd_status,
     "clean": cmd_clean,
     "init": cmd_init,
+    "doctor": cmd_doctor,
 }
 
 
@@ -1783,6 +1812,32 @@ examples:
         action="store_true",
         dest="non_interactive",
         help="Non-interactive mode (skip confirmation)",
+    )
+
+    # doctor
+    doctor_p = subs.add_parser(
+        "doctor",
+        help="Check environment health and diagnose common issues",
+        description="Run diagnostic checks on config files, platform directories, git, and tools.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""\
+examples:
+  agentfiles doctor                            Run all checks
+  agentfiles doctor --source ~/my-agents       Check specific source dir
+  agentfiles doctor --config .agentfiles.yaml  Check specific config
+""",
+    )
+    doctor_p.add_argument(
+        "source",
+        nargs="?",
+        default=None,
+        help="Source repository to check (optional)",
+    )
+    doctor_p.add_argument(
+        "--config",
+        "-c",
+        default=None,
+        help="Explicit path to config file",
     )
 
     return parser
