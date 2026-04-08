@@ -32,31 +32,38 @@
 You use multiple AI coding tools. Each stores its config in a different place:
 
 ```
-~/.config/opencode/    # OpenCode
-~/.claude/             # Claude Code
-~/.codeium/windsurf/   # Windsurf
-~/.cursor/rules/       # Cursor
+~/.config/opencode/       # OpenCode
+~/.claude/                # Claude Code
+~/.codeium/windsurf/      # Windsurf
+~/.cursor/rules/          # Cursor
+.github/copilot/          # GitHub Copilot
+.aider/                   # Aider
+.continue/                # Continue.dev
 ```
 
 `agentfiles` lets you maintain **one repository** and sync everywhere:
 
 ```
                     ┌─── OpenCode
-                    │
-source repo ────────┼─── Claude Code
-(agentfiles pull)   │
-                    ├─── Windsurf
-                    │
-                    └─── Cursor
+                    ├─── Claude Code
+source repo ────────┼─── Windsurf
+(agentfiles pull)   ├─── Cursor
+                    ├─── GitHub Copilot
+                    ├─── Aider
+                    └─── Continue.dev
 ```
 
 ## Features
 
-- **4 platforms** — OpenCode, Claude Code, Windsurf, Cursor
-- **4 item types** — agents, skills, commands, plugins
-- **Bidirectional sync** — pull and push
-- **Surgical filtering** — `--only`, `--except`, `--type`, `--target`
+- **7 platforms** — OpenCode, Claude Code, Windsurf, Cursor + GitHub Copilot, Aider, Continue.dev
+- **6 item types** — agents, skills, commands, plugins, configs, workflows
+- **Bidirectional sync** — pull and push with conflict detection
+- **Surgical filtering** — `--only`, `--except`, `--type`, `--target`, `--item agent/coder`
+- **Platform groups** — define profiles in config (`dev: [claude_code, cursor]`), use with `--target dev`
+- **PR creation** — `push --create-pr` to auto-create a pull request via `gh`
+- **Smart cloning** — shallow clone + sparse checkout for remote sources
 - **Dry-run** — preview changes without applying
+- **Diagnostics** — `doctor`, `verify` (CI drift detection), shell completions
 - **One dependency** — `pyyaml` only
 
 ## Quick Start
@@ -84,10 +91,13 @@ agentfiles pull --dry-run
 | Command | Description |
 |---------|-------------|
 | [`pull`](#pull) | Install/update items from source to local configs |
-| [`push`](#push) | Push local items back to source |
+| [`push`](#push) | Push local items back to source (with conflict detection) |
 | [`status`](#status) | Show installed items per platform (`--list`, `--diff`) |
 | [`clean`](#clean) | Remove orphaned items |
 | [`init`](#init) | Scaffold a new repository |
+| [`verify`](#verify) | CI-friendly drift detection (exit 1 if drift) |
+| [`doctor`](#doctor) | Run environment diagnostics |
+| [`completion`](#completion) | Generate shell completion scripts |
 
 ### `pull`
 
@@ -99,8 +109,10 @@ agentfiles pull --yes                              # non-interactive
 agentfiles pull --update                           # git pull source, then sync
 agentfiles pull --target opencode --type agent     # only agents → OpenCode
 agentfiles pull --only coder,solid-principles      # specific items
+agentfiles pull --item agent/coder                 # single item by key
 agentfiles pull --dry-run --verbose                # preview with details
 agentfiles pull --symlinks                         # use symlinks instead of copies
+agentfiles pull --full-clone                       # disable shallow clone optimization
 ```
 
 ### `push`
@@ -108,10 +120,13 @@ agentfiles pull --symlinks                         # use symlinks instead of cop
 Push locally-installed items back into the source repository. Useful when you've edited configs on one machine and want to propagate.
 
 ```bash
-agentfiles push                # interactive
-agentfiles push --yes          # non-interactive
-agentfiles push --dry-run      # preview
-agentfiles push --target opencode  # push only from OpenCode
+agentfiles push                         # interactive (with conflict detection)
+agentfiles push --yes                   # non-interactive (skips conflicts)
+agentfiles push --dry-run               # preview
+agentfiles push --target opencode       # push only from OpenCode
+agentfiles push --item agent/coder      # push a single item
+agentfiles push --create-pr             # auto-create PR via gh
+agentfiles push --create-pr --pr-title "Update agents" --pr-branch my-branch
 ```
 
 ### `status`
@@ -156,6 +171,37 @@ agentfiles init /path/to/project             # specific directory
 agentfiles init --yes                        # skip confirmation
 ```
 
+### `verify`
+
+CI-friendly drift detection. Compares source vs installed items, exits 0 if in sync, 1 if drift detected.
+
+```bash
+agentfiles verify                    # human-readable output
+agentfiles verify --format json      # machine-readable
+agentfiles verify --quiet            # silent, exit code only
+```
+
+### `doctor`
+
+Run environment diagnostics — checks config, source dir, git, platform directories, state file, and tool binaries.
+
+```bash
+agentfiles doctor
+```
+
+### `completion`
+
+Generate shell completion scripts.
+
+```bash
+agentfiles completion bash    # bash completions
+agentfiles completion zsh     # zsh completions
+agentfiles completion fish    # fish completions
+
+# Example: add to .bashrc
+eval "$(agentfiles completion bash)"
+```
+
 ## Global Options
 
 ```
@@ -170,10 +216,11 @@ agentfiles init --yes                        # skip confirmation
 Most commands support surgical filtering:
 
 ```bash
---target {opencode,claude_code,windsurf,cursor,all}   Target platform
---type {agent,skill,command,plugin,all}                Item type
---only coder,solid-principles                          Only these items
+--target {platform,group,all}                          Target platform or group name
+--type {agent,skill,command,plugin,config,workflow,all} Item type
+--only coder,solid-principles                          Only these items (by name)
 --except old-plugin,deprecated                         Exclude these items
+--item agent/coder                                     Specific item by type/name key
 ```
 
 ## Source Repository Structure
@@ -196,17 +243,42 @@ my-agents/
 │       └── autopilot.md
 ├── plugins/
 │   └── patterns.yaml
+├── configs/
+│   └── global-settings.yaml
+├── workflows/
+│   └── deploy-pipeline/
+│       └── workflow.md
 └── .agentfiles.yaml              # Config (auto-generated)
 ```
 
 ## Supported Platforms
 
-| Platform | Config path | Agents | Skills | Commands | Plugins |
-|----------|------------|--------|--------|----------|---------|
-| **OpenCode** | `~/.config/opencode/` | ✅ | ✅ | ✅ | ✅ |
-| **Claude Code** | `~/.claude/` | ✅ | ✅ | ✅ | — |
-| **Windsurf** | `~/.codeium/windsurf/` | — | ✅ | — | — |
-| **Cursor** | `~/.cursor/rules/` | — | ✅ | — | — |
+| Platform | Config path | Agents | Skills | Commands | Plugins | Configs | Workflows |
+|----------|------------|--------|--------|----------|---------|---------|-----------|
+| **OpenCode** | `~/.config/opencode/` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Claude Code** | `~/.claude/` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| **Windsurf** | `~/.codeium/windsurf/` | — | ✅ | — | — | — | ✅ |
+| **Cursor** | `~/.cursor/rules/` | — | ✅ | — | — | — | ✅ |
+| **GitHub Copilot** | `.github/copilot/` | ✅ | — | — | — | ✅ | — |
+| **Aider** | `.aider/` | ✅ | — | — | — | ✅ | — |
+| **Continue.dev** | `.continue/` | ✅ | — | ✅ | — | ✅ | — |
+
+## Platform Groups
+
+Define named groups in `.agentfiles.yaml` to avoid repeating `--target` flags:
+
+```yaml
+source: ./
+platform_groups:
+  dev: [claude_code, cursor]
+  ci: [opencode]
+  editors: [copilot, aider, continue]
+```
+
+```bash
+agentfiles pull --target dev       # → claude_code + cursor
+agentfiles push --target editors   # → copilot + aider + continue
+```
 
 ## Architecture
 
