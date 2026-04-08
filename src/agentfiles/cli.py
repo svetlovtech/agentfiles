@@ -1032,6 +1032,138 @@ def _print_push_report(report: object, dry_run: bool) -> None:
         warning("Dry-run mode: no changes were made.")
 
 
+def _create_pull_request(
+    source_dir: Path,
+    pushed_items: list[str],
+    branch: str | None,
+    title: str | None,
+    dry_run: bool,
+) -> int:
+    """Create a pull request in the source repository via ``gh pr create``.
+
+    Checks that ``gh`` is available, creates a new branch, commits any changes
+    in *source_dir*, pushes the branch, and opens a PR.
+
+    Args:
+        source_dir: Path to the local source repository directory.
+        pushed_items: List of item keys that were pushed (used for auto title).
+        branch: Branch name to create.  Auto-generated if ``None``.
+        title: PR title.  Auto-generated from *pushed_items* if ``None``.
+        dry_run: When ``True``, print what would happen without doing it.
+
+    Returns:
+        ``0`` on success, ``1`` on error.
+    """
+    import datetime
+    import subprocess
+
+    from agentfiles.output import error, info, warning
+
+    # Auto-generate branch name if not provided.
+    if branch is None:
+        timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        branch = f"agentfiles/push-{timestamp}"
+
+    # Auto-generate PR title if not provided.
+    if title is None:
+        if len(pushed_items) == 1:
+            title = f"agentfiles: push {pushed_items[0]}"
+        elif len(pushed_items) <= 3:
+            title = f"agentfiles: push {', '.join(pushed_items)}"
+        else:
+            title = f"agentfiles: push {len(pushed_items)} items"
+
+    if dry_run:
+        info(f"[dry-run] Would create branch: {branch}")
+        info(f"[dry-run] Would commit and push changes in: {source_dir}")
+        info(f"[dry-run] Would create PR with title: {title!r}")
+        return 0
+
+    # Check gh is available.
+    try:
+        subprocess.run(
+            ["gh", "--version"],
+            capture_output=True,
+            check=True,
+        )
+    except FileNotFoundError:
+        error("'gh' CLI not found. Install it from https://cli.github.com/")
+        return 1
+    except subprocess.CalledProcessError as exc:
+        error(f"'gh' returned an error: {exc}")
+        return 1
+
+    cwd = str(source_dir)
+
+    # Create and switch to new branch.
+    try:
+        subprocess.run(
+            ["git", "checkout", "-b", branch],
+            capture_output=True,
+            check=True,
+            cwd=cwd,
+        )
+    except subprocess.CalledProcessError as exc:
+        error(f"Failed to create branch '{branch}': {exc.stderr.decode().strip()}")
+        return 1
+
+    # Stage all changes.
+    try:
+        subprocess.run(
+            ["git", "add", "-A"],
+            capture_output=True,
+            check=True,
+            cwd=cwd,
+        )
+    except subprocess.CalledProcessError as exc:
+        error(f"Failed to stage changes: {exc.stderr.decode().strip()}")
+        return 1
+
+    # Commit.
+    try:
+        subprocess.run(
+            ["git", "commit", "-m", title],
+            capture_output=True,
+            check=True,
+            cwd=cwd,
+        )
+    except subprocess.CalledProcessError as exc:
+        stderr = exc.stderr.decode().strip()
+        if "nothing to commit" in stderr or "nothing added to commit" in stderr:
+            warning("Nothing to commit in source repository — skipping PR creation.")
+            return 0
+        error(f"Failed to commit: {stderr}")
+        return 1
+
+    # Push branch.
+    try:
+        subprocess.run(
+            ["git", "push", "-u", "origin", branch],
+            capture_output=True,
+            check=True,
+            cwd=cwd,
+        )
+    except subprocess.CalledProcessError as exc:
+        error(f"Failed to push branch: {exc.stderr.decode().strip()}")
+        return 1
+
+    # Create PR.
+    try:
+        result = subprocess.run(
+            ["gh", "pr", "create", "--title", title, "--body", "", "--head", branch],
+            capture_output=True,
+            check=True,
+            cwd=cwd,
+        )
+        pr_url = result.stdout.decode().strip()
+        info(f"Pull request created: {pr_url}")
+    except subprocess.CalledProcessError as exc:
+        error(f"Failed to create PR: {exc.stderr.decode().strip()}")
+        return 1
+
+    return 0
+
+
 def cmd_push(args: argparse.Namespace) -> int:
     """Push locally-installed items back into the source repository.
 
@@ -1112,7 +1244,24 @@ def cmd_push(args: argparse.Namespace) -> int:
     print()
     _print_push_report(report, args.dry_run)
 
-    return 0 if report.is_success else 1
+    exit_code = 0 if report.is_success else 1
+
+    # Optionally create a PR after a successful push.
+    if exit_code == 0 and getattr(args, "create_pr", False):
+        synced_items = [
+            r.plan.item.item_key for r in (report.installed + report.updated) if r.is_success
+        ]
+        pr_code = _create_pull_request(
+            source_dir=source_dir,
+            pushed_items=synced_items,
+            branch=getattr(args, "pr_branch", None),
+            title=getattr(args, "pr_title", None),
+            dry_run=args.dry_run,
+        )
+        if pr_code != 0:
+            exit_code = pr_code
+
+    return exit_code
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -1866,6 +2015,8 @@ examples:
   agentfiles push --yes                        Non-interactive, accept all
   agentfiles push --dry-run                    Preview what would be pushed
   agentfiles push --target opencode            Push only from OpenCode
+  agentfiles push --create-pr                  Push and open a pull request
+  agentfiles push --create-pr --pr-title "My PR" --pr-branch feat/sync
 """,
     )
     push_groups = _add_common_args(push_p)
@@ -1873,6 +2024,27 @@ examples:
         "--symlinks",
         action="store_true",
         help="Use symlinks instead of copying",
+    )
+    push_pr_group = push_p.add_argument_group("Pull request options")
+    push_pr_group.add_argument(
+        "--create-pr",
+        action="store_true",
+        dest="create_pr",
+        help="Create a pull request after pushing (requires 'gh' CLI)",
+    )
+    push_pr_group.add_argument(
+        "--pr-title",
+        dest="pr_title",
+        default=None,
+        metavar="TITLE",
+        help="Title for the pull request (default: auto-generated from pushed items)",
+    )
+    push_pr_group.add_argument(
+        "--pr-branch",
+        dest="pr_branch",
+        default=None,
+        metavar="BRANCH",
+        help="Branch name for the pull request (default: agentfiles/push-YYYYMMDD-HHMMSS)",
     )
     _add_format_arg(push_p, group=push_groups["output"])
 
