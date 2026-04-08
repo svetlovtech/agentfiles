@@ -1226,6 +1226,56 @@ def cmd_push(args: argparse.Namespace) -> int:
             warning("No items selected.")
             return 0
 
+    # Conflict detection: check if both source and target changed since last sync.
+    from agentfiles.engine import detect_push_conflicts
+
+    conflicts = detect_push_conflicts(
+        installed_items,
+        tuple(platforms),
+        source_dir,
+        target_manager,
+    )
+
+    skip_keys: set[str] = set()
+    if conflicts:
+        if args.non_interactive:
+            # Non-interactive mode: skip conflicts and warn.
+            for c in conflicts:
+                warning(
+                    f"Conflict: {c.item.item_key} on {c.platform.display_name} "
+                    f"— both source and target changed. Skipping."
+                )
+                skip_keys.add(c.item.item_key)
+        else:
+            # Interactive mode: prompt user for each conflict.
+            conflict_tuples = [
+                (
+                    c.item.item_key,
+                    c.item.item_type.value,
+                    c.platform.display_name,
+                    c.source_path,
+                    c.target_path,
+                )
+                for c in conflicts
+            ]
+            try:
+                resolutions = session.prompt_push_conflicts(conflict_tuples)
+            except KeyboardInterrupt:
+                print()
+                warning("Aborted.")
+                return 1
+
+            for c in conflicts:
+                resolution = resolutions.get(c.item.item_key, "keep-source")
+                if resolution == "keep-source":
+                    skip_keys.add(c.item.item_key)
+
+    if skip_keys:
+        installed_items = [i for i in installed_items if i.item_key not in skip_keys]
+        if not installed_items:
+            info("All items skipped due to conflicts.")
+            return 0
+
     report = engine.push(
         installed_items, tuple(platforms), source_dir=source_dir, dry_run=args.dry_run
     )

@@ -276,6 +276,158 @@ def _compare_push_item(local_path: Path, dest_path: Path) -> str:
     return "changed"
 
 
+@dataclass(frozen=True)
+class PushConflict:
+    """A push item where both source and target changed since last sync.
+
+    Attributes:
+        item: The item with a conflict.
+        platform: The platform the item was discovered on.
+        source_path: Path to the source repo copy.
+        target_path: Path to the locally-installed copy.
+    """
+
+    item: Item
+    platform: Platform
+    source_path: Path
+    target_path: Path
+
+
+def detect_push_conflicts(
+    items: list[Item],
+    platforms: tuple[Platform, ...],
+    source_dir: Path,
+    target_manager: SyncTarget,
+) -> list[PushConflict]:
+    """Detect items where both source repo and target changed since last sync.
+
+    An item is a conflict when:
+    1. It exists in both source repo and target (installed location).
+    2. The source repo version differs from the target version.
+    3. The source repo file was modified after the last sync timestamp.
+
+    When there is no sync state (first run), no conflicts are reported
+    because there is no baseline to compare against.
+
+    Args:
+        items: Installed items to check.
+        platforms: Platforms to consider.
+        source_dir: Root of the source repository.
+        target_manager: Provides target directory resolution.
+
+    Returns:
+        List of :class:`PushConflict` instances.
+    """
+    try:
+        state = load_sync_state(source_dir)
+    except Exception:
+        logger.debug("Cannot load sync state for conflict detection", exc_info=True)
+        return []
+
+    if not state.last_sync:
+        return []
+
+    conflicts: list[PushConflict] = []
+
+    for item in items:
+        candidate_platforms = _iter_candidate_platforms(item, platforms)
+        for platform in candidate_platforms:
+            try:
+                conflict = _check_push_conflict(
+                    item,
+                    platform,
+                    source_dir,
+                    target_manager,
+                    state,
+                )
+                if conflict is not None:
+                    conflicts.append(conflict)
+            except (AgentfilesError, OSError):
+                logger.debug(
+                    "Error checking conflict for %s on %s",
+                    item.name,
+                    platform.display_name,
+                    exc_info=True,
+                )
+
+    return conflicts
+
+
+def _check_push_conflict(
+    item: Item,
+    platform: Platform,
+    source_dir: Path,
+    target_manager: SyncTarget,
+    state: SyncState,
+) -> PushConflict | None:
+    """Check whether a single (item, platform) pair is a push conflict.
+
+    Returns a :class:`PushConflict` if both sides changed, else ``None``.
+    """
+    target_dir = target_manager.get_target_dir(platform, item.item_type)
+    if target_dir is None:
+        return None
+
+    local_path = get_item_dest_path(target_dir, item)
+    dest_path = get_push_dest_path(source_dir, item)
+
+    # Both must exist for a conflict.
+    if not local_path.exists() or not dest_path.exists():
+        return None
+
+    # If they are identical, no conflict.
+    push_status = _compare_push_item(local_path, dest_path)
+    if push_status == "unchanged":
+        return None
+
+    # Check if source repo version was modified after last sync.
+    platform_key = platform.value
+    item_key = item.item_key
+    platform_state = state.platforms.get(platform_key)
+    if platform_state is None:
+        return None
+    item_state = platform_state.items.get(item_key)
+    if item_state is None or not item_state.synced_at:
+        return None
+
+    try:
+        synced_at = datetime.fromisoformat(item_state.synced_at)
+    except (ValueError, TypeError):
+        return None
+
+    # Check if source repo file was modified after sync.
+    try:
+        source_mtime = _get_mtime(dest_path)
+    except OSError:
+        return None
+
+    if source_mtime <= synced_at:
+        # Source repo unchanged since sync -- not a conflict, just target changed.
+        return None
+
+    return PushConflict(
+        item=item,
+        platform=platform,
+        source_path=dest_path,
+        target_path=local_path,
+    )
+
+
+def _get_mtime(path: Path) -> datetime:
+    """Return the modification time of a file or directory as a datetime."""
+    if path.is_file():
+        ts = path.stat().st_mtime
+    elif path.is_dir():
+        # Use the most recent mtime among all files.
+        ts = max(
+            (f.stat().st_mtime for f in path.rglob("*") if f.is_file()),
+            default=path.stat().st_mtime,
+        )
+    else:
+        ts = path.stat().st_mtime
+    return datetime.fromtimestamp(ts, tz=timezone.utc)
+
+
 def _dir_differs(dcmp: filecmp.dircmp[str]) -> bool:
     """Recursively check if dircmp shows any differences."""
     if dcmp.left_only or dcmp.right_only or dcmp.diff_files:

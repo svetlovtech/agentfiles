@@ -921,6 +921,130 @@ class InteractiveSession:
 
         return [(item, platform) for item in selected_items for platform in selected_platforms]
 
+    _PUSH_CONFLICT_MAP: dict[str, str] = {
+        "t": "keep-target",
+        "keep-target": "keep-target",
+        "s": "keep-source",
+        "keep-source": "keep-source",
+        "d": "show-diff",
+        "show-diff": "show-diff",
+    }
+
+    def prompt_push_conflicts(
+        self,
+        conflicts: list[tuple[str, str, str, Path, Path]],
+    ) -> dict[str, str]:
+        """Let the user resolve push conflicts interactively.
+
+        For each conflict the user can choose:
+
+        - **keep-target** (``t``) — overwrite source with the target version
+          (default push behaviour).
+        - **keep-source** (``s``) — skip this item, keep source as-is.
+        - **show-diff** (``d``) — display a unified diff, then re-prompt.
+
+        Args:
+            conflicts: List of ``(item_key, item_type, platform_name,
+                source_path, target_path)`` tuples.
+
+        Returns:
+            Mapping of item_key to ``"keep-target"`` or ``"keep-source"``.
+        """
+        if not conflicts:
+            return {}
+
+        print()
+        print(self._renderer._c("Push conflicts detected:", Colors.BOLD))
+        print("  Both the source repo and local install have changed since last sync.")
+        print()
+
+        result: dict[str, str] = {}
+        apply_to_all: str | None = None
+
+        for item_key, _item_type, platform_name, source_path, target_path in conflicts:
+            if apply_to_all is not None:
+                result[item_key] = apply_to_all
+                continue
+
+            resolved = False
+            while not resolved:
+                print(
+                    f"  {self._renderer._c('CONFLICT', Colors.RED)}: {item_key} on {platform_name}"
+                )
+                print("  [t] Keep target (overwrite source — push)")
+                print("  [s] Keep source (skip this item)")
+                print("  [d] Show diff")
+                print("  [a] Apply choice to all remaining")
+
+                raw = self._parser.prompt("  Choice [s]: ")
+                key = raw.strip().lower() if raw else "s"
+
+                if key in ("a", "all"):
+                    raw_all = self._parser.prompt(
+                        "  Apply which to all? [t]arget/[s]ource: ",
+                    )
+                    all_key = raw_all.strip().lower() if raw_all else "s"
+                    if all_key in ("t", "keep-target"):
+                        apply_to_all = "keep-target"
+                    else:
+                        apply_to_all = "keep-source"
+                    result[item_key] = apply_to_all
+                    resolved = True
+                elif key in ("d", "show-diff"):
+                    self._show_push_conflict_diff(source_path, target_path)
+                else:
+                    action = self._PUSH_CONFLICT_MAP.get(key, "keep-source")
+                    result[item_key] = action
+                    resolved = True
+
+                print()
+
+        return result
+
+    def _show_push_conflict_diff(
+        self,
+        source_path: Path,
+        target_path: Path,
+    ) -> None:
+        """Display a unified diff between source and target versions."""
+        import difflib
+
+        try:
+            if source_path.is_file():
+                src_lines = source_path.read_text(encoding="utf-8").splitlines(keepends=True)
+            else:
+                src_lines = ["(directory — diff not available)\n"]
+            if target_path.is_file():
+                tgt_lines = target_path.read_text(encoding="utf-8").splitlines(keepends=True)
+            else:
+                tgt_lines = ["(directory — diff not available)\n"]
+        except (OSError, UnicodeDecodeError):
+            print("  (cannot read files for diff)")
+            return
+
+        diff = list(
+            difflib.unified_diff(
+                src_lines,
+                tgt_lines,
+                fromfile=f"source: {source_path}",
+                tofile=f"target: {target_path}",
+                n=3,
+            )
+        )
+
+        if not diff:
+            print("  (no textual differences)")
+            return
+
+        for line in diff:
+            line = line.rstrip("\n")
+            if line.startswith("+"):
+                print(f"  {self._renderer._c(line, Colors.GREEN)}")
+            elif line.startswith("-"):
+                print(f"  {self._renderer._c(line, Colors.RED)}")
+            else:
+                print(f"  {line}")
+
     _CONFLICT_ACTION_MAP: dict[str, str] = {
         "p": "pull",
         "pull": "pull",
