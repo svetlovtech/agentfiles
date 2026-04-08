@@ -85,6 +85,7 @@ class TestTargetDiscoveryDiscover:
     def test_discover_all_returns_both_platforms(self, fake_home: SimpleNamespace) -> None:
         with (
             mock.patch.object(Path, "home", return_value=fake_home.home),
+            mock.patch.object(Path, "cwd", return_value=fake_home.home / "project"),
             mock.patch.dict(os.environ, {}, clear=True),
         ):
             targets = TargetDiscovery().discover_all()
@@ -96,6 +97,7 @@ class TestTargetDiscoveryDiscover:
     def test_discover_all_skips_missing(self, tmp_path: Path) -> None:
         with (
             mock.patch.object(Path, "home", return_value=tmp_path / "empty"),
+            mock.patch.object(Path, "cwd", return_value=tmp_path / "empty" / "project"),
             mock.patch.dict(os.environ, {}, clear=True),
         ):
             targets = TargetDiscovery().discover_all()
@@ -434,6 +436,7 @@ class TestBuildTargetManager:
         """Returns a manager with empty targets when nothing is found."""
         with (
             mock.patch.object(Path, "home", return_value=tmp_path / "empty"),
+            mock.patch.object(Path, "cwd", return_value=tmp_path / "empty" / "project"),
             mock.patch.dict(os.environ, {}, clear=True),
         ):
             manager = build_target_manager()

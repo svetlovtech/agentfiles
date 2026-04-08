@@ -144,7 +144,7 @@ class TestPlatform:
         assert Platform.CLAUDE_CODE.display_name == "Claude Code"
 
     def test_member_count(self) -> None:
-        assert len(Platform) == 4
+        assert len(Platform) == 7
 
 
 class TestPlatformRegistry:

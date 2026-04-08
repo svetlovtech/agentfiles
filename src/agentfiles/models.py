@@ -228,6 +228,9 @@ class Platform(Enum):
     CLAUDE_CODE = "claude_code"
     WINDSURF = "windsurf"
     CURSOR = "cursor"
+    COPILOT = "copilot"
+    AIDER = "aider"
+    CONTINUE = "continue"
 
     @property
     def display_name(self) -> str:
@@ -237,6 +240,9 @@ class Platform(Enum):
             Platform.CLAUDE_CODE: "Claude Code",
             Platform.WINDSURF: "Windsurf",
             Platform.CURSOR: "Cursor",
+            Platform.COPILOT: "GitHub Copilot",
+            Platform.AIDER: "Aider",
+            Platform.CONTINUE: "Continue.dev",
         }
         return _names[self]
 
@@ -260,6 +266,16 @@ PLATFORM_ALIASES: dict[str, str] = {
     # Cursor
     "cr": "cursor",
     "cursor": "cursor",
+    # GitHub Copilot
+    "copilot": "copilot",
+    "cp": "copilot",
+    "github-copilot": "copilot",
+    # Aider
+    "aider": "aider",
+    # Continue.dev
+    "continue": "continue",
+    "cont": "continue",
+    "continue.dev": "continue",
 }
 
 PLATFORM_NAMES: frozenset[str] = frozenset(p.value for p in Platform)

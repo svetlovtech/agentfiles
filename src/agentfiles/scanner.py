@@ -735,18 +735,25 @@ def _scan_config_dirs(
 # Summary of registered scanners and their platform support:
 #
 #   ItemType   | Scanner function      | Platforms
-#   -----------|-----------------------|----------------------------------
-#   AGENT      | _scan_agents_dir      | OPENCODE, CLAUDE_CODE
+#   -----------|-----------------------|------------------------------------------
+#   AGENT      | _scan_agents_dir      | OPENCODE, CLAUDE_CODE, COPILOT, AIDER, CONTINUE
 #   SKILL      | _scan_skills_dir      | OPENCODE, CLAUDE_CODE, WINDSURF, CURSOR
-#   COMMAND    | _scan_commands_dir    | OPENCODE
+#   COMMAND    | _scan_commands_dir    | OPENCODE, CONTINUE
 #   PLUGIN     | _scan_plugins_dir     | OPENCODE
+#   CONFIG     | _scan_config_dirs     | OPENCODE, CLAUDE_CODE, COPILOT, AIDER, CONTINUE
 #   WORKFLOW   | _scan_workflows_dir   | OPENCODE, CLAUDE_CODE, WINDSURF, CURSOR
 #
 # Each call is atomic: adding a new ItemType only needs one more line here.
 _register_scanner(
     ItemType.AGENT,
     _scan_agents_dir,
-    (Platform.OPENCODE, Platform.CLAUDE_CODE),
+    (
+        Platform.OPENCODE,
+        Platform.CLAUDE_CODE,
+        Platform.COPILOT,
+        Platform.AIDER,
+        Platform.CONTINUE,
+    ),
 )
 _register_scanner(
     ItemType.SKILL,
@@ -756,7 +763,7 @@ _register_scanner(
 _register_scanner(
     ItemType.COMMAND,
     _scan_commands_dir,
-    (Platform.OPENCODE,),
+    (Platform.OPENCODE, Platform.CONTINUE),
 )
 _register_scanner(
     ItemType.PLUGIN,
@@ -766,7 +773,13 @@ _register_scanner(
 _register_scanner(
     ItemType.CONFIG,
     _scan_config_dirs,
-    (Platform.OPENCODE, Platform.CLAUDE_CODE),
+    (
+        Platform.OPENCODE,
+        Platform.CLAUDE_CODE,
+        Platform.COPILOT,
+        Platform.AIDER,
+        Platform.CONTINUE,
+    ),
 )
 _register_scanner(
     ItemType.WORKFLOW,

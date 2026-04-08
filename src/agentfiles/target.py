@@ -238,6 +238,50 @@ def _cursor_candidates(home: Path) -> list[Path]:
     return [home / ".cursor" / "skills"]
 
 
+def _copilot_candidates(home: Path) -> list[Path]:
+    """Return candidate GitHub Copilot config directories in priority order.
+
+    Resolution order:
+
+    1. ``<cwd>/.github/`` — project-level instructions.
+    2. ``~/.config/github-copilot/`` — global instructions.
+
+    Args:
+        home: Pre-resolved home directory.
+
+    """
+    return [Path.cwd() / ".github", home / ".config" / "github-copilot"]
+
+
+def _aider_candidates(home: Path) -> list[Path]:
+    """Return candidate Aider config directories in priority order.
+
+    Resolution order:
+
+    1. ``<cwd>/.aider/`` — project-level conventions and prompts.
+
+    Args:
+        home: Pre-resolved home directory.
+
+    """
+    return [Path.cwd() / ".aider"]
+
+
+def _continue_candidates(home: Path) -> list[Path]:
+    """Return candidate Continue.dev config directories in priority order.
+
+    Resolution order:
+
+    1. ``<cwd>/.continue/`` — project-level configuration.
+    2. ``~/.continue/`` — global configuration.
+
+    Args:
+        home: Pre-resolved home directory.
+
+    """
+    return [Path.cwd() / ".continue", home / ".continue"]
+
+
 # ---------------------------------------------------------------------------
 # Platform subdir resolvers
 # ---------------------------------------------------------------------------
@@ -298,6 +342,46 @@ def _skills_only_subdirs(config_dir: Path) -> dict[str, Path]:
     return {"skills": config_dir, "workflows": config_dir / "workflows"}
 
 
+def _copilot_subdirs(config_dir: Path) -> dict[str, Path]:
+    """GitHub Copilot stores agents in ``.github/copilot/`` and configs at root.
+
+    Args:
+        config_dir: Root ``.github/`` directory.
+
+    """
+    return {
+        "agents": config_dir / "copilot",
+        "configs": config_dir,
+    }
+
+
+def _aider_subdirs(config_dir: Path) -> dict[str, Path]:
+    """Aider stores agents in ``.aider/prompts/`` and configs at root.
+
+    Args:
+        config_dir: Root ``.aider/`` directory.
+
+    """
+    return {
+        "agents": config_dir / "prompts",
+        "configs": config_dir,
+    }
+
+
+def _continue_subdirs(config_dir: Path) -> dict[str, Path]:
+    """Continue.dev stores agents and commands in ``.continue/prompts/``.
+
+    Args:
+        config_dir: Root ``.continue/`` directory.
+
+    """
+    return {
+        "agents": config_dir / "prompts",
+        "commands": config_dir / "prompts",
+        "configs": config_dir,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Platform dispatch tables
 # ---------------------------------------------------------------------------
@@ -329,6 +413,9 @@ _PLATFORM_CANDIDATE_RESOLVERS: dict[Platform, Callable[[Path], list[Path]]] = {
     Platform.CLAUDE_CODE: _claude_code_candidates,
     Platform.WINDSURF: _windsurf_candidates,
     Platform.CURSOR: _cursor_candidates,
+    Platform.COPILOT: _copilot_candidates,
+    Platform.AIDER: _aider_candidates,
+    Platform.CONTINUE: _continue_candidates,
 }
 
 # Dispatch: Platform → subdir resolver function.
@@ -337,6 +424,9 @@ _PLATFORM_SUBDIR_RESOLVERS: dict[Platform, Callable[[Path], dict[str, Path]]] = 
     Platform.CLAUDE_CODE: _claude_code_subdirs,
     Platform.WINDSURF: _skills_only_subdirs,
     Platform.CURSOR: _skills_only_subdirs,
+    Platform.COPILOT: _copilot_subdirs,
+    Platform.AIDER: _aider_subdirs,
+    Platform.CONTINUE: _continue_subdirs,
 }
 
 # ---------------------------------------------------------------------------

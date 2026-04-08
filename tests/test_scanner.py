@@ -145,11 +145,11 @@ class TestApplyPlatforms:
         assert Platform.OPENCODE in result.supported_platforms
         assert Platform.CLAUDE_CODE in result.supported_platforms
 
-    def test_commands_get_opencode_only(self, tmp_path: Path) -> None:
+    def test_commands_get_opencode_and_continue(self, tmp_path: Path) -> None:
         _write_md(tmp_path, "test.md", _VALID_COMMAND_MD)
         item = item_from_file(tmp_path / "test.md", ItemType.COMMAND)
         result = _apply_platforms(item)
-        assert result.supported_platforms == (Platform.OPENCODE,)
+        assert result.supported_platforms == (Platform.OPENCODE, Platform.CONTINUE)
 
     def test_plugins_get_opencode_only(self, tmp_path: Path) -> None:
         (tmp_path / "plugin.ts").write_text("export default {};", encoding="utf-8")
