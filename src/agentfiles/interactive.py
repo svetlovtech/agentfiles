@@ -118,6 +118,8 @@ def _parse_ranges(input_str: str, max_value: int) -> list[int]:
                 start, end = int(parts[0]), int(parts[1])
             except ValueError:
                 continue
+            if start > end:
+                start, end = end, start
             result.update(range(start, end + 1))
         else:
             try:

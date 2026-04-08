@@ -188,9 +188,6 @@ def _copy_item(source: Path, dest: Path, use_symlinks: bool) -> tuple[int, str |
             return 0, None
 
         if source.is_dir():
-            # Count files from source before copy to avoid a second full
-            # directory traversal on the freshly-created destination tree.
-            count = sum(1 for _ in source.rglob("*") if _.is_file())
             try:
                 shutil.copytree(source, dest, dirs_exist_ok=True)
             except (PermissionError, OSError) as copy_exc:
@@ -204,6 +201,7 @@ def _copy_item(source: Path, dest: Path, use_symlinks: bool) -> tuple[int, str |
                 msg = f"Cannot copy directory {source} -> {dest}: {copy_exc}"
                 logger.error(msg)
                 return 0, msg
+            count = sum(len(files) for _, _, files in os.walk(dest))
             logger.debug("Copied %d files to %s", count, dest)
             return count, None
 

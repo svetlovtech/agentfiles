@@ -254,6 +254,10 @@ def _apply_item_filter(
     """
     if only_set is not None:
         items = [i for i in items if i.name in only_set]
+        if not items:
+            logging.getLogger(__name__).warning(
+                "No items matched --only filter: %s", ", ".join(sorted(only_set))
+            )
     if except_set is not None:
         items = [i for i in items if i.name not in except_set]
     return items
@@ -843,10 +847,10 @@ def cmd_pull(args: argparse.Namespace) -> int:
     source_dir = ctx.source_dir
 
     # needs_pipeline=True guarantees non-None values.
-    assert scanner is not None
-    assert target_manager is not None
-    assert engine is not None
-    assert source_dir is not None
+    if scanner is None or target_manager is None or engine is None or source_dir is None:
+        from agentfiles.models import AgentfilesError
+
+        raise AgentfilesError("Internal error: pipeline not initialized")
 
     # --update: git pull first
     if getattr(args, "update", False):
