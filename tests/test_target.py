@@ -851,6 +851,7 @@ class TestPlatformSubdirResolvers:
             "skills": config_dir / "skill",
             "commands": config_dir / "command",
             "plugins": config_dir / "plugin",
+            "workflows": config_dir / "workflow",
         }
 
     def test_claude_code_subdirs_maps_supported_types(self) -> None:
@@ -865,6 +866,7 @@ class TestPlatformSubdirResolvers:
             "skills": config_dir / "skills",
             "commands": config_dir / "commands",
             "plugins": config_dir / "plugins",
+            "workflows": config_dir / "workflows",
         }
 
     def test_skills_only_subdirs_returns_skills_key(self) -> None:
@@ -874,7 +876,7 @@ class TestPlatformSubdirResolvers:
         config_dir = Path("/fake/windsurf")
         subdirs = _skills_only_subdirs(config_dir)
 
-        assert subdirs == {"skills": config_dir}
+        assert subdirs == {"skills": config_dir, "workflows": config_dir / "workflows"}
 
     def test_resolve_subdirs_unknown_platform_returns_empty(self) -> None:
         """_resolve_subdirs returns empty dict for unregistered platforms."""

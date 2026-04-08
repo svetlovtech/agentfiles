@@ -169,6 +169,7 @@ class ItemType(Enum):
     COMMAND = "command"
     PLUGIN = "plugin"
     CONFIG = "config"
+    WORKFLOW = "workflow"
 
     @property
     def plural(self) -> str:
@@ -179,6 +180,7 @@ class ItemType(Enum):
             ItemType.COMMAND: "commands",
             ItemType.PLUGIN: "plugins",
             ItemType.CONFIG: "configs",
+            ItemType.WORKFLOW: "workflows",
         }
         return _plurals[self]
 
@@ -187,7 +189,7 @@ class ItemType(Enum):
         """``True`` for item types stored as flat files (agents, commands, plugins, configs).
 
         File-based items retain their source filename (including extension)
-        when installed.  Directory-based items (skills) are installed
+        when installed.  Directory-based items (skills, workflows) are installed
         by name only.
         """
         return self in (ItemType.AGENT, ItemType.COMMAND, ItemType.PLUGIN, ItemType.CONFIG)

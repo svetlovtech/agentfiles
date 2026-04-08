@@ -264,6 +264,7 @@ def _opencode_subdirs(config_dir: Path) -> dict[str, Path]:
         "skills": "skill",
         "commands": "command",
         "plugins": "plugin",
+        "workflows": "workflow",
     }
     return {
         plural_key: (config_dir / singular_name)
@@ -280,7 +281,7 @@ def _claude_code_subdirs(config_dir: Path) -> dict[str, Path]:
         config_dir: Root Claude Code configuration directory.
 
     """
-    supported: tuple[str, ...] = ("agents", "skills", "commands", "plugins")
+    supported: tuple[str, ...] = ("agents", "skills", "commands", "plugins", "workflows")
     return {name: config_dir / name for name in supported}
 
 
@@ -294,7 +295,7 @@ def _skills_only_subdirs(config_dir: Path) -> dict[str, Path]:
         config_dir: Root platform configuration directory.
 
     """
-    return {"skills": config_dir}
+    return {"skills": config_dir, "workflows": config_dir / "workflows"}
 
 
 # ---------------------------------------------------------------------------

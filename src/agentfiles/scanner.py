@@ -657,6 +657,44 @@ def _scan_platform_plugins_dir(
     return items
 
 
+def _scan_workflows_dir(
+    dir_path: Path,
+    gitignore: GitIgnoreMatcher | None = None,
+) -> list[Item]:
+    """Scan *dir_path* for workflow subdirectories.
+
+    **Item type**: :attr:`~agentfiles.models.ItemType.WORKFLOW`
+    **Registry platforms**: ``(OPENCODE, CLAUDE_CODE, WINDSURF, CURSOR)``
+
+    Workflows are **directory-only**: each subdirectory must contain a
+    markdown file (``<dirname>.md`` or any ``.md`` file).  Flat ``.md``
+    files at the top level of the workflows directory are ignored.
+
+    Args:
+        dir_path: Directory containing workflow definitions.
+        gitignore: Optional gitignore matcher to exclude ignored paths.
+
+    Returns:
+        List of discovered workflow :class:`Item` instances.
+
+    """
+    items: list[Item] = []
+
+    for entry in _scandir_sorted(dir_path):
+        if _should_skip(entry.name) or not entry.is_dir():
+            continue
+        child = Path(entry.path)
+        if gitignore and gitignore.is_ignored(child):
+            continue
+        try:
+            item = item_from_directory(child, ItemType.WORKFLOW)
+            items.append(_apply_platforms(item))
+        except (AgentfilesError, OSError) as exc:
+            logger.warning("Skipping workflow directory %s: %s", child.name, exc, exc_info=True)
+
+    return items
+
+
 def _scan_config_dirs(
     dir_path: Path,
     gitignore: GitIgnoreMatcher | None = None,
@@ -702,6 +740,7 @@ def _scan_config_dirs(
 #   SKILL      | _scan_skills_dir      | OPENCODE, CLAUDE_CODE, WINDSURF, CURSOR
 #   COMMAND    | _scan_commands_dir    | OPENCODE
 #   PLUGIN     | _scan_plugins_dir     | OPENCODE
+#   WORKFLOW   | _scan_workflows_dir   | OPENCODE, CLAUDE_CODE, WINDSURF, CURSOR
 #
 # Each call is atomic: adding a new ItemType only needs one more line here.
 _register_scanner(
@@ -728,6 +767,11 @@ _register_scanner(
     ItemType.CONFIG,
     _scan_config_dirs,
     (Platform.OPENCODE, Platform.CLAUDE_CODE),
+)
+_register_scanner(
+    ItemType.WORKFLOW,
+    _scan_workflows_dir,
+    (Platform.OPENCODE, Platform.CLAUDE_CODE, Platform.WINDSURF, Platform.CURSOR),
 )
 
 

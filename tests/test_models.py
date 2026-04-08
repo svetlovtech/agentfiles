@@ -129,7 +129,7 @@ class TestItemType:
         assert ItemType.SKILL.is_file_based is False
 
     def test_member_count(self) -> None:
-        assert len(ItemType) == 5
+        assert len(ItemType) == 6
 
 
 class TestPlatform:

@@ -99,7 +99,7 @@ class TestCursorDiscovery:
             result = TargetDiscovery().discover(Platform.CURSOR)
 
         assert result is not None
-        assert set(result.subdirs.keys()) == {"skills"}
+        assert set(result.subdirs.keys()) == {"skills", "workflows"}
 
     def test_discover_all_includes_cursor(
         self,
