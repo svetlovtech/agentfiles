@@ -71,6 +71,7 @@ __all__ = [
     "Platform",
     "PLATFORM_ALIASES",
     "PLATFORM_NAMES",
+    "Scope",
     "SourceType",
     "SyncAction",
     "SyncDirection",
@@ -365,6 +366,49 @@ class SyncDirection(Enum):
     SKIP = "skip"
 
 
+class Scope(Enum):
+    """Installation scope for items.
+
+    Determines where items are installed on target platforms:
+
+    - GLOBAL: User-level configs shared across all projects
+      (e.g. ~/.config/opencode/, ~/.claude/)
+    - PROJECT: Project-specific configs committed to VCS
+      (e.g. .opencode/, .claude/ in project root)
+    - LOCAL: Personal project configs, git-ignored
+      (e.g. .opencode/ with .gitignore entries)
+
+    In the source repository, scope is determined by directory structure:
+
+    - agents/ or agents/global/ → GLOBAL (default)
+    - agents/project/ → PROJECT
+    - agents/local/ → LOCAL
+    """
+
+    GLOBAL = "global"
+    PROJECT = "project"
+    LOCAL = "local"
+
+    @property
+    def display_name(self) -> str:
+        _names: dict[Scope, str] = {
+            Scope.GLOBAL: "Global",
+            Scope.PROJECT: "Project",
+            Scope.LOCAL: "Local",
+        }
+        return _names[self]
+
+    @property
+    def marker(self) -> str:
+        """Short marker for display in item lists."""
+        _markers: dict[Scope, str] = {
+            Scope.GLOBAL: "●",
+            Scope.PROJECT: "◆",
+            Scope.LOCAL: "○",
+        }
+        return _markers[self]
+
+
 # ---------------------------------------------------------------------------
 # Shared file filter (used across models and tokens)
 # ---------------------------------------------------------------------------
@@ -457,6 +501,7 @@ class Item:
     version: str = _DEFAULT_VERSION
     files: tuple[str, ...] = ()
     supported_platforms: tuple[Platform, ...] = (Platform.OPENCODE, Platform.CLAUDE_CODE)
+    scope: Scope = Scope.GLOBAL
 
     # -- derived keys / sorting ---------------------------------------------
 

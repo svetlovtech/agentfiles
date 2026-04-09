@@ -11,6 +11,23 @@ item definitions, and delegates parsing to
 :func:`~agentfiles.models.item_from_file` (flat files) or
 :func:`~agentfiles.models.item_from_directory` (subdirectories).
 
+Scope-aware discovery
+~~~~~~~~~~~~~~~~~~~~~
+Items can be organized by :class:`~agentfiles.models.Scope` inside the
+content directory:
+
+- ``agents/`` (flat files) → :attr:`~agentfiles.models.Scope.GLOBAL`
+  (backward compatible)
+- ``agents/global/`` → explicit :attr:`~agentfiles.models.Scope.GLOBAL`
+- ``agents/project/`` → :attr:`~agentfiles.models.Scope.PROJECT`
+- ``agents/local/`` → :attr:`~agentfiles.models.Scope.LOCAL`
+
+:func:`_find_item_dirs` returns ``list[tuple[Path, Scope]]`` so that
+:meth:`SourceScanner.scan_type` can assign the correct scope to each
+discovered item.  Items from the base content directory take priority
+over items from explicit scope subdirectories when both share the same
+``(name, scope)`` key.
+
 Scanner registry
 ~~~~~~~~~~~~~~~~
 Each :class:`~agentfiles.models.ItemType` maps 1-to-1 to a scanner
@@ -67,6 +84,7 @@ from agentfiles.models import (
     Item,
     ItemType,
     Platform,
+    Scope,
     SourceError,
     item_from_directory,
     item_from_file,
@@ -210,6 +228,9 @@ class GitIgnoreMatcher:
 # Names to always skip during scanning (hidden names handled separately).
 _SKIP_NAMES = frozenset({"__pycache__", "__init__.py"})
 
+# Scope subdirectory names inside content directories (e.g. agents/global/).
+_SCOPE_DIR_NAMES: frozenset[str] = frozenset(s.value for s in Scope)
+
 # File extensions recognised for single-file plugin items.
 _PLUGIN_EXTENSIONS = frozenset({".ts", ".yaml", ".py"})
 
@@ -308,28 +329,104 @@ def _scandir_sorted(dir_path: Path) -> list[os.DirEntry[str]]:
         return []
 
 
-def _find_item_dirs(source_dir: Path, item_type: ItemType) -> Path | None:
-    """Locate the content directory for *item_type* inside *source_dir*.
+def _find_item_dirs(
+    source_dir: Path,
+    item_type: ItemType,
+    scope: Scope | None = None,
+) -> list[tuple[Path, Scope]]:
+    """Locate content directories for *item_type* inside *source_dir*.
 
-    Checks the plural name first (``agents/``), then the singular form
-    (``agent/``).  Returns ``None`` when neither exists.
+    Returns a list of ``(dir_path, scope)`` tuples representing directories
+    to scan and the scope to assign to discovered items.
+
+    Scope discovery
+    ~~~~~~~~~~~~~~~
+    When *scope* is ``None`` (default), **all** scopes are discovered:
+
+    * The base content directory (e.g. ``agents/``) is returned as
+      :attr:`Scope.GLOBAL` for backward compatibility — flat files and
+      non-scope subdirectories inside it receive ``GLOBAL`` scope.
+    * Each scope subdirectory that exists (``agents/global/``,
+      ``agents/project/``, ``agents/local/``) is returned with its
+      corresponding scope.
+
+    When *scope* is specific, only directories matching that scope are
+    returned.  For :attr:`Scope.GLOBAL`, this includes both the base
+    content directory and the explicit ``global/`` subdirectory.
+
+    Deduplication
+    ~~~~~~~~~~~~~
+    Items from the base content directory take priority over items from
+    explicit scope subdirectories when both have the same ``(name, scope)``
+    key.  Callers (see :meth:`SourceScanner.scan_type`) are responsible
+    for enforcing this by processing results in order and skipping
+    duplicates.
 
     Args:
         source_dir: Root source directory.
         item_type: The item category to locate.
+        scope: Optional scope filter.  ``None`` discovers all scopes.
 
     Returns:
-        Resolved path to the found directory, or ``None``.
+        List of ``(dir_path, scope)`` tuples ordered so that the base
+        content directory comes first (for deduplication priority).
 
     """
+    # Resolve the base content directory (plural before singular).
     plural = source_dir / item_type.plural
     singular = source_dir / item_type.value
 
+    content_dir: Path | None = None
     for candidate in (plural, singular):
         if candidate.is_dir():
-            return candidate
+            content_dir = candidate
+            break
 
-    return None
+    if content_dir is None:
+        return []
+
+    results: list[tuple[Path, Scope]] = []
+
+    if scope is not None:
+        # Specific scope requested — return only matching directories.
+        if scope == Scope.GLOBAL:
+            # GLOBAL: base dir (backward compat) + explicit global/ subdir.
+            results.append((content_dir, Scope.GLOBAL))
+            explicit_global = content_dir / Scope.GLOBAL.value
+            if explicit_global.is_dir():
+                results.append((explicit_global, Scope.GLOBAL))
+        else:
+            # PROJECT or LOCAL: only the scope subdirectory.
+            scope_dir = content_dir / scope.value
+            if scope_dir.is_dir():
+                results.append((scope_dir, scope))
+    else:
+        # Discover all scopes — base dir first for dedup priority.
+        results.append((content_dir, Scope.GLOBAL))
+        for s in Scope:
+            scope_dir = content_dir / s.value
+            if scope_dir.is_dir():
+                results.append((scope_dir, s))
+
+    return results
+
+
+def _is_in_scope_subdir(source_path: Path, content_dir: Path) -> bool:
+    """Return ``True`` if *source_path* lives inside a scope subdirectory.
+
+    Used to filter out items discovered in scope subdirectories when
+    scanning the base content directory (to avoid double-counting).
+
+    Args:
+        source_path: Absolute path to an item's source.
+        content_dir: The base content directory (e.g. ``agents/``).
+
+    """
+    try:
+        rel = source_path.relative_to(content_dir)
+    except ValueError:
+        return False
+    return bool(rel.parts) and rel.parts[0] in _SCOPE_DIR_NAMES
 
 
 # ---------------------------------------------------------------------------
@@ -822,6 +919,9 @@ class SourceScanner:
             are included (no filtering is applied).  When provided, only
             items whose ``supported_platforms`` intersect with *platforms*
             are returned.
+        scope: Optional scope filter.  When ``None``, all scopes are
+            discovered.  When provided, only items in the specified scope
+            are returned.
 
     Example::
 
@@ -832,16 +932,22 @@ class SourceScanner:
         scanner = SourceScanner(Path("~/my-tools"), platforms=(Platform.OPENCODE,))
         items = scanner.scan()
 
+        # Filter to a single scope
+        scanner = SourceScanner(Path("~/my-tools"), scope=Scope.PROJECT)
+        items = scanner.scan()
+
     """
 
     def __init__(
         self,
         source_dir: Path,
         platforms: tuple[Platform, ...] | None = None,
+        scope: Scope | None = None,
     ) -> None:
-        """Initialise the scanner with a source directory and optional platform filter."""
+        """Initialise the scanner with a source directory and optional filters."""
         self._source_dir = source_dir.resolve()
         self._platforms = platforms
+        self._scope = scope
         self._gitignore = GitIgnoreMatcher.from_directory(source_dir)
 
     def scan(self) -> list[Item]:
@@ -877,11 +983,12 @@ class SourceScanner:
             item_type: The category to scan.
 
         Returns:
-            Validated items for that type, filtered by ``self._platforms``.
+            Validated items for that type, filtered by ``self._platforms``
+            and ``self._scope``.
 
         """
-        dir_path = _find_item_dirs(self._source_dir, item_type)
-        if dir_path is None:
+        scope_dirs = _find_item_dirs(self._source_dir, item_type, self._scope)
+        if not scope_dirs:
             logger.debug(
                 "No %s directory found in %s",
                 item_type.plural,
@@ -889,17 +996,72 @@ class SourceScanner:
             )
             return []
 
-        items = self._dispatch_scan(item_type, dir_path)
+        all_items: list[Item] = []
+        # Track items found in the base content directory so that items
+        # in explicit scope subdirs (e.g. agents/global/) can be
+        # deduplicated against them.  The key is ``(name, scope)``.
+        base_dir_keys: set[tuple[str, Scope]] = set()
+
+        base_dir = self._resolve_content_dir(item_type)
+
+        for dir_path, discovered_scope in scope_dirs:
+            items = self._dispatch_scan(item_type, dir_path)
+
+            # When scanning the base content directory, filter out items
+            # whose source_path is inside a scope subdirectory to avoid
+            # double-counting (those will be found when the scope subdir
+            # is scanned as its own entry).
+            is_base = base_dir is not None and dir_path == base_dir
+            if is_base:
+                items = [
+                    item for item in items if not _is_in_scope_subdir(item.source_path, base_dir)
+                ]
+
+            # Apply scope to each item.  Deduplication only happens across
+            # directories: items from the base content dir always win over
+            # items with the same (name, scope) from an explicit scope subdir.
+            for item in items:
+                scoped_item = replace(item, scope=discovered_scope)
+                key = (item.name, discovered_scope)
+
+                if is_base:
+                    base_dir_keys.add(key)
+                    all_items.append(scoped_item)
+                else:
+                    if key in base_dir_keys:
+                        logger.debug(
+                            "Skipping duplicate %s '%s' in scope %s "
+                            "(already found in base directory)",
+                            item_type.value,
+                            item.name,
+                            discovered_scope.value,
+                        )
+                        continue
+                    all_items.append(scoped_item)
 
         # Apply optional platform filter.
         if self._platforms is not None:
-            items = [
+            all_items = [
                 item
-                for item in items
+                for item in all_items
                 if any(p in item.supported_platforms for p in self._platforms)
             ]
 
-        return items
+        return all_items
+
+    def _resolve_content_dir(self, item_type: ItemType) -> Path | None:
+        """Return the base content directory for *item_type* (no scope logic).
+
+        Checks plural then singular directory names.  Used by
+        :meth:`scan_type` to determine whether a scanned directory is
+        the base content dir (which needs scope-subdir filtering).
+        """
+        plural = self._source_dir / item_type.plural
+        singular = self._source_dir / item_type.value
+        for candidate in (plural, singular):
+            if candidate.is_dir():
+                return candidate
+        return None
 
     def get_summary(self) -> dict[ItemType, int]:
         """Return item counts per type.

@@ -40,8 +40,17 @@ Common usage patterns::
     # Pull with git update first
     agentfiles pull --update
 
+    # Pull only global-scope items
+    agentfiles pull --scope global
+
+    # Pull project-scope items to a specific directory
+    agentfiles pull --scope project --project-dir /path/to/project
+
     # List items with token estimates
     agentfiles status --list --tokens
+
+    # List only project-scope items
+    agentfiles status --list --scope project
 
     # Compare source vs installed
     agentfiles status --diff
@@ -74,6 +83,7 @@ if TYPE_CHECKING:
         Item,
         ItemType,
         Platform,
+        Scope,
         SyncPlan,
         SyncResult,
         SyncState,
@@ -202,6 +212,25 @@ def _resolve_item_types(type_flag: str | None) -> list[ItemType]:
         return list(ItemType)
 
 
+def _resolve_scope(scope_flag: str | None) -> list[Scope]:
+    """Resolve the ``--scope`` CLI flag to a list of Scope enums.
+
+    Args:
+        scope_flag: Value of the ``--scope`` flag (``"global"``,
+            ``"project"``, ``"local"``, ``"all"``, or ``None``).
+
+    Returns:
+        List of ``Scope`` enums.  ``None`` or ``"all"`` returns all scopes
+        (backward-compatible default behaviour).
+
+    """
+    from agentfiles.models import Scope
+
+    if scope_flag is None or scope_flag == "all":
+        return list(Scope)
+    return [Scope(scope_flag)]
+
+
 def _filter_items(
     items: list[Item],
     item_types: list[ItemType],
@@ -217,6 +246,30 @@ def _filter_items(
 
     """
     return [i for i in items if i.item_type in item_types]
+
+
+def _filter_items_by_scope(
+    items: list[Item],
+    scopes: list[Scope],
+) -> list[Item]:
+    """Keep only items whose ``scope`` is in *scopes*.
+
+    When *scopes* contains every ``Scope`` value (the default / unfiltered
+    case), the list is returned unchanged — no allocation overhead.
+
+    Args:
+        items: Scanned ``Item`` objects.
+        scopes: Allowed ``Scope`` values.
+
+    Returns:
+        Filtered list of ``Item`` objects.
+
+    """
+    from agentfiles.models import Scope as _Scope
+
+    if set(scopes) == set(_Scope):
+        return items
+    return [i for i in items if i.scope in scopes]
 
 
 def _scan_filtered(
@@ -490,6 +543,8 @@ class CommandContext:
     engine: SyncEngine | None
     platforms: list[Platform]
     item_types: list[ItemType]
+    scopes: list[Scope]
+    project_dir: Path | None
     dry_run: bool
     fmt: str
     only_set: set[str] | None
@@ -542,8 +597,11 @@ def _build_context(
 
     item_types = _resolve_item_types(getattr(args, "item_type", None))
     platforms = _resolve_platforms(getattr(args, "target", None), config)
+    scopes = _resolve_scope(getattr(args, "scope", None))
     only_set, except_set = _resolve_item_filter(args)
     item_keys: list[str] | None = getattr(args, "item", None)
+
+    project_dir_arg: Path | None = getattr(args, "project_dir", None)
 
     return CommandContext(
         config=config,
@@ -553,6 +611,8 @@ def _build_context(
         engine=engine,
         platforms=platforms,
         item_types=item_types,
+        scopes=scopes,
+        project_dir=project_dir_arg,
         dry_run=getattr(args, "dry_run", False),
         fmt=getattr(args, "format", "text"),
         only_set=only_set,
@@ -619,7 +679,7 @@ def _discover_installed_from_targets(
         ``supported_platforms``.
 
     """
-    from agentfiles.models import Item, TargetError
+    from agentfiles.models import Item, ItemType, TargetError
     from agentfiles.paths import get_installed_item_path
 
     # Collect (item_type, name) → (first on-disk path, all platforms).
@@ -643,6 +703,16 @@ def _discover_installed_from_targets(
 
             if not item_path.exists():
                 continue
+
+            # For plugins, prefer the source file (.ts/.yaml/.yml/.py/.js)
+            # over the compiled extensionless file so that push preserves
+            # the original filename with extension.
+            if item_type == ItemType.PLUGIN and item_path.is_file() and not item_path.suffix:
+                for ext in (".ts", ".yaml", ".yml", ".py", ".js"):
+                    src_path = item_path.with_suffix(ext)
+                    if src_path.exists():
+                        item_path = src_path
+                        break
 
             key = (item_type, name)
             if key in registry:
@@ -668,7 +738,7 @@ def _run_pull_interactive(
     items: list[Item],
     target_manager: TargetManager,
     platforms: list[Platform],
-) -> tuple[list[Item], list[Platform]] | None:
+) -> tuple[list[Item], list[Platform], str] | None:
     """Run an interactive pull session to let the user choose what to install.
 
     Presents a mode chooser (``full``, ``install``, ``update``, ``custom``)
@@ -680,8 +750,8 @@ def _run_pull_interactive(
         platforms: Candidate platforms for installation.
 
     Returns:
-        ``(filtered_items, filtered_platforms)`` when the user made a valid
-        selection, or ``None`` if the user aborted or nothing matched.
+        ``(filtered_items, filtered_platforms, mode)`` when the user made a
+        valid selection, or ``None`` if the user aborted or nothing matched.
 
     """
     from agentfiles.interactive import InteractiveSession
@@ -739,7 +809,7 @@ def _run_pull_interactive(
             return None
     # mode == "full": use all items as-is
 
-    return items, platforms
+    return items, platforms, mode
 
 
 def _print_token_summary(
@@ -768,7 +838,7 @@ def _print_token_summary(
         print(f"  Name + Description tokens: ~{name_desc_total:,}")
 
 
-def _format_list_text(items: list[Any], show_tokens: bool) -> int:
+def _format_list_text(items: list[Any], show_tokens: bool, *, show_scope: bool = False) -> int:
     """Format items as grouped, colourised text and print to stdout.
 
     Items are grouped by type (agents, skills, …) and sorted alphabetically
@@ -779,11 +849,12 @@ def _format_list_text(items: list[Any], show_tokens: bool) -> int:
     Args:
         items: Items to display.
         show_tokens: If ``True``, include per-item and aggregate token counts.
+        show_scope: If ``True``, prefix each item with its scope marker.
 
     Returns:
         Exit code (always ``0``).
     """
-    from agentfiles.models import _DEFAULT_VERSION, ItemType
+    from agentfiles.models import _DEFAULT_VERSION, ItemType, Scope
     from agentfiles.output import Colors, bold, colorize
     from agentfiles.tokens import estimate_name_description_tokens, token_estimate
 
@@ -796,18 +867,30 @@ def _format_list_text(items: list[Any], show_tokens: bool) -> int:
             current_type = item.item_type
             print()
             bold(f"{current_type.plural}:")
-        ver = f"  v{item.version}" if item.version != _DEFAULT_VERSION else ""
+        ver = f" v{item.version}" if item.version != _DEFAULT_VERSION else ""
+        # Scope display — only show when show_scope is True and multiple scopes exist
+        item_scope = getattr(item, "scope", None) or Scope.GLOBAL
+        scope_parts: list[str] = []
+        if show_scope:
+            scope_parts.append(item_scope.marker)
+        scope_prefix = f"{scope_parts[0]} " if scope_parts else ""
+        scope_suffix = (
+            f" {colorize(f'[{item_scope.display_name}]', Colors.DIM)}" if show_scope else ""
+        )
         if show_tokens and item.item_type in (ItemType.AGENT, ItemType.SKILL):
             est = token_estimate(item)
             estimates.append(est)
             name_desc_total += estimate_name_description_tokens(item)
             print(
-                f"  {colorize(item.name, Colors.GREEN)}{ver}  "
+                f"  {scope_prefix}{colorize(item.name, Colors.GREEN)}{ver}{scope_suffix}  "
                 f"({len(item.files)} files)  "
                 f"~{est.total_tokens:,} tokens"
             )
         else:
-            print(f"  {colorize(item.name, Colors.GREEN)}{ver}  ({len(item.files)} files)")
+            print(
+                f"  {scope_prefix}{colorize(item.name, Colors.GREEN)}{ver}{scope_suffix}"
+                f"  ({len(item.files)} files)"
+            )
 
     if show_tokens and estimates:
         _print_token_summary(estimates, name_desc_total)
@@ -899,8 +982,8 @@ def cmd_pull(args: argparse.Namespace) -> int:
 
     Args:
         args: Parsed CLI namespace.  Relevant flags: ``source``, ``target``,
-            ``item_type``, ``non_interactive``, ``dry_run``, ``symlinks``,
-            ``config``, ``cache_dir``, ``update``.
+            ``item_type``, ``scope``, ``project_dir``, ``non_interactive``,
+            ``dry_run``, ``symlinks``, ``config``, ``cache_dir``, ``update``.
 
     Returns:
         ``0`` on success, ``1`` if any operation failed.
@@ -943,6 +1026,7 @@ def cmd_pull(args: argparse.Namespace) -> int:
         return 0
 
     items = _filter_items(all_items, ctx.item_types)
+    items = _filter_items_by_scope(items, ctx.scopes)
     platforms = ctx.platforms
 
     # Apply --only / --except item-name filters
@@ -952,13 +1036,19 @@ def cmd_pull(args: argparse.Namespace) -> int:
     items = _apply_item_key_filter(items, ctx.item_keys)
 
     # Interactive by default, non-interactive with --yes
+    pull_mode: str = "full"
     if not args.non_interactive:
         result = _run_pull_interactive(items, target_manager, platforms)
         if result is None:
             return 0
-        items, platforms = result
+        items, platforms, pull_mode = result
 
-    plans = engine.plan_sync(items, tuple(platforms))
+    # For "update" and "full" modes, use UPDATE action so existing items
+    # are reinstalled from source instead of being skipped.
+    from agentfiles.models import SyncAction
+
+    sync_action = SyncAction.UPDATE if pull_mode in ("update", "full") else SyncAction.INSTALL
+    plans = engine.plan_sync(items, tuple(platforms), action=sync_action)
 
     fmt = ctx.fmt
 
@@ -1389,11 +1479,23 @@ def cmd_status(args: argparse.Namespace) -> int:
         scanner = SourceScanner(source_dir)
         item_types = _resolve_item_types(args.item_type)
         items = _scan_filtered(scanner, item_types)
+
+        # Apply scope filtering.
+        scopes = _resolve_scope(getattr(args, "scope", None))
+        items = _filter_items_by_scope(items, scopes)
+
+        # Show scope markers only when items have mixed scopes
+        from agentfiles.models import Scope as _Scope
+
+        has_mixed_scopes = len({getattr(i, "scope", _Scope.GLOBAL) for i in items}) > 1
+        # Also show when user explicitly filtered by scope
+        explicit_scope = getattr(args, "scope", None) is not None
+
         show_tokens = getattr(args, "tokens", False)
         fmt = getattr(args, "format", "text")
         if fmt == "json":
             return _format_list_json(items, show_tokens)
-        return _format_list_text(items, show_tokens)
+        return _format_list_text(items, show_tokens, show_scope=has_mixed_scopes or explicit_scope)
 
     # --diff mode: show differences
     if getattr(args, "show_diff", False):
@@ -1895,8 +1997,10 @@ def _add_common_args(
 
     Arguments are organised into named groups for cleaner ``--help`` output:
 
-    * **Source options** — ``source``, ``--config``, ``--cache-dir``
-    * **Filter options** — ``--target``, ``--type``, ``--only``, ``--except``
+    * **Source options** — ``source``, ``--config``, ``--cache-dir``,
+      ``--project-dir``
+    * **Filter options** — ``--target``, ``--type``, ``--scope``,
+      ``--only``, ``--except``
     * **Output options** — ``--dry-run``
     * **Sync options**  — ``--yes``
 
@@ -1928,8 +2032,20 @@ def _add_common_args(
         default=None,
         help="Cache directory for git clones",
     )
+    source_group.add_argument(
+        "--project-dir",
+        type=Path,
+        default=None,
+        help="Project directory for project/local scope installation (default: current directory)",
+    )
 
     filter_group = parser.add_argument_group("Filter options")
+    filter_group.add_argument(
+        "--scope",
+        choices=["global", "project", "local", "all"],
+        default=None,
+        help="Filter by scope: global, project, local, or all (default: all)",
+    )
     filter_group.add_argument(
         "--target",
         metavar="TARGET",
@@ -2035,11 +2151,13 @@ examples:
   agentfiles pull --update           Git pull source, then sync
   agentfiles pull --target opencode  Sync only to OpenCode
   agentfiles pull --type agent       Sync only agents
+  agentfiles pull --scope global     Sync only global-scope items
   agentfiles pull --only coder       Sync only the coder agent
   agentfiles pull --dry-run          Preview what would change
   agentfiles push                    Push local items back to source
   agentfiles status                  Show installed items per platform
   agentfiles status --list --tokens  List source items with token counts
+  agentfiles status --list --scope project  List project-scope items
   agentfiles status --diff           Compare source vs installed
   agentfiles clean                   Remove orphaned items
   agentfiles init                    Initialize a new repository
@@ -2078,6 +2196,8 @@ examples:
   agentfiles pull --dry-run --verbose          Preview with detailed output
   agentfiles pull --target opencode --type agent  Only agents to OpenCode
   agentfiles pull --only coder,solid-principles   Sync specific items
+  agentfiles pull --scope global               Sync only global-scope items
+  agentfiles pull --scope project --project-dir /path  Sync project items to dir
 """,
     )
     pull_groups = _add_common_args(pull_p)
@@ -2155,6 +2275,8 @@ examples:
   agentfiles status                            Show all platforms
   agentfiles status --list                     List source items
   agentfiles status --list --tokens            List items with token counts
+  agentfiles status --list --scope global      List only global-scope items
+  agentfiles status --list --scope project     List only project-scope items
   agentfiles status --list --format json       JSON output
   agentfiles status --diff                     Compare source vs installed
   agentfiles status --diff --verbose           Show content-level diffs
@@ -2204,6 +2326,12 @@ examples:
         action="store_true",
         dest="verbose_diff",
         help="Show content-level diffs for changed items",
+    )
+    status_src.add_argument(
+        "--scope",
+        choices=["global", "project", "local", "all"],
+        default=None,
+        help="Filter by scope (with --list): global, project, local, or all",
     )
     _add_format_arg(status_p)
 

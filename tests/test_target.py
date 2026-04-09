@@ -10,8 +10,17 @@ from unittest import mock
 
 import pytest
 
-from agentfiles.models import Item, ItemType, Platform, TargetError, TargetPaths
-from agentfiles.target import TargetDiscovery, TargetManager, build_target_manager
+from agentfiles.models import Item, ItemType, Platform, Scope, TargetError, TargetPaths
+from agentfiles.target import (
+    TargetDiscovery,
+    TargetManager,
+    build_target_manager,
+    _cursor_project_candidates,
+    _claude_code_project_candidates,
+    _opencode_project_candidates,
+    _windsurf_project_candidates,
+    _PLATFORM_PROJECT_CANDIDATE_RESOLVERS,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -1075,3 +1084,390 @@ class TestFindExistingEdgeCases:
         """_item_type_from_plural returns None for unrecognised keys."""
         result = TargetManager._item_type_from_plural("unknown_type")
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Project candidate resolvers
+# ---------------------------------------------------------------------------
+
+
+class TestProjectCandidateResolvers:
+    """Direct unit tests for project-level candidate resolver functions."""
+
+    def test_opencode_project_candidates(self) -> None:
+        """OpenCode project candidate points to <project>/.opencode."""
+        project_dir = Path("/my/project")
+        candidates = _opencode_project_candidates(project_dir)
+        assert candidates == [project_dir / ".opencode"]
+
+    def test_claude_code_project_candidates(self) -> None:
+        """Claude Code project candidate points to <project>/.claude."""
+        project_dir = Path("/my/project")
+        candidates = _claude_code_project_candidates(project_dir)
+        assert candidates == [project_dir / ".claude"]
+
+    def test_windsurf_project_candidates(self) -> None:
+        """Windsurf project candidate points to <project>/.windsurf/skills."""
+        project_dir = Path("/my/project")
+        candidates = _windsurf_project_candidates(project_dir)
+        assert candidates == [project_dir / ".windsurf" / "skills"]
+
+    def test_cursor_project_candidates(self) -> None:
+        """Cursor project candidate points to <project>/.cursor/skills."""
+        project_dir = Path("/my/project")
+        candidates = _cursor_project_candidates(project_dir)
+        assert candidates == [project_dir / ".cursor" / "skills"]
+
+    def test_all_platforms_have_project_resolvers(self) -> None:
+        """Every Platform enum value has a project candidate resolver."""
+        for platform in Platform:
+            assert platform in _PLATFORM_PROJECT_CANDIDATE_RESOLVERS, (
+                f"Platform {platform.display_name} missing from "
+                f"_PLATFORM_PROJECT_CANDIDATE_RESOLVERS"
+            )
+
+    def test_project_resolvers_return_single_candidate(self) -> None:
+        """Each project resolver returns exactly one candidate path."""
+        project_dir = Path("/test")
+        for platform, resolver in _PLATFORM_PROJECT_CANDIDATE_RESOLVERS.items():
+            candidates = resolver(project_dir)
+            assert len(candidates) == 1, (
+                f"{platform.display_name} resolver returned {len(candidates)} "
+                f"candidates, expected 1"
+            )
+
+
+# ---------------------------------------------------------------------------
+# TargetDiscovery — discover_project
+# ---------------------------------------------------------------------------
+
+
+class TestDiscoverProject:
+    """Tests for the discover_project method."""
+
+    def test_discovers_opencode_project_dir(self, tmp_path: Path) -> None:
+        """discover_project finds <project>/.opencode when it exists."""
+        project_dir = tmp_path / "project"
+        oc_dir = project_dir / ".opencode"
+        (oc_dir / "agent").mkdir(parents=True)
+
+        discovery = TargetDiscovery()
+        result = discovery.discover_project(project_dir)
+
+        assert Platform.OPENCODE in result
+        assert result[Platform.OPENCODE].config_dir == oc_dir.resolve()
+        assert result[Platform.OPENCODE].subdirs["agents"] == oc_dir / "agent"
+
+    def test_discovers_claude_code_project_dir(self, tmp_path: Path) -> None:
+        """discover_project finds <project>/.claude when it exists."""
+        project_dir = tmp_path / "project"
+        cc_dir = project_dir / ".claude"
+        (cc_dir / "agents").mkdir(parents=True)
+
+        discovery = TargetDiscovery()
+        result = discovery.discover_project(project_dir)
+
+        assert Platform.CLAUDE_CODE in result
+        assert result[Platform.CLAUDE_CODE].config_dir == cc_dir.resolve()
+        assert result[Platform.CLAUDE_CODE].subdirs["agents"] == cc_dir / "agents"
+
+    def test_discovers_windsurf_project_dir(self, tmp_path: Path) -> None:
+        """discover_project finds <project>/.windsurf/skills when it exists."""
+        project_dir = tmp_path / "project"
+        ws_dir = project_dir / ".windsurf" / "skills"
+        ws_dir.mkdir(parents=True)
+
+        discovery = TargetDiscovery()
+        result = discovery.discover_project(project_dir)
+
+        assert Platform.WINDSURF in result
+        assert result[Platform.WINDSURF].config_dir == ws_dir.resolve()
+        assert result[Platform.WINDSURF].subdirs["skills"] == ws_dir
+
+    def test_discovers_cursor_project_dir(self, tmp_path: Path) -> None:
+        """discover_project finds <project>/.cursor/skills when it exists."""
+        project_dir = tmp_path / "project"
+        cr_dir = project_dir / ".cursor" / "skills"
+        cr_dir.mkdir(parents=True)
+
+        discovery = TargetDiscovery()
+        result = discovery.discover_project(project_dir)
+
+        assert Platform.CURSOR in result
+        assert result[Platform.CURSOR].config_dir == cr_dir.resolve()
+        assert result[Platform.CURSOR].subdirs["skills"] == cr_dir
+
+    def test_skips_nonexistent_project_dirs(self, tmp_path: Path) -> None:
+        """discover_project skips platforms whose project dirs don't exist."""
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+
+        discovery = TargetDiscovery()
+        result = discovery.discover_project(project_dir)
+
+        assert result == {}
+
+    def test_discovers_multiple_platforms(self, tmp_path: Path) -> None:
+        """discover_project finds multiple platforms simultaneously."""
+        project_dir = tmp_path / "project"
+        (project_dir / ".opencode" / "agent").mkdir(parents=True)
+        (project_dir / ".claude" / "agents").mkdir(parents=True)
+
+        discovery = TargetDiscovery()
+        result = discovery.discover_project(project_dir)
+
+        assert Platform.OPENCODE in result
+        assert Platform.CLAUDE_CODE in result
+        assert len(result) == 2
+
+    def test_subdirs_match_global_layout_opencode(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """OpenCode project subdirs use singular names like global scope."""
+        project_dir = tmp_path / "project"
+        oc_dir = project_dir / ".opencode"
+        (oc_dir / "agent").mkdir(parents=True)
+
+        discovery = TargetDiscovery()
+        result = discovery.discover_project(project_dir)
+
+        assert result[Platform.OPENCODE].subdirs == {
+            "agents": oc_dir / "agent",
+            "skills": oc_dir / "skill",
+            "commands": oc_dir / "command",
+            "plugins": oc_dir / "plugin",
+        }
+
+    def test_subdirs_match_global_layout_claude(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Claude Code project subdirs use plural names like global scope."""
+        project_dir = tmp_path / "project"
+        cc_dir = project_dir / ".claude"
+        (cc_dir / "agents").mkdir(parents=True)
+
+        discovery = TargetDiscovery()
+        result = discovery.discover_project(project_dir)
+
+        assert result[Platform.CLAUDE_CODE].subdirs == {
+            "agents": cc_dir / "agents",
+            "skills": cc_dir / "skills",
+            "commands": cc_dir / "commands",
+            "plugins": cc_dir / "plugins",
+        }
+
+    def test_subdirs_resolve_error_returns_empty(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """discover_project returns empty subdirs when resolution fails."""
+        project_dir = tmp_path / "project"
+        oc_dir = project_dir / ".opencode"
+        oc_dir.mkdir(parents=True)
+
+        with mock.patch(
+            "agentfiles.target._resolve_subdirs",
+            side_effect=RuntimeError("boom"),
+        ):
+            discovery = TargetDiscovery()
+            result = discovery.discover_project(project_dir)
+
+        assert Platform.OPENCODE in result
+        assert result[Platform.OPENCODE].subdirs == {}
+
+
+# ---------------------------------------------------------------------------
+# TargetManager — get_target_dir_for_scope
+# ---------------------------------------------------------------------------
+
+
+class TestGetTargetDirForScope:
+    """Tests for the get_target_dir_for_scope method."""
+
+    def test_global_scope_uses_discovered_targets(
+        self,
+        fake_home: SimpleNamespace,
+    ) -> None:
+        """GLOBAL scope delegates to existing get_target_dir."""
+        with (
+            mock.patch.object(Path, "home", return_value=fake_home.home),
+            mock.patch.dict(os.environ, {}, clear=True),
+        ):
+            targets = TargetDiscovery().discover_all()
+
+        manager = TargetManager(targets)
+        result = manager.get_target_dir_for_scope(
+            Platform.OPENCODE,
+            ItemType.AGENT,
+            Scope.GLOBAL,
+        )
+
+        assert result is not None
+        assert result == fake_home.opencode / "agent"
+
+    def test_global_scope_raises_for_missing_platform(self) -> None:
+        """GLOBAL scope raises TargetError when platform not discovered."""
+        manager = TargetManager({})
+
+        with pytest.raises(TargetError, match="not been discovered"):
+            manager.get_target_dir_for_scope(
+                Platform.OPENCODE,
+                ItemType.AGENT,
+                Scope.GLOBAL,
+            )
+
+    def test_project_scope_resolves_path(self, tmp_path: Path) -> None:
+        """PROJECT scope resolves path relative to project_dir."""
+        project_dir = tmp_path / "myproject"
+        manager = TargetManager({})  # Empty global targets is fine.
+
+        result = manager.get_target_dir_for_scope(
+            Platform.OPENCODE,
+            ItemType.AGENT,
+            Scope.PROJECT,
+            project_dir=project_dir,
+        )
+
+        assert result == project_dir / ".opencode" / "agent"
+
+    def test_local_scope_resolves_same_path_as_project(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """LOCAL scope resolves the same filesystem path as PROJECT."""
+        project_dir = tmp_path / "myproject"
+        manager = TargetManager({})
+
+        project_result = manager.get_target_dir_for_scope(
+            Platform.CLAUDE_CODE,
+            ItemType.SKILL,
+            Scope.PROJECT,
+            project_dir=project_dir,
+        )
+        local_result = manager.get_target_dir_for_scope(
+            Platform.CLAUDE_CODE,
+            ItemType.SKILL,
+            Scope.LOCAL,
+            project_dir=project_dir,
+        )
+
+        assert project_result == project_dir / ".claude" / "skills"
+        assert local_result == project_result
+
+    def test_project_scope_does_not_require_existing_dir(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """PROJECT scope returns a path even when the dir doesn't exist."""
+        project_dir = tmp_path / "nonexistent_project"
+        # Don't create any directories.
+        manager = TargetManager({})
+
+        result = manager.get_target_dir_for_scope(
+            Platform.OPENCODE,
+            ItemType.SKILL,
+            Scope.PROJECT,
+            project_dir=project_dir,
+        )
+
+        assert result is not None
+        assert result == project_dir / ".opencode" / "skill"
+
+    def test_project_scope_returns_none_without_project_dir(self) -> None:
+        """PROJECT scope returns None when project_dir is not provided."""
+        manager = TargetManager({})
+
+        result = manager.get_target_dir_for_scope(
+            Platform.OPENCODE,
+            ItemType.SKILL,
+            Scope.PROJECT,
+            project_dir=None,
+        )
+
+        assert result is None
+
+    def test_project_scope_config_type_returns_config_dir(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """PROJECT scope returns config_dir root for CONFIG item type."""
+        project_dir = tmp_path / "myproject"
+        manager = TargetManager({})
+
+        result = manager.get_target_dir_for_scope(
+            Platform.OPENCODE,
+            ItemType.CONFIG,
+            Scope.PROJECT,
+            project_dir=project_dir,
+        )
+
+        assert result == project_dir / ".opencode"
+
+    def test_project_scope_unsupported_item_type(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """PROJECT scope returns None for unsupported item type."""
+        project_dir = tmp_path / "myproject"
+        manager = TargetManager({})
+
+        # Windsurf only supports skills, not agents.
+        result = manager.get_target_dir_for_scope(
+            Platform.WINDSURF,
+            ItemType.AGENT,
+            Scope.PROJECT,
+            project_dir=project_dir,
+        )
+
+        assert result is None
+
+    def test_project_scope_all_platforms(self, tmp_path: Path) -> None:
+        """PROJECT scope resolves correctly for all platforms."""
+        project_dir = tmp_path / "project"
+        manager = TargetManager({})
+
+        # OpenCode: agents, skills, commands, plugins
+        assert (
+            manager.get_target_dir_for_scope(
+                Platform.OPENCODE, ItemType.AGENT, Scope.PROJECT, project_dir=project_dir
+            )
+            == project_dir / ".opencode" / "agent"
+        )
+        assert (
+            manager.get_target_dir_for_scope(
+                Platform.OPENCODE, ItemType.SKILL, Scope.PROJECT, project_dir=project_dir
+            )
+            == project_dir / ".opencode" / "skill"
+        )
+
+        # Claude Code: agents, skills, commands, plugins
+        assert (
+            manager.get_target_dir_for_scope(
+                Platform.CLAUDE_CODE, ItemType.AGENT, Scope.PROJECT, project_dir=project_dir
+            )
+            == project_dir / ".claude" / "agents"
+        )
+        assert (
+            manager.get_target_dir_for_scope(
+                Platform.CLAUDE_CODE, ItemType.SKILL, Scope.PROJECT, project_dir=project_dir
+            )
+            == project_dir / ".claude" / "skills"
+        )
+
+        # Windsurf: skills only
+        assert (
+            manager.get_target_dir_for_scope(
+                Platform.WINDSURF, ItemType.SKILL, Scope.PROJECT, project_dir=project_dir
+            )
+            == project_dir / ".windsurf" / "skills"
+        )
+
+        # Cursor: skills only
+        assert (
+            manager.get_target_dir_for_scope(
+                Platform.CURSOR, ItemType.SKILL, Scope.PROJECT, project_dir=project_dir
+            )
+            == project_dir / ".cursor" / "skills"
+        )

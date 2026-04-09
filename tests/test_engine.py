@@ -1706,12 +1706,12 @@ class TestPlanSyncUpdateAction:
         # Not installed → _plan_install_or_update returns None for UPDATE.
         assert len(plans) == 0
 
-    def test_update_action_skips_installed(
+    def test_update_action_updates_installed(
         self,
         target_manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
-        """Installed items are always SKIP regardless of content."""
+        """Installed items should be planned for UPDATE (force reinstall)."""
         skill_dir = fake_home.opencode / "skill" / "diff-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text("old")
@@ -1725,14 +1725,14 @@ class TestPlanSyncUpdateAction:
         )
 
         assert len(plans) == 1
-        assert plans[0].action == SyncAction.SKIP
+        assert plans[0].action == SyncAction.UPDATE
 
-    def test_update_action_skips_up_to_date(
+    def test_update_action_updates_up_to_date(
         self,
         target_manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
-        """Installed items are SKIP — engine only checks existence."""
+        """Installed items should be UPDATE even if content is identical."""
         skill_dir = fake_home.opencode / "skill" / "same-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text("content")
@@ -1746,7 +1746,7 @@ class TestPlanSyncUpdateAction:
         )
 
         assert len(plans) == 1
-        assert plans[0].action == SyncAction.SKIP
+        assert plans[0].action == SyncAction.UPDATE
 
 
 # ---------------------------------------------------------------------------

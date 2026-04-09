@@ -6,12 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from agentfiles.models import Item, ItemType, Platform, item_from_file
+from agentfiles.models import Item, ItemType, Platform, Scope, item_from_file
 from agentfiles.scanner import (
     _SCANNER_REGISTRY,
     SourceScanner,
     _apply_platforms,
     _find_item_dirs,
+    _is_in_scope_subdir,
     _register_scanner,
     _scan_agents_dir,
     _scan_commands_dir,
@@ -169,31 +170,101 @@ class TestFindItemDirs:
     def test_finds_plural_directory(self, tmp_path: Path) -> None:
         (tmp_path / "agents").mkdir()
         result = _find_item_dirs(tmp_path, ItemType.AGENT)
-        assert result is not None
-        assert result.name == "agents"
+        assert len(result) == 1
+        assert result[0][0].name == "agents"
+        assert result[0][1] == Scope.GLOBAL
 
     def test_finds_singular_directory(self, tmp_path: Path) -> None:
         (tmp_path / "agent").mkdir()
         result = _find_item_dirs(tmp_path, ItemType.AGENT)
-        assert result is not None
-        assert result.name == "agent"
+        assert len(result) == 1
+        assert result[0][0].name == "agent"
+        assert result[0][1] == Scope.GLOBAL
 
     def test_prefers_plural_over_singular(self, tmp_path: Path) -> None:
         (tmp_path / "agent").mkdir()
         (tmp_path / "agents").mkdir()
         result = _find_item_dirs(tmp_path, ItemType.AGENT)
-        assert result is not None
-        assert result.name == "agents"
+        assert len(result) == 1
+        assert result[0][0].name == "agents"
 
-    def test_returns_none_when_not_found(self, tmp_path: Path) -> None:
+    def test_returns_empty_when_not_found(self, tmp_path: Path) -> None:
         result = _find_item_dirs(tmp_path, ItemType.AGENT)
-        assert result is None
+        assert result == []
 
     @pytest.mark.parametrize("item_type", list(ItemType))
     def test_finds_all_item_types_plural(self, tmp_path: Path, item_type: ItemType) -> None:
         (tmp_path / item_type.plural).mkdir()
         result = _find_item_dirs(tmp_path, item_type)
-        assert result is not None
+        assert len(result) >= 1
+        assert result[0][1] == Scope.GLOBAL
+
+    def test_discovers_scope_subdirs(self, tmp_path: Path) -> None:
+        """Scope subdirectories within content dir are discovered."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "global").mkdir()
+        (agents_dir / "project").mkdir()
+        (agents_dir / "local").mkdir()
+
+        result = _find_item_dirs(tmp_path, ItemType.AGENT)
+        scopes = {scope for _, scope in result}
+        assert Scope.GLOBAL in scopes
+        assert Scope.PROJECT in scopes
+        assert Scope.LOCAL in scopes
+
+    def test_scope_filter_returns_only_requested_scope(self, tmp_path: Path) -> None:
+        """When scope is specific, only that scope's directory is returned."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "global").mkdir()
+        (agents_dir / "project").mkdir()
+        (agents_dir / "local").mkdir()
+
+        result = _find_item_dirs(tmp_path, ItemType.AGENT, scope=Scope.PROJECT)
+        assert len(result) == 1
+        assert result[0][1] == Scope.PROJECT
+        assert result[0][0].name == "project"
+
+    def test_global_scope_filter_includes_base_dir(self, tmp_path: Path) -> None:
+        """GLOBAL scope filter includes the base content dir."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+
+        result = _find_item_dirs(tmp_path, ItemType.AGENT, scope=Scope.GLOBAL)
+        assert len(result) == 1
+        assert result[0][0].name == "agents"
+        assert result[0][1] == Scope.GLOBAL
+
+    def test_global_scope_filter_includes_explicit_global_dir(self, tmp_path: Path) -> None:
+        """GLOBAL scope filter includes explicit global/ subdirectory."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "global").mkdir()
+
+        result = _find_item_dirs(tmp_path, ItemType.AGENT, scope=Scope.GLOBAL)
+        assert len(result) == 2
+        dir_names = [p.name for p, _ in result]
+        assert "agents" in dir_names
+        assert "global" in dir_names
+
+    def test_nonexistent_scope_dir_not_included(self, tmp_path: Path) -> None:
+        """Scope subdirs that don't exist are not included."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+
+        result = _find_item_dirs(tmp_path, ItemType.AGENT, scope=Scope.PROJECT)
+        assert result == []
+
+    def test_base_dir_comes_first_for_dedup_priority(self, tmp_path: Path) -> None:
+        """Base content dir is always the first entry for dedup priority."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "project").mkdir()
+
+        result = _find_item_dirs(tmp_path, ItemType.AGENT)
+        assert result[0][0] == agents_dir
+        assert result[0][1] == Scope.GLOBAL
 
 
 # ---------------------------------------------------------------------------
@@ -1486,3 +1557,290 @@ class TestPlatformFiltering:
         items = scanner.scan()
         types = {i.item_type for i in items}
         assert types == {ItemType.AGENT, ItemType.SKILL, ItemType.COMMAND, ItemType.PLUGIN}
+
+
+# ---------------------------------------------------------------------------
+# Scope-aware scanning
+# ---------------------------------------------------------------------------
+
+
+class TestScopeAwareScanning:
+    """Tests for scope-aware item discovery via SourceScanner."""
+
+    def test_flat_files_get_global_scope(self, tmp_path: Path) -> None:
+        """Items in the base content dir receive GLOBAL scope (backward compat)."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        _write_md(agents_dir, "coder.md", _VALID_AGENT_MD)
+
+        scanner = SourceScanner(tmp_path)
+        items = scanner.scan_type(ItemType.AGENT)
+        assert len(items) == 1
+        assert items[0].scope == Scope.GLOBAL
+
+    def test_project_scope_items(self, tmp_path: Path) -> None:
+        """Items in agents/project/ receive PROJECT scope."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        project_dir = agents_dir / "project"
+        project_dir.mkdir()
+        _write_md(project_dir, "local-agent.md", "---\nname: local-agent\n---\nbody")
+
+        scanner = SourceScanner(tmp_path)
+        items = scanner.scan_type(ItemType.AGENT)
+        assert len(items) == 1
+        assert items[0].scope == Scope.PROJECT
+        assert items[0].name == "local-agent"
+
+    def test_local_scope_items(self, tmp_path: Path) -> None:
+        """Items in agents/local/ receive LOCAL scope."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        local_dir = agents_dir / "local"
+        local_dir.mkdir()
+        _write_md(local_dir, "personal.md", "---\nname: personal\n---\nbody")
+
+        scanner = SourceScanner(tmp_path)
+        items = scanner.scan_type(ItemType.AGENT)
+        assert len(items) == 1
+        assert items[0].scope == Scope.LOCAL
+
+    def test_explicit_global_scope(self, tmp_path: Path) -> None:
+        """Items in agents/global/ receive GLOBAL scope."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        global_dir = agents_dir / "global"
+        global_dir.mkdir()
+        _write_md(global_dir, "shared.md", "---\nname: shared\n---\nbody")
+
+        scanner = SourceScanner(tmp_path)
+        items = scanner.scan_type(ItemType.AGENT)
+        assert len(items) == 1
+        assert items[0].scope == Scope.GLOBAL
+        assert items[0].name == "shared"
+
+    def test_all_scopes_discovered(self, tmp_path: Path) -> None:
+        """Items from all scopes are discovered when no scope filter is set."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        _write_md(agents_dir, "base.md", "---\nname: base-agent\n---\nbody")
+
+        for scope_dir_name, scope in [
+            ("global", Scope.GLOBAL),
+            ("project", Scope.PROJECT),
+            ("local", Scope.LOCAL),
+        ]:
+            d = agents_dir / scope_dir_name
+            d.mkdir()
+            _write_md(d, f"{scope_dir_name}.md", f"---\nname: {scope_dir_name}-agent\n---\nbody")
+
+        scanner = SourceScanner(tmp_path)
+        items = scanner.scan_type(ItemType.AGENT)
+        assert len(items) == 4
+
+        scopes_by_name = {item.name: item.scope for item in items}
+        assert scopes_by_name["base-agent"] == Scope.GLOBAL
+        assert scopes_by_name["global-agent"] == Scope.GLOBAL
+        assert scopes_by_name["project-agent"] == Scope.PROJECT
+        assert scopes_by_name["local-agent"] == Scope.LOCAL
+
+    def test_scope_filter_project(self, tmp_path: Path) -> None:
+        """scope=Scope.PROJECT returns only project-scoped items."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        _write_md(agents_dir, "base.md", "---\nname: base\n---\nbody")
+
+        project_dir = agents_dir / "project"
+        project_dir.mkdir()
+        _write_md(project_dir, "proj.md", "---\nname: proj\n---\nbody")
+
+        scanner = SourceScanner(tmp_path, scope=Scope.PROJECT)
+        items = scanner.scan_type(ItemType.AGENT)
+        assert len(items) == 1
+        assert items[0].name == "proj"
+        assert items[0].scope == Scope.PROJECT
+
+    def test_scope_filter_local(self, tmp_path: Path) -> None:
+        """scope=Scope.LOCAL returns only local-scoped items."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        local_dir = agents_dir / "local"
+        local_dir.mkdir()
+        _write_md(local_dir, "me.md", "---\nname: me\n---\nbody")
+
+        scanner = SourceScanner(tmp_path, scope=Scope.LOCAL)
+        items = scanner.scan_type(ItemType.AGENT)
+        assert len(items) == 1
+        assert items[0].scope == Scope.LOCAL
+
+    def test_scope_filter_global_includes_base(self, tmp_path: Path) -> None:
+        """scope=Scope.GLOBAL includes items from base content dir."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        _write_md(agents_dir, "base.md", "---\nname: base\n---\nbody")
+
+        scanner = SourceScanner(tmp_path, scope=Scope.GLOBAL)
+        items = scanner.scan_type(ItemType.AGENT)
+        assert len(items) == 1
+        assert items[0].scope == Scope.GLOBAL
+
+    def test_scope_filter_excludes_other_scopes(self, tmp_path: Path) -> None:
+        """scope=Scope.GLOBAL excludes project and local items."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+
+        for scope_dir_name in ("project", "local"):
+            d = agents_dir / scope_dir_name
+            d.mkdir()
+            _write_md(d, f"{scope_dir_name}.md", f"---\nname: {scope_dir_name}\n---\nbody")
+
+        scanner = SourceScanner(tmp_path, scope=Scope.GLOBAL)
+        items = scanner.scan_type(ItemType.AGENT)
+        assert items == []
+
+    def test_dedup_base_over_global_dir(self, tmp_path: Path) -> None:
+        """Base dir items take priority over explicit global/ items with same name."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        _write_md(agents_dir, "coder.md", "---\nname: coder\nversion: '1.0'\n---\nbase")
+
+        global_dir = agents_dir / "global"
+        global_dir.mkdir()
+        _write_md(global_dir, "coder.md", "---\nname: coder\nversion: '2.0'\n---\nglobal")
+
+        scanner = SourceScanner(tmp_path)
+        items = scanner.scan_type(ItemType.AGENT)
+        assert len(items) == 1
+        assert items[0].version == "1.0"
+        assert items[0].scope == Scope.GLOBAL
+
+    def test_same_name_different_scopes(self, tmp_path: Path) -> None:
+        """Items with same name but different scopes are both kept."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        _write_md(agents_dir, "coder.md", "---\nname: coder\n---\nglobal body")
+
+        project_dir = agents_dir / "project"
+        project_dir.mkdir()
+        _write_md(project_dir, "coder.md", "---\nname: coder\n---\nproject body")
+
+        scanner = SourceScanner(tmp_path)
+        items = scanner.scan_type(ItemType.AGENT)
+        assert len(items) == 2
+        scopes = {item.scope for item in items}
+        assert scopes == {Scope.GLOBAL, Scope.PROJECT}
+
+    def test_skills_with_scopes(self, tmp_path: Path) -> None:
+        """Skills in scope subdirectories get correct scope."""
+        skills_dir = tmp_path / "skills"
+        skills_dir.mkdir()
+
+        # Base skill
+        base_skill = skills_dir / "global-skill"
+        base_skill.mkdir()
+        (base_skill / "SKILL.md").write_text("---\nname: global-skill\n---\nbody", encoding="utf-8")
+
+        # Project skill
+        project_dir = skills_dir / "project"
+        project_dir.mkdir()
+        proj_skill = project_dir / "proj-skill"
+        proj_skill.mkdir()
+        (proj_skill / "SKILL.md").write_text("---\nname: proj-skill\n---\nbody", encoding="utf-8")
+
+        scanner = SourceScanner(tmp_path)
+        items = scanner.scan_type(ItemType.SKILL)
+        assert len(items) == 2
+
+        scopes_by_name = {item.name: item.scope for item in items}
+        assert scopes_by_name["global-skill"] == Scope.GLOBAL
+        assert scopes_by_name["proj-skill"] == Scope.PROJECT
+
+    def test_backward_compat_no_scope_dirs(self, tmp_path: Path) -> None:
+        """When no scope subdirs exist, behavior is identical to before."""
+        _make_source_dir(
+            tmp_path,
+            agents=["a.md"],
+            skills=["s"],
+            commands=["c.md"],
+            plugins=["p.ts"],
+        )
+        scanner = SourceScanner(tmp_path)
+        items = scanner.scan()
+
+        # All items should have GLOBAL scope
+        for item in items:
+            assert item.scope == Scope.GLOBAL
+
+        types = {i.item_type for i in items}
+        assert types == {ItemType.AGENT, ItemType.SKILL, ItemType.COMMAND, ItemType.PLUGIN}
+
+    def test_scope_combined_with_platform_filter(self, tmp_path: Path) -> None:
+        """Scope and platform filters work together."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        project_dir = agents_dir / "project"
+        project_dir.mkdir()
+        _write_md(project_dir, "coder.md", _VALID_AGENT_MD)
+
+        # Agents support OPENCODE + CLAUDE_CODE
+        scanner = SourceScanner(tmp_path, platforms=(Platform.OPENCODE,), scope=Scope.PROJECT)
+        items = scanner.scan_type(ItemType.AGENT)
+        assert len(items) == 1
+        assert items[0].scope == Scope.PROJECT
+
+    def test_scope_filter_nonexistent_scope_dir(self, tmp_path: Path) -> None:
+        """scope=Scope.PROJECT on a source without project/ returns empty."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        _write_md(agents_dir, "coder.md", _VALID_AGENT_MD)
+
+        scanner = SourceScanner(tmp_path, scope=Scope.PROJECT)
+        items = scanner.scan_type(ItemType.AGENT)
+        assert items == []
+
+
+class TestIsInScopeSubdir:
+    """Tests for _is_in_scope_subdir helper."""
+
+    def test_path_in_global_subdir(self, tmp_path: Path) -> None:
+        """Path inside global/ subdir is detected."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        file_path = agents_dir / "global" / "coder.md"
+        file_path.parent.mkdir(parents=True)
+
+        assert _is_in_scope_subdir(file_path, agents_dir) is True
+
+    def test_path_in_project_subdir(self, tmp_path: Path) -> None:
+        """Path inside project/ subdir is detected."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        file_path = agents_dir / "project" / "coder.md"
+        file_path.parent.mkdir(parents=True)
+
+        assert _is_in_scope_subdir(file_path, agents_dir) is True
+
+    def test_path_in_base_dir(self, tmp_path: Path) -> None:
+        """Path directly in base dir is NOT a scope subdir."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        file_path = agents_dir / "coder.md"
+
+        assert _is_in_scope_subdir(file_path, agents_dir) is False
+
+    def test_path_in_regular_subdir(self, tmp_path: Path) -> None:
+        """Path in a non-scope subdir is NOT detected as scope subdir."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        file_path = agents_dir / "coder" / "coder.md"
+        file_path.parent.mkdir(parents=True)
+
+        assert _is_in_scope_subdir(file_path, agents_dir) is False
+
+    def test_unrelated_path(self, tmp_path: Path) -> None:
+        """Path outside the content dir returns False."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        other_path = tmp_path / "other" / "file.md"
+
+        assert _is_in_scope_subdir(other_path, agents_dir) is False

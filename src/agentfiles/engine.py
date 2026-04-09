@@ -889,14 +889,17 @@ class SyncEngine:
             return None
 
         if is_installed:
-            determined_action = SyncAction.SKIP
-            reason = "already installed"
+            if requested_action == SyncAction.UPDATE:
+                determined_action = SyncAction.UPDATE
+                reason = "force reinstall from source"
+            else:
+                determined_action = SyncAction.SKIP
+                reason = "already installed"
         else:
+            if requested_action == SyncAction.UPDATE:
+                return None  # Skip items not yet installed when action=UPDATE requested
             determined_action = SyncAction.INSTALL
             reason = "not installed"
-
-        if requested_action == SyncAction.UPDATE and determined_action == SyncAction.INSTALL:
-            return None  # Skip items not yet installed when action=UPDATE requested
 
         return SyncPlan(
             item=item,

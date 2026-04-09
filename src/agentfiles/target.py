@@ -37,7 +37,7 @@ from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
 from types import MappingProxyType
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from agentfiles.models import (
     Item,
@@ -46,6 +46,10 @@ from agentfiles.models import (
     TargetError,
     TargetPaths,
 )
+
+if TYPE_CHECKING:
+    from agentfiles.models import Scope
+
 from agentfiles.paths import get_item_dest_path
 
 logger = logging.getLogger(__name__)
@@ -283,6 +287,63 @@ def _continue_candidates(home: Path) -> list[Path]:
 
 
 # ---------------------------------------------------------------------------
+# Platform PROJECT candidate resolvers
+# ---------------------------------------------------------------------------
+# Each resolver returns a list of candidate config directories for
+# project-level (non-global) configuration.  Unlike the global candidate
+# resolvers above, these receive a *project_dir* rather than *home*
+# because project configs live inside the project tree.
+
+
+def _opencode_project_candidates(project_dir: Path) -> list[Path]:
+    """Return candidate OpenCode PROJECT config directories.
+
+    OpenCode stores project-level configuration in ``<project>/.opencode/``.
+
+    Args:
+        project_dir: Root directory of the project.
+
+    """
+    return [project_dir / ".opencode"]
+
+
+def _claude_code_project_candidates(project_dir: Path) -> list[Path]:
+    """Return candidate Claude Code PROJECT config directories.
+
+    Claude Code stores project-level configuration in ``<project>/.claude/``.
+
+    Args:
+        project_dir: Root directory of the project.
+
+    """
+    return [project_dir / ".claude"]
+
+
+def _windsurf_project_candidates(project_dir: Path) -> list[Path]:
+    """Return candidate Windsurf PROJECT config directories.
+
+    Windsurf stores project-level skills in ``<project>/.windsurf/skills/``.
+
+    Args:
+        project_dir: Root directory of the project.
+
+    """
+    return [project_dir / ".windsurf" / "skills"]
+
+
+def _cursor_project_candidates(project_dir: Path) -> list[Path]:
+    """Return candidate Cursor PROJECT config directories.
+
+    Cursor stores project-level skills in ``<project>/.cursor/skills/``.
+
+    Args:
+        project_dir: Root directory of the project.
+
+    """
+    return [project_dir / ".cursor" / "skills"]
+
+
+# ---------------------------------------------------------------------------
 # Platform subdir resolvers
 # ---------------------------------------------------------------------------
 # Each resolver maps a platform's config directory to its item-type
@@ -427,6 +488,16 @@ _PLATFORM_SUBDIR_RESOLVERS: dict[Platform, Callable[[Path], dict[str, Path]]] = 
     Platform.COPILOT: _copilot_subdirs,
     Platform.AIDER: _aider_subdirs,
     Platform.CONTINUE: _continue_subdirs,
+}
+
+# Dispatch: Platform → project-level candidate resolver function.
+# Each resolver receives the project root directory and returns candidate
+# config directory paths in priority order.
+_PLATFORM_PROJECT_CANDIDATE_RESOLVERS: dict[Platform, Callable[[Path], list[Path]]] = {
+    Platform.OPENCODE: _opencode_project_candidates,
+    Platform.CLAUDE_CODE: _claude_code_project_candidates,
+    Platform.WINDSURF: _windsurf_project_candidates,
+    Platform.CURSOR: _cursor_project_candidates,
 }
 
 # ---------------------------------------------------------------------------
@@ -598,6 +669,70 @@ class TargetDiscovery:
             return []
         return resolver(self._home)
 
+    def discover_project(self, project_dir: Path) -> dict[Platform, TargetPaths]:
+        """Discover project-level configuration directories.
+
+        Scans for project-level configuration directories under
+        *project_dir* for each supported platform and returns a mapping
+        of discovered platforms to their resolved paths.
+
+        Unlike :meth:`discover_all` which scans global (home-level) paths,
+        this method looks for project-local config directories such as
+        ``<project_dir>/.opencode/`` or ``<project_dir>/.claude/``.
+
+        Platforms whose project-level config directories are not found are
+        silently omitted.
+
+        Args:
+            project_dir: Root directory of the project (e.g. repo root).
+
+        Returns:
+            Mapping of platform to its resolved :class:`TargetPaths`.
+
+        """
+        discovered: dict[Platform, TargetPaths] = {}
+
+        for platform in Platform:
+            resolver = _PLATFORM_PROJECT_CANDIDATE_RESOLVERS.get(platform)
+            if resolver is None:
+                continue
+
+            candidates = resolver(project_dir)
+            config_dir = _find_existing(candidates)
+
+            if config_dir is None:
+                logger.debug(
+                    "Project-level %s not found (checked: %s)",
+                    platform.display_name,
+                    ", ".join(str(p) for p in candidates),
+                )
+                continue
+
+            try:
+                subdirs = _resolve_subdirs(platform, config_dir)
+            except Exception:
+                logger.warning(
+                    "Failed to resolve project subdirs for %s at %s",
+                    platform.display_name,
+                    config_dir,
+                    exc_info=True,
+                )
+                subdirs = {}
+
+            discovered[platform] = TargetPaths(
+                platform=platform,
+                config_dir=config_dir,
+                subdirs=subdirs,
+            )
+
+        if not discovered:
+            logger.debug(
+                "No project-level platforms discovered under %s",
+                project_dir,
+            )
+
+        return discovered
+
 
 # ---------------------------------------------------------------------------
 # TargetManager
@@ -670,6 +805,81 @@ class TargetManager:
             return target_paths.config_dir
         if item_type.plural in target_paths.subdirs:
             return target_paths.subdir_for(item_type)
+        return None
+
+    def get_target_dir_for_scope(
+        self,
+        platform: Platform,
+        item_type: ItemType,
+        scope: "Scope",
+        project_dir: Path | None = None,
+    ) -> Path | None:
+        """Resolve target directory for a given platform, item type, and scope.
+
+        Combines scope awareness with the existing platform/item-type
+        resolution.  For **GLOBAL** scope the method delegates to the
+        discovered global targets.  For **PROJECT** or **LOCAL** scope it
+        resolves the expected project-level path — the directory does
+        **not** need to exist on disk (useful for install-to targets).
+
+        PROJECT and LOCAL share the same filesystem layout; the
+        distinction is semantic (LOCAL is typically gitignored).
+
+        Args:
+            platform: The target platform.
+            item_type: The category of item (agent, skill, …).
+            scope: Configuration scope (``Scope.GLOBAL``,
+                ``Scope.PROJECT``, or ``Scope.LOCAL``).
+            project_dir: Root project directory — **required** for
+                PROJECT/LOCAL scope.  Ignored for GLOBAL scope.
+
+        Returns:
+            Absolute path to the target subdirectory, or ``None`` if
+            the scope cannot be resolved (e.g. unknown platform for
+            project scope, missing *project_dir*).
+
+        Raises:
+            TargetError: When *scope* is GLOBAL and *platform* has not
+                been discovered.
+
+        """
+        scope_value = scope.value if hasattr(scope, "value") else str(scope)
+
+        if scope_value == "global":
+            return self.get_target_dir(platform, item_type)
+
+        # PROJECT or LOCAL scope — resolve relative to project_dir.
+        if project_dir is None:
+            logger.warning(
+                "project_dir is required for %s scope but was not provided",
+                scope_value,
+            )
+            return None
+
+        resolver = _PLATFORM_PROJECT_CANDIDATE_RESOLVERS.get(platform)
+        if resolver is None:
+            logger.debug(
+                "No project candidate resolver for %s",
+                platform.display_name,
+            )
+            return None
+
+        candidates = resolver(project_dir)
+        if not candidates:
+            return None
+
+        # Use the first (highest-priority) candidate path directly.
+        # Unlike global discovery, we do NOT require the directory to
+        # exist on disk — the caller may be installing for the first time.
+        config_dir = candidates[0]
+
+        if item_type == ItemType.CONFIG:
+            return config_dir
+
+        subdirs = _resolve_subdirs(platform, config_dir)
+        if item_type.plural in subdirs:
+            return subdirs[item_type.plural]
+
         return None
 
     def is_item_installed(self, item: Item, platform: Platform) -> bool:

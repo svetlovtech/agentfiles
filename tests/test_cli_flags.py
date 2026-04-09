@@ -1,9 +1,12 @@
-"""Tests for --color, --only, and --except CLI flags.
+"""Tests for --color, --only, --except, and --scope CLI flags.
 
 Covers:
 - ``--color`` tri-state global flag (always / auto / never)
 - ``--only`` and ``--except`` per-subcommand item-name filtering
-- ``_resolve_item_filter`` and ``_apply_item_filter`` helpers
+- ``--scope`` per-subcommand scope filtering (global / project / local / all)
+- ``--project-dir`` source option
+- ``_resolve_item_filter``, ``_apply_item_filter``, ``_resolve_scope``,
+  ``_filter_items_by_scope`` helpers
 - Integration with the argument parser and main() entry point
 """
 
@@ -19,22 +22,29 @@ import pytest
 from agentfiles.cli import (
     _apply_color_env,
     _apply_item_filter,
+    _filter_items_by_scope,
     _resolve_item_filter,
+    _resolve_scope,
     build_parser,
 )
-from agentfiles.models import Item, ItemType
+from agentfiles.models import Item, ItemType, Scope
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _make_item(name: str, item_type: ItemType = ItemType.AGENT) -> Item:
+def _make_item(
+    name: str,
+    item_type: ItemType = ItemType.AGENT,
+    scope: Scope = Scope.GLOBAL,
+) -> Item:
     """Create a minimal Item for testing."""
     return Item(
         item_type=item_type,
         name=name,
         source_path=Path("/fake/source"),
+        scope=scope,
     )
 
 
@@ -363,4 +373,252 @@ class TestFilterPipelineIntegration:
         only_set, except_set = _resolve_item_filter(args)
         items = _make_items()
         filtered = _apply_item_filter(items, only_set, except_set)
+        assert len(filtered) == len(items)
+
+
+# ---------------------------------------------------------------------------
+# _resolve_scope
+# ---------------------------------------------------------------------------
+
+
+class TestResolveScope:
+    """Tests for _resolve_scope() helper."""
+
+    def test_none_returns_all_scopes(self) -> None:
+        """None (no --scope flag) returns all scopes."""
+        scopes = _resolve_scope(None)
+        assert set(scopes) == set(Scope)
+
+    def test_all_returns_all_scopes(self) -> None:
+        """'all' returns all scopes."""
+        scopes = _resolve_scope("all")
+        assert set(scopes) == set(Scope)
+
+    def test_global_returns_global_only(self) -> None:
+        scopes = _resolve_scope("global")
+        assert scopes == [Scope.GLOBAL]
+
+    def test_project_returns_project_only(self) -> None:
+        scopes = _resolve_scope("project")
+        assert scopes == [Scope.PROJECT]
+
+    def test_local_returns_local_only(self) -> None:
+        scopes = _resolve_scope("local")
+        assert scopes == [Scope.LOCAL]
+
+
+# ---------------------------------------------------------------------------
+# _filter_items_by_scope
+# ---------------------------------------------------------------------------
+
+
+def _make_mixed_scope_items() -> list[Item]:
+    """Create items with mixed scopes for testing."""
+    return [
+        _make_item("global-agent", ItemType.AGENT, Scope.GLOBAL),
+        _make_item("project-skill", ItemType.SKILL, Scope.PROJECT),
+        _make_item("local-command", ItemType.COMMAND, Scope.LOCAL),
+        _make_item("another-global", ItemType.AGENT, Scope.GLOBAL),
+    ]
+
+
+class TestFilterItemsByScope:
+    """Tests for _filter_items_by_scope() helper."""
+
+    def test_all_scopes_returns_all_items(self) -> None:
+        """When all scopes are passed, no filtering occurs."""
+        items = _make_mixed_scope_items()
+        result = _filter_items_by_scope(items, list(Scope))
+        assert result == items
+
+    def test_global_scope_filters(self) -> None:
+        items = _make_mixed_scope_items()
+        result = _filter_items_by_scope(items, [Scope.GLOBAL])
+        names = [i.name for i in result]
+        assert names == ["global-agent", "another-global"]
+
+    def test_project_scope_filters(self) -> None:
+        items = _make_mixed_scope_items()
+        result = _filter_items_by_scope(items, [Scope.PROJECT])
+        names = [i.name for i in result]
+        assert names == ["project-skill"]
+
+    def test_local_scope_filters(self) -> None:
+        items = _make_mixed_scope_items()
+        result = _filter_items_by_scope(items, [Scope.LOCAL])
+        names = [i.name for i in result]
+        assert names == ["local-command"]
+
+    def test_multiple_scopes(self) -> None:
+        items = _make_mixed_scope_items()
+        result = _filter_items_by_scope(items, [Scope.GLOBAL, Scope.PROJECT])
+        names = [i.name for i in result]
+        assert "global-agent" in names
+        assert "another-global" in names
+        assert "project-skill" in names
+        assert "local-command" not in names
+
+    def test_empty_items_returns_empty(self) -> None:
+        result = _filter_items_by_scope([], [Scope.GLOBAL])
+        assert result == []
+
+    def test_no_matching_scope_returns_empty(self) -> None:
+        items = [_make_item("global-agent", scope=Scope.GLOBAL)]
+        result = _filter_items_by_scope(items, [Scope.LOCAL])
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# build_parser -- --scope flag
+# ---------------------------------------------------------------------------
+
+
+class TestParserScopeFlag:
+    """Tests for the --scope flag in the argument parser."""
+
+    def test_scope_default_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["pull"])
+        assert args.scope is None
+
+    def test_scope_global(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["pull", "--scope", "global"])
+        assert args.scope == "global"
+
+    def test_scope_project(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["pull", "--scope", "project"])
+        assert args.scope == "project"
+
+    def test_scope_local(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["pull", "--scope", "local"])
+        assert args.scope == "local"
+
+    def test_scope_all(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["pull", "--scope", "all"])
+        assert args.scope == "all"
+
+    def test_scope_invalid_choice_rejected(self) -> None:
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["pull", "--scope", "invalid"])
+
+    @pytest.mark.parametrize(
+        "subcommand",
+        ["pull", "push", "clean"],
+    )
+    def test_scope_available_for_common_subcommands(
+        self,
+        subcommand: str,
+    ) -> None:
+        """--scope should be available on subcommands using _add_common_args."""
+        parser = build_parser()
+        args = parser.parse_args([subcommand, "--scope", "global"])
+        assert args.scope == "global"
+
+    def test_scope_available_on_status_list(self) -> None:
+        """--scope should be available on status subcommand."""
+        parser = build_parser()
+        args = parser.parse_args(["status", "--list", "--scope", "project"])
+        assert args.scope == "project"
+
+    def test_init_subcommand_has_no_scope_flag(self) -> None:
+        """init does not use _add_common_args, so --scope should not work."""
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["init", "--scope", "global"])
+
+
+# ---------------------------------------------------------------------------
+# build_parser -- --project-dir flag
+# ---------------------------------------------------------------------------
+
+
+class TestParserProjectDirFlag:
+    """Tests for the --project-dir flag in the argument parser."""
+
+    def test_project_dir_default_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["pull"])
+        assert args.project_dir is None
+
+    def test_project_dir_with_path(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["pull", "--project-dir", "/tmp/myproject"])
+        assert args.project_dir == Path("/tmp/myproject")
+
+    @pytest.mark.parametrize(
+        "subcommand",
+        ["pull", "push", "clean"],
+    )
+    def test_project_dir_available_for_common_subcommands(
+        self,
+        subcommand: str,
+    ) -> None:
+        """--project-dir should be available on subcommands using _add_common_args."""
+        parser = build_parser()
+        args = parser.parse_args([subcommand, "--project-dir", "."])
+        assert args.project_dir == Path(".")
+
+    def test_project_dir_with_scope(self) -> None:
+        """--project-dir can be combined with --scope."""
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "pull",
+                "--scope",
+                "project",
+                "--project-dir",
+                "/tmp/project",
+            ]
+        )
+        assert args.scope == "project"
+        assert args.project_dir == Path("/tmp/project")
+
+
+# ---------------------------------------------------------------------------
+# Scope filter pipeline integration
+# ---------------------------------------------------------------------------
+
+
+class TestScopeFilterPipelineIntegration:
+    """Integration tests for the scope filter pipeline: parse args → filter items."""
+
+    def test_scope_global_filters_items_end_to_end(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["pull", "--scope", "global"])
+        scopes = _resolve_scope(args.scope)
+        items = _make_mixed_scope_items()
+        filtered = _filter_items_by_scope(items, scopes)
+        names = [i.name for i in filtered]
+        assert names == ["global-agent", "another-global"]
+
+    def test_scope_project_filters_items_end_to_end(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["pull", "--scope", "project"])
+        scopes = _resolve_scope(args.scope)
+        items = _make_mixed_scope_items()
+        filtered = _filter_items_by_scope(items, scopes)
+        names = [i.name for i in filtered]
+        assert names == ["project-skill"]
+
+    def test_no_scope_passes_all_items_end_to_end(self) -> None:
+        """No --scope should pass all items through."""
+        parser = build_parser()
+        args = parser.parse_args(["pull"])
+        scopes = _resolve_scope(args.scope)
+        items = _make_mixed_scope_items()
+        filtered = _filter_items_by_scope(items, scopes)
+        assert len(filtered) == len(items)
+
+    def test_scope_all_passes_all_items_end_to_end(self) -> None:
+        """--scope all should pass all items through."""
+        parser = build_parser()
+        args = parser.parse_args(["pull", "--scope", "all"])
+        scopes = _resolve_scope(args.scope)
+        items = _make_mixed_scope_items()
+        filtered = _filter_items_by_scope(items, scopes)
         assert len(filtered) == len(items)
