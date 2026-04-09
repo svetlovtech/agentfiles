@@ -303,16 +303,42 @@ def _should_skip(name: str) -> bool:
 def _apply_platforms(item: Item) -> Item:
     """Replace ``supported_platforms`` on *item* based on its ``item_type``.
 
+    For ``CONFIG`` items, the file name is used to narrow platforms:
+    a config named ``opencode.json`` is only relevant to OpenCode,
+    ``claude.json`` to Claude Code, etc.  When the name does not match
+    any known platform prefix, all registered platforms are kept.
+
     Returns the item unchanged (empty platforms) when the item type is
     not registered, preventing a ``KeyError`` from propagating to callers.
     """
+    from agentfiles.models import ItemType, Platform
+
     entry = _SCANNER_REGISTRY.get(item.item_type)
     if entry is None:
         logger.warning(
             "No scanner registered for %s — leaving platforms empty", item.item_type.value
         )
         return item
-    return replace(item, supported_platforms=entry.platforms)
+
+    platforms = entry.platforms
+
+    # For config files, restrict platforms by filename prefix so that
+    # opencode.json is not copied to Claude Code, etc.
+    if item.item_type == ItemType.CONFIG:
+        stem = item.source_path.stem.lower()
+        _CONFIG_PLATFORM_MAP: dict[str, tuple[Platform, ...]] = {
+            "opencode": (Platform.OPENCODE,),
+            "claude": (Platform.CLAUDE_CODE,),
+            "copilot": (Platform.COPILOT,),
+            "aider": (Platform.AIDER,),
+            "continue": (Platform.CONTINUE,),
+        }
+        for prefix, mapped in _CONFIG_PLATFORM_MAP.items():
+            if stem.startswith(prefix):
+                platforms = tuple(p for p in platforms if p in mapped)
+                break
+
+    return replace(item, supported_platforms=platforms)
 
 
 def _scandir_sorted(dir_path: Path) -> list[os.DirEntry[str]]:

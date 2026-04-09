@@ -158,6 +158,25 @@ class TestApplyPlatforms:
         result = _apply_platforms(item)
         assert result.supported_platforms == (Platform.OPENCODE,)
 
+    def test_config_opencode_json_gets_opencode_only(self, tmp_path: Path) -> None:
+        (tmp_path / "opencode.json").write_text('{"model": "test"}', encoding="utf-8")
+        item = item_from_file(tmp_path / "opencode.json", ItemType.CONFIG)
+        result = _apply_platforms(item)
+        assert result.supported_platforms == (Platform.OPENCODE,)
+
+    def test_config_claude_json_gets_claude_code_only(self, tmp_path: Path) -> None:
+        (tmp_path / "claude.json").write_text('{"model": "test"}', encoding="utf-8")
+        item = item_from_file(tmp_path / "claude.json", ItemType.CONFIG)
+        result = _apply_platforms(item)
+        assert result.supported_platforms == (Platform.CLAUDE_CODE,)
+
+    def test_config_generic_name_keeps_all_platforms(self, tmp_path: Path) -> None:
+        (tmp_path / "settings.json").write_text('{"key": "value"}', encoding="utf-8")
+        item = item_from_file(tmp_path / "settings.json", ItemType.CONFIG)
+        result = _apply_platforms(item)
+        assert Platform.OPENCODE in result.supported_platforms
+        assert Platform.CLAUDE_CODE in result.supported_platforms
+
 
 # ---------------------------------------------------------------------------
 # _find_item_dirs
