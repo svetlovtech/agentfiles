@@ -26,6 +26,7 @@ from pathlib import Path
 
 from agentfiles.models import (
     SKILL_MAIN_FILE,
+    _CONFIG_TARGET_NAMES,
     Item,
     ItemType,
     resolve_source_name_for_config,
@@ -76,8 +77,9 @@ def get_installed_item_path(
 
     """
     if item_type == ItemType.CONFIG:
-        # Config items are .json files; ensure the extension is present.
-        return target_dir / f"{name}.json"
+        source_filename = f"{name}.json"
+        target_filename = _CONFIG_TARGET_NAMES.get(source_filename, source_filename)
+        return target_dir / target_filename
     if item_type in (ItemType.AGENT, ItemType.COMMAND):
         return target_dir / f"{name}.md"
     return target_dir / name

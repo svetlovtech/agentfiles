@@ -81,10 +81,15 @@ _NON_CONFIG_FILES: frozenset[str] = frozenset(
         "package.json",
         "package-lock.json",
         "tsconfig.json",
+        "settings.json",
         "settings.local.json",
         "stats-cache.json",
     }
 )
+
+_CONFIG_OVERRIDES: dict[Platform, frozenset[str]] = {
+    Platform.CLAUDE_CODE: frozenset({"settings.json"}),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -1043,7 +1048,8 @@ class TargetManager:
                     continue
                 if entry.suffix != ".json":
                     continue
-                if entry.name in _NON_CONFIG_FILES:
+                platform_overrides = _CONFIG_OVERRIDES.get(platform, frozenset())
+                if entry.name in _NON_CONFIG_FILES and entry.name not in platform_overrides:
                     continue
                 try:
                     if not entry.is_file():
