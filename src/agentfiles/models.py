@@ -91,6 +91,7 @@ __all__ = [
     "item_from_directory",
     "item_from_file",
     "resolve_platform",
+    "resolve_source_name_for_config",
     "resolve_target_name",
 ]
 
@@ -724,11 +725,19 @@ class SyncState:
 # ---------------------------------------------------------------------------
 
 
+_CONFIG_TARGET_NAMES: dict[str, str] = {
+    "claude_code.json": "settings.json",
+}
+
+_CONFIG_SOURCE_NAMES: dict[str, str] = {v: k for k, v in _CONFIG_TARGET_NAMES.items()}
+
+
 def resolve_target_name(item: Item) -> str:
     """Return the on-disk destination name for *item*.
 
     File-based items (agents, commands) are installed as flat files whose
     name includes the source extension (e.g. ``"api-architect.md"``).
+    Config items may be renamed via :data:`_CONFIG_TARGET_NAMES`.
     Directory-based items (skills, plugins) use their directory name.
 
     This function must be used everywhere the code resolves the expected
@@ -742,9 +751,29 @@ def resolve_target_name(item: Item) -> str:
         The name that the item should have on disk at the target.
 
     """
+    if item.item_type == ItemType.CONFIG:
+        source_name = item.source_path.name
+        return _CONFIG_TARGET_NAMES.get(source_name, source_name)
     if item.item_type.is_file_based:
         return item.source_path.name
     return item.name
+
+
+def resolve_source_name_for_config(target_filename: str) -> str:
+    """Return the source filename for a config target filename.
+
+    Reverse mapping of :data:`_CONFIG_TARGET_NAMES`.  For example,
+    ``"settings.json"`` on disk maps back to ``"claude_code.json"`` in
+    the source repository.
+
+    Args:
+        target_filename: The filename as it appears on the target platform.
+
+    Returns:
+        The corresponding source repository filename.
+
+    """
+    return _CONFIG_SOURCE_NAMES.get(target_filename, target_filename)
 
 
 def item_from_directory(

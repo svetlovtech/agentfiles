@@ -1694,8 +1694,8 @@ class TestExecuteUninstallFailure:
 class TestPlanSyncUpdateAction:
     """Tests for plan_sync with action=UPDATE."""
 
-    def test_update_action_skips_not_installed(self, target_manager: TargetManager) -> None:
-        """Items not yet installed should return no plan when action=UPDATE."""
+    def test_update_action_installs_not_installed(self, target_manager: TargetManager) -> None:
+        """Items not yet installed should be planned for INSTALL when action=UPDATE."""
         item = _make_dir_item("brand-new")
         engine = SyncEngine(target_manager)
         plans = engine.plan_sync(
@@ -1703,8 +1703,8 @@ class TestPlanSyncUpdateAction:
             (Platform.OPENCODE,),
             action=SyncAction.UPDATE,
         )
-        # Not installed → _plan_install_or_update returns None for UPDATE.
-        assert len(plans) == 0
+        assert len(plans) == 1
+        assert plans[0].action == SyncAction.INSTALL
 
     def test_update_action_updates_installed(
         self,

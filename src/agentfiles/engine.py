@@ -896,8 +896,6 @@ class SyncEngine:
                 determined_action = SyncAction.SKIP
                 reason = "already installed"
         else:
-            if requested_action == SyncAction.UPDATE:
-                return None  # Skip items not yet installed when action=UPDATE requested
             determined_action = SyncAction.INSTALL
             reason = "not installed"
 

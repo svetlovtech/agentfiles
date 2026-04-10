@@ -401,7 +401,11 @@ def _apply_color_env(color: str) -> None:
     # "auto" → leave env untouched; init_logging() uses its heuristic
 
 
-def _discover_targets(config: AgentfilesConfig) -> TargetManager:
+def _discover_targets(
+    config: AgentfilesConfig,
+    *,
+    force_all: bool = False,
+) -> TargetManager:
     """Discover installed AI tool platforms and build a ``TargetManager``.
 
     Scans common install paths for OpenCode, Claude Code, Cursor, Windsurf,
@@ -409,6 +413,10 @@ def _discover_targets(config: AgentfilesConfig) -> TargetManager:
 
     Args:
         config: Loaded ``AgentfilesConfig`` (may provide ``custom_paths``).
+        force_all: When ``True``, include platforms whose config directories
+            do not yet exist (using the first candidate path).  Suitable for
+            ``pull`` / ``install`` operations where the engine will create
+            the directories.
 
     Returns:
         A ``TargetManager`` with at least one discovered platform.
@@ -420,7 +428,7 @@ def _discover_targets(config: AgentfilesConfig) -> TargetManager:
     from agentfiles.models import AgentfilesError
     from agentfiles.target import build_target_manager
 
-    target_manager = build_target_manager(config.custom_paths)
+    target_manager = build_target_manager(config.custom_paths, force_all=force_all)
 
     if not target_manager.targets:
         raise AgentfilesError(
@@ -496,6 +504,8 @@ def _create_sync_pipeline(
     source_dir: Path,
     config: AgentfilesConfig,
     args: argparse.Namespace,
+    *,
+    force_all: bool = False,
 ) -> tuple[SourceScanner, TargetManager, SyncEngine]:
     """Create the configured scanner, target manager, and sync engine.
 
@@ -506,6 +516,8 @@ def _create_sync_pipeline(
         source_dir: Resolved local path to the source repository.
         config: Loaded ``AgentfilesConfig``.
         args: Parsed CLI namespace (reads ``symlinks`` and ``dry_run``).
+        force_all: When ``True``, include platforms whose config directories
+            do not yet exist.
 
     Returns:
         ``(scanner, target_manager, engine)`` tuple ready for use.
@@ -515,7 +527,7 @@ def _create_sync_pipeline(
     from agentfiles.scanner import SourceScanner
 
     scanner = SourceScanner(source_dir)
-    target_manager = _discover_targets(config)
+    target_manager = _discover_targets(config, force_all=force_all)
     engine = SyncEngine(
         target_manager=target_manager,
         use_symlinks=getattr(args, "symlinks", False) or config.use_symlinks,
@@ -556,6 +568,7 @@ def _build_context(
     args: argparse.Namespace,
     *,
     needs_pipeline: bool = True,
+    force_all: bool = False,
 ) -> CommandContext:
     """Build shared command context from CLI arguments.
 
@@ -570,6 +583,8 @@ def _build_context(
             target manager, engine).  When ``False``, skip pipeline
             creation — *source_dir*, *scanner*, *target_manager*, and
             *engine* will be ``None``.
+        force_all: When ``True``, include platforms whose config
+            directories do not yet exist.
 
     Returns:
         A populated :class:`CommandContext` instance.
@@ -593,6 +608,7 @@ def _build_context(
             source_dir,
             config,
             args,
+            force_all=force_all,
         )
 
     item_types = _resolve_item_types(getattr(args, "item_type", None))
@@ -992,7 +1008,7 @@ def cmd_pull(args: argparse.Namespace) -> int:
     from agentfiles.interactive import InteractiveSession
     from agentfiles.output import bold, format_item_count, info, warning
 
-    ctx = _build_context(args)
+    ctx = _build_context(args, force_all=True)
     scanner = ctx.scanner
     target_manager = ctx.target_manager
     engine = ctx.engine

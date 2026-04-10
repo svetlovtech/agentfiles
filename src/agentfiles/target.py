@@ -45,6 +45,7 @@ from agentfiles.models import (
     Platform,
     TargetError,
     TargetPaths,
+    resolve_source_name_for_config,
 )
 
 if TYPE_CHECKING:
@@ -80,7 +81,6 @@ _NON_CONFIG_FILES: frozenset[str] = frozenset(
         "package.json",
         "package-lock.json",
         "tsconfig.json",
-        "settings.json",
         "settings.local.json",
         "stats-cache.json",
     }
@@ -94,6 +94,8 @@ _NON_CONFIG_FILES: frozenset[str] = frozenset(
 
 def build_target_manager(
     custom_paths: dict[str, str] | None = None,
+    *,
+    force_all: bool = False,
 ) -> TargetManager:
     """Discover target platforms and apply custom path overrides.
 
@@ -120,6 +122,10 @@ def build_target_manager(
         custom_paths: Mapping of platform name (e.g. ``"opencode"``) to an
             absolute or ``~``-expanded directory path.  ``None`` is treated
             as an empty mapping.
+        force_all: When ``True``, platforms whose config directories do not
+            yet exist on disk are still included using the first candidate
+            path.  This enables ``pull`` / ``install`` operations to create
+            the directories during sync.
 
     Returns:
         A fully configured :class:`TargetManager`.  The caller should check
@@ -127,7 +133,26 @@ def build_target_manager(
 
     """
     custom_paths = custom_paths or {}
-    targets = TargetDiscovery().discover_all()
+    discovery = TargetDiscovery()
+    targets = discovery.discover_all()
+
+    if force_all:
+        for platform in Platform:
+            if platform in targets:
+                continue
+            candidates = discovery._get_candidates(platform)
+            if not candidates:
+                continue
+            config_dir = candidates[0]
+            try:
+                subdirs = _resolve_subdirs(platform, config_dir)
+            except Exception:
+                subdirs = {}
+            targets[platform] = TargetPaths(
+                platform=platform,
+                config_dir=config_dir,
+                subdirs=subdirs,
+            )
 
     for platform_name, custom_path_str in custom_paths.items():
         try:
@@ -982,6 +1007,13 @@ class TargetManager:
 
                 if item_type.is_file_based:
                     if not is_file:
+                        # Also accept directory-installed items (e.g.
+                        # agents synced as <name>/<name>.md) so that
+                        # status counts match what was actually installed.
+                        if is_dir and item_type in (ItemType.AGENT, ItemType.COMMAND):
+                            main_md = entry / f"{entry.name}.md"
+                            if main_md.is_file():
+                                items.append((item_type, entry.name))
                         continue
                     # Plugins: only accept known extensions to skip
                     # extensionless duplicates (e.g. "memory-compact"
@@ -1018,7 +1050,8 @@ class TargetManager:
                         continue
                 except OSError:
                     continue
-                name = entry.stem
+                source_filename = resolve_source_name_for_config(entry.name)
+                name = Path(source_filename).stem
                 items.append((ItemType.CONFIG, name))
 
         return items
