@@ -717,6 +717,14 @@ def _discover_installed_from_targets(
 
             item_path = get_installed_item_path(target_dir, item_type, name)
 
+            # For file-based items (agents, commands) installed as directories
+            # (e.g. orchestrator/orchestrator.md), fall back to the directory
+            # form if the flat-file path doesn't exist.
+            if not item_path.exists() and item_type.is_file_based:
+                dir_path = target_dir / name
+                if dir_path.is_dir():
+                    item_path = dir_path
+
             if not item_path.exists():
                 continue
 

@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-04-12
+
+### Added
+- **GitHub Copilot, Aider, Continue.dev platform support** — 7 platforms total (OpenCode, Claude Code, Windsurf, Cursor, GitHub Copilot, Aider, Continue.dev).
+- **WORKFLOW item type** — Sync pipeline/recipe files alongside agents, skills, commands, plugins, and configs (6 item types total).
+- **Platform groups in config** — Define named target profiles (e.g. `all`, `editors`) in `.agentfiles.yaml` for `--target @group`.
+- **Bidirectional conflict detection and resolution for push** — Detect and resolve conflicts when pushing changes back to the source repository.
+- **`--create-pr` flag for push** — Automatically create a pull request via `gh` after pushing changes.
+- **`--item` flag** — Selective pull/push/clean by item name.
+- **Shallow clone + sparse checkout** — Efficient remote git source handling with minimal bandwidth and disk usage.
+- **Config filename mapping** — Platform-specific config files (e.g. `opencode.json`) are only synced to their matching platform.
+- **Force reinstall on update/full sync modes** — Ensures items are always in sync when using `update` or full sync.
+- **`Typing :: Typed` classifier** — PEP 561 type checking support advertised on PyPI.
+
+### Fixed
+- **Scope settings.json config detection** — Scoped to Claude Code only to avoid incorrect platform matching.
+- **Three pull bugs** — Resolved edge cases in pull sync behavior.
+- **Config platform filtering** — Config files are now correctly filtered by filename prefix.
+- **Mypy strict compliance** — Fixed `Path | None` type narrowing in scanner scope resolution.
+- **Import sorting** — Fixed isort compliance in paths module.
+- **Removed stale `syncode/` package** — Cleaned up leftover directory from package rename.
+
+### Quality
+- **Tests**: 1,840 passing across 34 test files
+- **Platforms**: 7 (up from 4)
+- **Item types**: 6 (up from 4)
+
 ## [0.2.0] - 2026-04-03
 
 ### Breaking Changes

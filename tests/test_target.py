@@ -1237,6 +1237,7 @@ class TestDiscoverProject:
             "skills": oc_dir / "skill",
             "commands": oc_dir / "command",
             "plugins": oc_dir / "plugin",
+            "workflows": oc_dir / "workflow",
         }
 
     def test_subdirs_match_global_layout_claude(
@@ -1256,6 +1257,7 @@ class TestDiscoverProject:
             "skills": cc_dir / "skills",
             "commands": cc_dir / "commands",
             "plugins": cc_dir / "plugins",
+            "workflows": cc_dir / "workflows",
         }
 
     def test_subdirs_resolve_error_returns_empty(

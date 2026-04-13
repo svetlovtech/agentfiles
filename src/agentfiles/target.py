@@ -373,6 +373,42 @@ def _cursor_project_candidates(project_dir: Path) -> list[Path]:
     return [project_dir / ".cursor" / "skills"]
 
 
+def _copilot_project_candidates(project_dir: Path) -> list[Path]:
+    """Return candidate GitHub Copilot PROJECT config directories.
+
+    GitHub Copilot stores project-level instructions in ``<project>/.github/``.
+
+    Args:
+        project_dir: Root directory of the project.
+
+    """
+    return [project_dir / ".github"]
+
+
+def _aider_project_candidates(project_dir: Path) -> list[Path]:
+    """Return candidate Aider PROJECT config directories.
+
+    Aider stores project-level conventions and prompts in ``<project>/.aider/``.
+
+    Args:
+        project_dir: Root directory of the project.
+
+    """
+    return [project_dir / ".aider"]
+
+
+def _continue_project_candidates(project_dir: Path) -> list[Path]:
+    """Return candidate Continue.dev PROJECT config directories.
+
+    Continue.dev stores project-level configuration in ``<project>/.continue/``.
+
+    Args:
+        project_dir: Root directory of the project.
+
+    """
+    return [project_dir / ".continue"]
+
+
 # ---------------------------------------------------------------------------
 # Platform subdir resolvers
 # ---------------------------------------------------------------------------
@@ -528,6 +564,9 @@ _PLATFORM_PROJECT_CANDIDATE_RESOLVERS: dict[Platform, Callable[[Path], list[Path
     Platform.CLAUDE_CODE: _claude_code_project_candidates,
     Platform.WINDSURF: _windsurf_project_candidates,
     Platform.CURSOR: _cursor_project_candidates,
+    Platform.COPILOT: _copilot_project_candidates,
+    Platform.AIDER: _aider_project_candidates,
+    Platform.CONTINUE: _continue_project_candidates,
 }
 
 # ---------------------------------------------------------------------------
@@ -841,7 +880,7 @@ class TargetManager:
         self,
         platform: Platform,
         item_type: ItemType,
-        scope: "Scope",
+        scope: Scope,
         project_dir: Path | None = None,
     ) -> Path | None:
         """Resolve target directory for a given platform, item type, and scope.

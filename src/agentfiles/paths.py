@@ -25,8 +25,8 @@ import stat as stat_mod
 from pathlib import Path
 
 from agentfiles.models import (
-    SKILL_MAIN_FILE,
     _CONFIG_TARGET_NAMES,
+    SKILL_MAIN_FILE,
     Item,
     ItemType,
     resolve_source_name_for_config,

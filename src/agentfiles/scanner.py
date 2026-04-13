@@ -326,7 +326,7 @@ def _apply_platforms(item: Item) -> Item:
     # opencode.json is not copied to Claude Code, etc.
     if item.item_type == ItemType.CONFIG:
         stem = item.source_path.stem.lower()
-        _CONFIG_PLATFORM_MAP: dict[str, tuple[Platform, ...]] = {
+        _CONFIG_PLATFORM_MAP: dict[str, tuple[Platform, ...]] = {  # noqa: N806
             "opencode": (Platform.OPENCODE,),
             "claude": (Platform.CLAUDE_CODE,),
             "copilot": (Platform.COPILOT,),
@@ -1039,6 +1039,7 @@ class SourceScanner:
             # is scanned as its own entry).
             is_base = base_dir is not None and dir_path == base_dir
             if is_base:
+                assert base_dir is not None  # narrowed by is_base guard
                 items = [
                     item for item in items if not _is_in_scope_subdir(item.source_path, base_dir)
                 ]
