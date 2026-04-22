@@ -32,10 +32,6 @@ class TestPullParser:
         args = build_parser().parse_args(["pull", "--dry-run"])
         assert args.dry_run is True
 
-    def test_target(self) -> None:
-        args = build_parser().parse_args(["pull", "--target", "opencode"])
-        assert args.target == "opencode"
-
     def test_type(self) -> None:
         args = build_parser().parse_args(["pull", "--type", "agent"])
         assert args.item_type == "agent"
@@ -89,7 +85,6 @@ class TestCmdPullIntegration:
             target_manager=target_manager or mock.MagicMock(),
             engine=engine or mock.MagicMock(),
             source_dir=tmp_path,
-            platforms=[Platform.OPENCODE],
             item_types=[ItemType.AGENT],
             dry_run=dry_run,
             fmt=fmt,

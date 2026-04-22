@@ -55,7 +55,6 @@ from agentfiles.models import (
     Item,
     ItemState,
     ItemType,
-    Platform,
     SyncAction,
     SyncPlan,
     SyncResult,
@@ -331,7 +330,7 @@ def _check_push_conflict(
 
     Returns a :class:`PushConflict` if both sides changed, else ``None``.
     """
-    target_dir = target_manager.get_target_dir(Platform.OPENCODE, item.item_type)
+    target_dir = target_manager.get_target_dir(item.item_type)
     if target_dir is None:
         return None
 
@@ -435,17 +434,16 @@ class SyncTarget(Protocol):
 
     def get_target_dir(
         self,
-        platform: Platform,
         item_type: ItemType,
     ) -> Path | None:
-        """Return the target directory for a platform and item type."""
+        """Return the target directory for an item type."""
 
-    def resolve_platform_for(
+    def owns_target_dir(
         self,
         item_type: ItemType,
         target_dir: Path,
-    ) -> Platform | None:
-        """Reverse-lookup which platform owns a given target directory."""
+    ) -> bool:
+        """Check whether a given target directory belongs to this manager."""
 
 
 class SyncEngine:
@@ -694,10 +692,7 @@ class SyncEngine:
         results: list[SyncResult] = []
 
         for item in items:
-            target_dir = self._target_manager.get_target_dir(
-                Platform.OPENCODE,
-                item.item_type,
-            )
+            target_dir = self._target_manager.get_target_dir(item.item_type)
             if target_dir is None:
                 logger.warning(
                     "No target directory for %s — skipping push",
@@ -789,7 +784,7 @@ class SyncEngine:
         given *action*.  Adding a new action type only requires registering
         a new handler in ``__init__`` — this method stays unchanged.
         """
-        target_dir = self._target_manager.get_target_dir(Platform.OPENCODE, item.item_type)
+        target_dir = self._target_manager.get_target_dir(item.item_type)
         if target_dir is None:
             logger.warning(
                 "No target directory for %s — skipping",
@@ -1238,7 +1233,7 @@ class SyncEngine:
         Without checksums, checks if the item exists at the target.
         Returns "pull" if not installed, "skip" if installed.
         """
-        target_dir = self._target_manager.get_target_dir(Platform.OPENCODE, item.item_type)
+        target_dir = self._target_manager.get_target_dir(item.item_type)
         if target_dir is None:
             return "skip"
 

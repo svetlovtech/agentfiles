@@ -19,7 +19,6 @@ from agentfiles.cli import (
     _format_list_text,
     _print_token_summary,
     _resolve_item_types,
-    _resolve_platforms,
     build_parser,
     cmd_init,
 )
@@ -54,7 +53,6 @@ def _make_item(
     item_type: ItemType = ItemType.AGENT,
     version: str = "1.0.0",
     files: tuple[str, ...] = ("test-item.md",),
-    platforms: tuple[Platform, ...] = (Platform.OPENCODE,),
     source_path: Path | None = None,
 ) -> Item:
     """Create a minimal Item for testing."""
@@ -64,18 +62,6 @@ def _make_item(
         source_path=source_path or Path(f"/fake/{item_type.value}/{name}"),
         version=version,
         files=files,
-        supported_platforms=platforms,
-    )
-
-
-def _make_config(
-    use_symlinks: bool = False,
-    custom_paths: dict[str, str] | None = None,
-) -> Any:
-    """Create a minimal config-like object for _resolve_platforms."""
-    return argparse.Namespace(
-        use_symlinks=use_symlinks,
-        custom_paths=custom_paths or {},
     )
 
 
@@ -311,35 +297,6 @@ class TestCreateInitStructure:
 
 
 # ---------------------------------------------------------------------------
-# _resolve_platforms
-# ---------------------------------------------------------------------------
-
-
-class TestResolvePlatforms:
-    """Tests for _resolve_platforms helper."""
-
-    def test_all_flag_returns_opencode(self) -> None:
-        config = _make_config()
-        result = _resolve_platforms("all", config)
-        assert result == [Platform.OPENCODE]
-
-    def test_specific_flag_returns_opencode(self) -> None:
-        config = _make_config()
-        result = _resolve_platforms("opencode", config)
-        assert result == [Platform.OPENCODE]
-
-    def test_none_flag_returns_opencode(self) -> None:
-        config = _make_config()
-        result = _resolve_platforms(None, config)
-        assert result == [Platform.OPENCODE]
-
-    def test_unknown_flag_returns_opencode(self) -> None:
-        config = _make_config()
-        result = _resolve_platforms("nonexistent_platform", config)
-        assert result == [Platform.OPENCODE]
-
-
-# ---------------------------------------------------------------------------
 # _resolve_item_types
 # ---------------------------------------------------------------------------
 
@@ -427,7 +384,7 @@ class TestFilterItemsByInstalled:
         manager = MagicMock()
         installed_map = installed_map or {}
 
-        def is_installed(item: Any, platform: Any) -> bool:
+        def is_installed(item: Any) -> bool:
             return installed_map.get(item.name, False)
 
         manager.is_item_installed.side_effect = is_installed
@@ -441,7 +398,7 @@ class TestFilterItemsByInstalled:
         result = _filter_items_by_installed(
             items,
             tm,
-            [Platform.OPENCODE],
+            [],
             installed=True,
         )
         assert len(result) == 1
@@ -455,7 +412,7 @@ class TestFilterItemsByInstalled:
         result = _filter_items_by_installed(
             items,
             tm,
-            [Platform.OPENCODE],
+            [],
             installed=False,
         )
         assert len(result) == 1
@@ -463,7 +420,7 @@ class TestFilterItemsByInstalled:
 
     def test_empty_items_returns_empty(self) -> None:
         tm = self._make_mock_target_manager()
-        result = _filter_items_by_installed([], tm, [Platform.OPENCODE], installed=True)
+        result = _filter_items_by_installed([], tm, [], installed=True)
         assert result == []
 
     def test_all_installed_returns_all_when_filter_installed(self) -> None:
@@ -472,7 +429,7 @@ class TestFilterItemsByInstalled:
         result = _filter_items_by_installed(
             items,
             tm,
-            [Platform.OPENCODE],
+            [],
             installed=True,
         )
         assert len(result) == 2
@@ -713,7 +670,7 @@ class TestDiscoverInstalledFromTargets:
 
         items = _discover_installed_from_targets(
             tm,
-            [Platform.OPENCODE],
+            [],
             list(ItemType),
         )
         assert len(items) == 1
@@ -731,7 +688,7 @@ class TestDiscoverInstalledFromTargets:
 
         items = _discover_installed_from_targets(
             tm,
-            [Platform.OPENCODE],
+            [],
             list(ItemType),
         )
         assert items == []
@@ -749,7 +706,7 @@ class TestDiscoverInstalledFromTargets:
 
         tm = MagicMock()
 
-        def get_target_dir(platform: Any, item_type: Any) -> Path:
+        def get_target_dir(item_type: Any) -> Path:
             if item_type == ItemType.AGENT:
                 return agent_dir
             return skill_dir
@@ -763,7 +720,7 @@ class TestDiscoverInstalledFromTargets:
         # Filter to only AGENT type
         items = _discover_installed_from_targets(
             tm,
-            [Platform.OPENCODE],
+            [],
             [ItemType.AGENT],
         )
         assert len(items) == 1
@@ -777,7 +734,7 @@ class TestDiscoverInstalledFromTargets:
 
         items = _discover_installed_from_targets(
             tm,
-            [Platform.OPENCODE],
+            [],
             list(ItemType),
         )
         assert items == []
@@ -788,7 +745,7 @@ class TestDiscoverInstalledFromTargets:
 
         items = _discover_installed_from_targets(
             tm,
-            [Platform.OPENCODE],
+            [],
             list(ItemType),
         )
         assert items == []
@@ -807,7 +764,7 @@ class TestDiscoverInstalledFromTargets:
 
         items = _discover_installed_from_targets(
             tm,
-            [Platform.OPENCODE],
+            [],
             list(ItemType),
         )
         # Single item
@@ -816,12 +773,12 @@ class TestDiscoverInstalledFromTargets:
 
 
 # ---------------------------------------------------------------------------
-# TargetManager.resolve_platform_for
+# TargetManager.owns_target_dir
 # ---------------------------------------------------------------------------
 
 
 class TestResolvePlatformFor:
-    """Tests for TargetManager.resolve_platform_for method."""
+    """Tests for TargetManager.owns_target_dir method."""
 
     def _make_target_manager(
         self,
@@ -838,8 +795,8 @@ class TestResolvePlatformFor:
         )
         tm = self._make_target_manager(tp)
 
-        result = tm.resolve_platform_for(ItemType.AGENT, target_dir)
-        assert result == Platform.OPENCODE
+        result = tm.owns_target_dir(ItemType.AGENT, target_dir)
+        assert result is True
 
     def test_returns_none_when_no_match(self, tmp_path: Path) -> None:
         other_dir = tmp_path / "other"
@@ -849,13 +806,13 @@ class TestResolvePlatformFor:
         )
         tm = self._make_target_manager(tp)
 
-        result = tm.resolve_platform_for(ItemType.AGENT, tmp_path / "agents")
-        assert result is None
+        result = tm.owns_target_dir(ItemType.AGENT, tmp_path / "agents")
+        assert result is False
 
     def test_returns_none_when_no_targets(self) -> None:
         tm = self._make_target_manager()
-        result = tm.resolve_platform_for(ItemType.AGENT, Path("/some/dir"))
-        assert result is None
+        result = tm.owns_target_dir(ItemType.AGENT, Path("/some/dir"))
+        assert result is False
 
 
 # ---------------------------------------------------------------------------

@@ -44,7 +44,6 @@ from agentfiles.models import (
     DiffEntry,
     DiffStatus,
     Item,
-    Platform,
     TargetError,
 )
 from agentfiles.paths import get_item_dest_path, read_item_content
@@ -68,7 +67,7 @@ def _resolve_target_path(
     not support the item's type.
     """
     try:
-        target_dir = target_manager.get_target_dir(Platform.OPENCODE, item.item_type)
+        target_dir = target_manager.get_target_dir(item.item_type)
     except TargetError:
         return None
     if target_dir is None:
@@ -208,10 +207,7 @@ class Differ:
         2. Metadata check — size/count differs → UPDATED, otherwise → UNCHANGED.
         """
         # Stage 1: installation check — not installed → NEW.
-        is_installed = self._target_manager.is_item_installed(
-            item,
-            Platform.OPENCODE,
-        )
+        is_installed = self._target_manager.is_item_installed(item)
 
         if not is_installed:
             return DiffEntry(

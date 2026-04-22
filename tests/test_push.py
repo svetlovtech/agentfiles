@@ -30,10 +30,6 @@ class TestPushParser:
         args = build_parser().parse_args(["push", "--dry-run"])
         assert args.dry_run is True
 
-    def test_target(self) -> None:
-        args = build_parser().parse_args(["push", "--target", "opencode"])
-        assert args.target == "opencode"
-
     def test_type(self) -> None:
         args = build_parser().parse_args(["push", "--type", "skill"])
         assert args.item_type == "skill"
@@ -61,10 +57,6 @@ class TestPushParser:
     def test_config(self) -> None:
         args = build_parser().parse_args(["push", "--config", "my.yaml"])
         assert args.config is not None
-
-    def test_target_all(self) -> None:
-        args = build_parser().parse_args(["push", "--target", "all"])
-        assert args.target == "all"
 
     def test_cache_dir(self) -> None:
         args = build_parser().parse_args(["push", "--cache-dir", "/cache"])

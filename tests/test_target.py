@@ -165,7 +165,6 @@ class TestSubdirectoryResolution:
 def _make_item(
     item_type: ItemType,
     name: str,
-    platforms: tuple[Platform, ...] = (Platform.OPENCODE,),
 ) -> Item:
     """Create a minimal Item for testing."""
     ext = ".md" if item_type.is_file_based else ""
@@ -173,8 +172,7 @@ def _make_item(
         item_type=item_type,
         name=name,
         source_path=Path("/src") / f"{name}{ext}",
-        supported_platforms=platforms,
-    )
+            )
 
 
 class TestTargetManager:
@@ -188,7 +186,7 @@ class TestTargetManager:
             targets = TargetDiscovery().discover_all()
 
         manager = TargetManager(targets)
-        result = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
+        result = manager.get_target_dir(ItemType.AGENT)
 
         assert result is not None
         assert result == fake_home.opencode / "agent"
@@ -197,7 +195,7 @@ class TestTargetManager:
         manager = TargetManager(None)
 
         with pytest.raises(TargetError, match="OpenCode has not been discovered"):
-            manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
+            manager.get_target_dir(ItemType.AGENT)
 
     def test_is_item_installed_true(self, fake_home: SimpleNamespace) -> None:
         (fake_home.opencode / "agent" / "python-reviewer.md").write_text("# agent")
@@ -211,7 +209,7 @@ class TestTargetManager:
         manager = TargetManager(targets)
         item = _make_item(ItemType.AGENT, "python-reviewer")
 
-        assert manager.is_item_installed(item, Platform.OPENCODE) is True
+        assert manager.is_item_installed(item) is True
 
     def test_is_item_installed_false(self, fake_home: SimpleNamespace) -> None:
         with (
@@ -223,13 +221,13 @@ class TestTargetManager:
         manager = TargetManager(targets)
         item = _make_item(ItemType.AGENT, "nonexistent")
 
-        assert manager.is_item_installed(item, Platform.OPENCODE) is False
+        assert manager.is_item_installed(item) is False
 
     def test_is_item_installed_false_for_missing_platform(self) -> None:
         manager = TargetManager(None)
         item = _make_item(ItemType.AGENT, "anything")
 
-        assert manager.is_item_installed(item, Platform.OPENCODE) is False
+        assert manager.is_item_installed(item) is False
 
     def test_get_installed_items(self, fake_home: SimpleNamespace) -> None:
         (fake_home.opencode / "agent" / "reviewer.md").write_text("# agent")
@@ -243,7 +241,7 @@ class TestTargetManager:
             targets = TargetDiscovery().discover_all()
 
         manager = TargetManager(targets)
-        items = manager.get_installed_items(Platform.OPENCODE)
+        items = manager.get_installed_items()
 
         types_and_names = [(t, n) for t, n in items]
         assert (ItemType.AGENT, "orchestrator") in types_and_names
@@ -254,7 +252,7 @@ class TestTargetManager:
         manager = TargetManager(None)
 
         with pytest.raises(TargetError, match="OpenCode has not been discovered"):
-            manager.get_installed_items(Platform.OPENCODE)
+            manager.get_installed_items()
 
     def test_get_installed_items_skips_hidden(self, fake_home: SimpleNamespace) -> None:
         (fake_home.opencode / "agent" / "visible.md").write_text("# agent")
@@ -267,7 +265,7 @@ class TestTargetManager:
             targets = TargetDiscovery().discover_all()
 
         manager = TargetManager(targets)
-        items = manager.get_installed_items(Platform.OPENCODE)
+        items = manager.get_installed_items()
 
         names = [n for _, n in items]
         assert "visible" in names
@@ -511,7 +509,7 @@ class TestPermissionErrorHandling:
             "exists",
             side_effect=PermissionError("denied"),
         ):
-            assert manager.is_item_installed(item, Platform.OPENCODE) is False
+            assert manager.is_item_installed(item) is False
 
     def test_is_item_installed_returns_false_on_oserror(
         self,
@@ -532,7 +530,7 @@ class TestPermissionErrorHandling:
             "exists",
             side_effect=OSError("stale handle"),
         ):
-            assert manager.is_item_installed(item, Platform.OPENCODE) is False
+            assert manager.is_item_installed(item) is False
 
     def test_get_installed_items_skips_unreadable_subdir(
         self,
@@ -558,7 +556,7 @@ class TestPermissionErrorHandling:
             return original_is_dir(self)
 
         with mock.patch.object(Path, "is_dir", _patched_is_dir):
-            items = manager.get_installed_items(Platform.OPENCODE)
+            items = manager.get_installed_items()
 
         # Only the agent entry is returned; skill is skipped.
         names = [n for _, n in items]
@@ -589,7 +587,7 @@ class TestPermissionErrorHandling:
             return original_iterdir(self)
 
         with mock.patch.object(Path, "iterdir", _patched_iterdir):
-            items = manager.get_installed_items(Platform.OPENCODE)
+            items = manager.get_installed_items()
 
         # agents subdir failed, so only items from other subdirs (if any)
         # are returned.  No crash.
@@ -619,7 +617,7 @@ class TestPermissionErrorHandling:
             return original_is_file(self)
 
         with mock.patch.object(Path, "is_file", _patched_is_file):
-            items = manager.get_installed_items(Platform.OPENCODE)
+            items = manager.get_installed_items()
 
         names = [n for _, n in items]
         assert "good-agent" in names
@@ -777,7 +775,7 @@ class TestInstalledItemsEdgeCases:
             targets = TargetDiscovery().discover_all()
 
         manager = TargetManager(targets)
-        items = manager.get_installed_items(Platform.OPENCODE)
+        items = manager.get_installed_items()
 
         names = [n for t, n in items if t == ItemType.AGENT]
         assert "my-agent" in names
@@ -792,7 +790,7 @@ class TestInstalledItemsEdgeCases:
             targets = TargetDiscovery().discover_all()
 
         manager = TargetManager(targets)
-        items = manager.get_installed_items(Platform.OPENCODE)
+        items = manager.get_installed_items()
 
         assert items == []
 
@@ -810,7 +808,7 @@ class TestInstalledItemsEdgeCases:
             },
         )
         manager = TargetManager(targets)
-        items = manager.get_installed_items(Platform.OPENCODE)
+        items = manager.get_installed_items()
 
         assert items == []
 
@@ -827,7 +825,7 @@ class TestInstalledItemsEdgeCases:
         item = _make_item(ItemType.AGENT, "test")
 
         # No "agents" in subdirs, so get_target_dir returns None.
-        assert manager.is_item_installed(item, Platform.OPENCODE) is False
+        assert manager.is_item_installed(item) is False
 
     def test_mixed_files_and_dirs_in_subdir(
         self,
@@ -847,7 +845,7 @@ class TestInstalledItemsEdgeCases:
             targets = TargetDiscovery().discover_all()
 
         manager = TargetManager(targets)
-        items = manager.get_installed_items(Platform.OPENCODE)
+        items = manager.get_installed_items()
 
         names = [n for t, n in items if t == ItemType.AGENT]
         assert "file-agent" in names
@@ -892,7 +890,7 @@ class TestFindExistingEdgeCases:
             return original_is_dir(self)
 
         with mock.patch.object(Path, "is_dir", _flaky_is_dir):
-            items = manager.get_installed_items(Platform.OPENCODE)
+            items = manager.get_installed_items()
 
         names = [n for _, n in items]
         assert "a1" in names
@@ -938,9 +936,7 @@ class TestGetTargetDirForScope:
             targets = TargetDiscovery().discover_all()
 
         manager = TargetManager(targets)
-        result = manager.get_target_dir_for_scope(
-            Platform.OPENCODE,
-            ItemType.AGENT,
+        result = manager.get_target_dir_for_scope(ItemType.AGENT,
             Scope.GLOBAL,
         )
 
@@ -952,9 +948,7 @@ class TestGetTargetDirForScope:
         manager = TargetManager(None)
 
         with pytest.raises(TargetError, match="OpenCode has not been discovered"):
-            manager.get_target_dir_for_scope(
-                Platform.OPENCODE,
-                ItemType.AGENT,
+            manager.get_target_dir_for_scope(ItemType.AGENT,
                 Scope.GLOBAL,
             )
 
@@ -963,9 +957,7 @@ class TestGetTargetDirForScope:
         project_dir = tmp_path / "myproject"
         manager = TargetManager(None)  # No global targets is fine.
 
-        result = manager.get_target_dir_for_scope(
-            Platform.OPENCODE,
-            ItemType.AGENT,
+        result = manager.get_target_dir_for_scope(ItemType.AGENT,
             Scope.PROJECT,
             project_dir=project_dir,
         )
@@ -980,15 +972,11 @@ class TestGetTargetDirForScope:
         project_dir = tmp_path / "myproject"
         manager = TargetManager(None)
 
-        project_result = manager.get_target_dir_for_scope(
-            Platform.OPENCODE,
-            ItemType.SKILL,
+        project_result = manager.get_target_dir_for_scope(ItemType.SKILL,
             Scope.PROJECT,
             project_dir=project_dir,
         )
-        local_result = manager.get_target_dir_for_scope(
-            Platform.OPENCODE,
-            ItemType.SKILL,
+        local_result = manager.get_target_dir_for_scope(ItemType.SKILL,
             Scope.LOCAL,
             project_dir=project_dir,
         )
@@ -1005,9 +993,7 @@ class TestGetTargetDirForScope:
         # Don't create any directories.
         manager = TargetManager(None)
 
-        result = manager.get_target_dir_for_scope(
-            Platform.OPENCODE,
-            ItemType.SKILL,
+        result = manager.get_target_dir_for_scope(ItemType.SKILL,
             Scope.PROJECT,
             project_dir=project_dir,
         )
@@ -1019,9 +1005,7 @@ class TestGetTargetDirForScope:
         """PROJECT scope returns None when project_dir is not provided."""
         manager = TargetManager(None)
 
-        result = manager.get_target_dir_for_scope(
-            Platform.OPENCODE,
-            ItemType.SKILL,
+        result = manager.get_target_dir_for_scope(ItemType.SKILL,
             Scope.PROJECT,
             project_dir=None,
         )
@@ -1036,9 +1020,7 @@ class TestGetTargetDirForScope:
         project_dir = tmp_path / "myproject"
         manager = TargetManager(None)
 
-        result = manager.get_target_dir_for_scope(
-            Platform.OPENCODE,
-            ItemType.CONFIG,
+        result = manager.get_target_dir_for_scope(ItemType.CONFIG,
             Scope.PROJECT,
             project_dir=project_dir,
         )
@@ -1054,14 +1036,12 @@ class TestGetTargetDirForScope:
         manager = TargetManager(None)
 
         assert (
-            manager.get_target_dir_for_scope(
-                Platform.OPENCODE, ItemType.AGENT, Scope.PROJECT, project_dir=project_dir
+            manager.get_target_dir_for_scope(ItemType.AGENT, Scope.PROJECT, project_dir=project_dir
             )
             == project_dir / ".opencode" / "agent"
         )
         assert (
-            manager.get_target_dir_for_scope(
-                Platform.OPENCODE, ItemType.SKILL, Scope.PROJECT, project_dir=project_dir
+            manager.get_target_dir_for_scope(ItemType.SKILL, Scope.PROJECT, project_dir=project_dir
             )
             == project_dir / ".opencode" / "skill"
         )

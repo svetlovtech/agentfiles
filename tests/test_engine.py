@@ -63,7 +63,6 @@ def _make_dir_item(
     name: str,
     item_type: ItemType = ItemType.SKILL,
     source_dir: Path | None = None,
-    platforms: tuple[Platform, ...] = (Platform.OPENCODE,),
 ) -> Item:
     """Create a directory-based Item for testing."""
     src = source_dir or Path(f"/src/{item_type.plural}/{name}")
@@ -72,15 +71,13 @@ def _make_dir_item(
         name=name,
         source_path=src,
         files=("SKILL.md",) if item_type == ItemType.SKILL else (),
-        supported_platforms=platforms,
-    )
+            )
 
 
 def _make_file_item(
     name: str,
     item_type: ItemType = ItemType.AGENT,
     source_path: Path | None = None,
-    platforms: tuple[Platform, ...] = (Platform.OPENCODE,),
 ) -> Item:
     """Create a file-based Item for testing."""
     src = source_path or Path(f"/src/{item_type.plural}/{name}.md")
@@ -89,8 +86,7 @@ def _make_file_item(
         name=name,
         source_path=src,
         files=(f"{name}.md",),
-        supported_platforms=platforms,
-    )
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -399,7 +395,6 @@ class TestPlanSync:
         item = _make_file_item(
             "my-cmd",
             item_type=ItemType.COMMAND,
-            platforms=(Platform.OPENCODE,),
         )
         engine = SyncEngine(target_manager)
 
@@ -474,9 +469,8 @@ class TestExecutePlan:
             name="my-skill",
             source_path=src_dir,
             files=("SKILL.md",),
-            supported_platforms=(Platform.OPENCODE,),
         )
-        target_dir = target_manager.get_target_dir(Platform.OPENCODE, ItemType.SKILL)
+        target_dir = target_manager.get_target_dir(ItemType.SKILL)
         assert target_dir is not None
 
         plan = SyncPlan(
@@ -497,7 +491,7 @@ class TestExecutePlan:
         target_manager: TargetManager,
         tmp_path: Path,
     ) -> None:
-        target_dir = target_manager.get_target_dir(Platform.OPENCODE, ItemType.SKILL)
+        target_dir = target_manager.get_target_dir(ItemType.SKILL)
         assert target_dir is not None
         installed = target_dir / "old-skill"
         installed.mkdir()
@@ -507,7 +501,6 @@ class TestExecutePlan:
             item_type=ItemType.SKILL,
             name="old-skill",
             source_path=tmp_path / "src",
-            supported_platforms=(Platform.OPENCODE,),
         )
         plan = SyncPlan(
             item=item,
@@ -536,9 +529,8 @@ class TestExecutePlan:
             name="symlink-skill",
             source_path=src_dir,
             files=("SKILL.md",),
-            supported_platforms=(Platform.OPENCODE,),
         )
-        target_dir = target_manager.get_target_dir(Platform.OPENCODE, ItemType.SKILL)
+        target_dir = target_manager.get_target_dir(ItemType.SKILL)
         assert target_dir is not None
 
         plan = SyncPlan(
@@ -567,7 +559,7 @@ class TestExecutePlan:
         bad_src = tmp_path / "bad"
         bad_src.mkdir()
 
-        target_dir = target_manager.get_target_dir(Platform.OPENCODE, ItemType.SKILL)
+        target_dir = target_manager.get_target_dir(ItemType.SKILL)
         assert target_dir is not None
 
         good_plan = SyncPlan(
@@ -576,7 +568,6 @@ class TestExecutePlan:
                 name="good-skill",
                 source_path=good_src,
                 files=("SKILL.md",),
-                supported_platforms=(Platform.OPENCODE,),
             ),
             action=SyncAction.INSTALL,
             target_dir=target_dir,
@@ -588,7 +579,6 @@ class TestExecutePlan:
                 name="bad-skill",
                 source_path=bad_src,
                 files=(),
-                supported_platforms=(Platform.OPENCODE,),
             ),
             action=SyncAction.INSTALL,
             target_dir=target_dir,
@@ -626,7 +616,6 @@ class TestSync:
             name="skill-a",
             source_path=src_a,
             files=("SKILL.md",),
-            supported_platforms=(Platform.OPENCODE,),
         )
         engine = SyncEngine(target_manager)
         report = engine.sync([item])
@@ -648,14 +637,13 @@ class TestSync:
             name="dry-skill",
             source_path=src,
             files=("SKILL.md",),
-            supported_platforms=(Platform.OPENCODE,),
         )
         engine = SyncEngine(target_manager, dry_run=True)
         report = engine.sync([item])
 
         assert report.is_success
         # Nothing should be physically installed.
-        target_dir = target_manager.get_target_dir(Platform.OPENCODE, ItemType.SKILL)
+        target_dir = target_manager.get_target_dir(ItemType.SKILL)
         assert target_dir is not None
         assert not (target_dir / "dry-skill").exists()
 
@@ -721,7 +709,6 @@ class TestPush:
             item_type=ItemType.AGENT,
             name="coder",
             source_path=agent_dir / "coder.md",
-            supported_platforms=(Platform.OPENCODE,),
         )
 
         source_dir = tmp_path / "source"
@@ -754,7 +741,6 @@ class TestPush:
             item_type=ItemType.SKILL,
             name="my-skill",
             source_path=skill_dir,
-            supported_platforms=(Platform.OPENCODE,),
         )
 
         source_dir = tmp_path / "source"
@@ -792,7 +778,6 @@ class TestPush:
             item_type=ItemType.AGENT,
             name="coder",
             source_path=agent_dir / "coder.md",
-            supported_platforms=(Platform.OPENCODE,),
         )
 
         engine = SyncEngine(target_manager)
@@ -823,7 +808,6 @@ class TestPush:
             item_type=ItemType.AGENT,
             name="coder",
             source_path=agent_dir / "coder.md",
-            supported_platforms=(Platform.OPENCODE,),
         )
 
         engine = SyncEngine(target_manager, dry_run=True)
@@ -846,7 +830,6 @@ class TestPush:
             item_type=ItemType.AGENT,
             name="ghost",
             source_path=Path("/nonexistent/ghost.md"),
-            supported_platforms=(Platform.OPENCODE,),
         )
 
         source_dir = tmp_path / "source"
@@ -946,7 +929,6 @@ class TestComputeSyncPlan:
             item_type=ItemType.AGENT,
             name="new-agent",
             source_path=Path("/src/new-agent.md"),
-            supported_platforms=(Platform.OPENCODE,),
         )
         state = SyncState()
 
@@ -975,7 +957,6 @@ class TestComputeSyncPlan:
             item_type=ItemType.AGENT,
             name="existing",
             source_path=Path("/src/existing.md"),
-            supported_platforms=(Platform.OPENCODE,),
         )
 
         state = SyncState()
@@ -1430,7 +1411,6 @@ class TestMixedActionBatch:
             name="new-skill",
             source_path=install_src,
             files=("SKILL.md",),
-            supported_platforms=(Platform.OPENCODE,),
         )
 
         # -- Item 2: SKIP (up-to-date item) --
@@ -1438,7 +1418,6 @@ class TestMixedActionBatch:
             item_type=ItemType.SKILL,
             name="skip-me",
             source_path=Path("/src/skip-me"),
-            supported_platforms=(Platform.OPENCODE,),
         )
 
         # -- Item 3: UPDATE (existing target with different content) --
@@ -1453,7 +1432,6 @@ class TestMixedActionBatch:
             name="update-skill",
             source_path=update_src,
             files=("SKILL.md",),
-            supported_platforms=(Platform.OPENCODE,),
         )
 
         # -- Item 4: UNINSTALL (existing target to remove) --
@@ -1464,7 +1442,6 @@ class TestMixedActionBatch:
             item_type=ItemType.SKILL,
             name="remove-skill",
             source_path=Path("/src/remove-skill"),
-            supported_platforms=(Platform.OPENCODE,),
         )
 
         plans = [
@@ -1525,7 +1502,7 @@ class TestExecuteUpdate:
         fake_home: SimpleNamespace,
         tmp_path: Path,
     ) -> None:
-        target_dir = target_manager.get_target_dir(Platform.OPENCODE, ItemType.SKILL)
+        target_dir = target_manager.get_target_dir(ItemType.SKILL)
         assert target_dir is not None
 
         # Pre-install old content.
@@ -1544,7 +1521,6 @@ class TestExecuteUpdate:
             name="up-skill",
             source_path=new_src,
             files=("SKILL.md",),
-            supported_platforms=(Platform.OPENCODE,),
         )
         plan = SyncPlan(
             item=item,
@@ -1565,7 +1541,7 @@ class TestExecuteUpdate:
         target_manager: TargetManager,
         tmp_path: Path,
     ) -> None:
-        target_dir = target_manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
+        target_dir = target_manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         # Pre-install old agent file.
@@ -1581,7 +1557,6 @@ class TestExecuteUpdate:
             name="my-agent",
             source_path=new_src,
             files=("my-agent.md",),
-            supported_platforms=(Platform.OPENCODE,),
         )
         plan = SyncPlan(
             item=item,
@@ -1619,7 +1594,6 @@ class TestExecuteUninstallFailure:
             item_type=ItemType.SKILL,
             name="protected",
             source_path=Path("/src/protected"),
-            supported_platforms=(Platform.OPENCODE,),
         )
         plan = SyncPlan(
             item=item,
@@ -1838,13 +1812,11 @@ class TestPushEdgeCases:
             item_type=ItemType.AGENT,
             name="agent-a",
             source_path=agent_dir / "agent-a.md",
-            supported_platforms=(Platform.OPENCODE,),
         )
         item_b = Item(
             item_type=ItemType.AGENT,
             name="agent-b",
             source_path=agent_dir / "agent-b.md",
-            supported_platforms=(Platform.OPENCODE,),
         )
 
         source_dir = tmp_path / "source"
@@ -1872,7 +1844,6 @@ class TestPushEdgeCases:
             item_type=ItemType.COMMAND,
             name="my-cmd",
             source_path=Path("/src/my-cmd.md"),
-            supported_platforms=(Platform.OPENCODE,),
         )
 
         source_dir = tmp_path / "source"
@@ -1899,7 +1870,6 @@ class TestPushEdgeCases:
             item_type=ItemType.AGENT,
             name="ghost",
             source_path=Path("/src/ghost.md"),
-            supported_platforms=(Platform.OPENCODE,),
         )
 
         engine = SyncEngine(mock_target)
@@ -1947,7 +1917,6 @@ class TestParametrizedItemTypes:
                 name=item_name,
                 source_path=item.source_path,
                 files=item.files,
-                supported_platforms=(Platform.OPENCODE,),
             )
 
         engine = SyncEngine(target_manager)
@@ -1977,9 +1946,8 @@ class TestParametrizedItemTypes:
             name="test-agent",
             source_path=src,
             files=("agent.md",),
-            supported_platforms=(Platform.OPENCODE,),
         )
-        target_dir = target_manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
+        target_dir = target_manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         plan = SyncPlan(
@@ -2063,7 +2031,6 @@ class TestComputeSyncPlanEdgeCases:
             item_type=ItemType.AGENT,
             name="new-agent",
             source_path=Path("/src/new-agent.md"),
-            supported_platforms=(Platform.OPENCODE,),
         )
         # Empty state — no platform info at all.
         state = SyncState()
@@ -2088,7 +2055,6 @@ class TestComputeSyncPlanEdgeCases:
             item_type=ItemType.AGENT,
             name="missing-agent",
             source_path=Path("/src/missing-agent.md"),
-            supported_platforms=(Platform.OPENCODE,),
         )
         # State exists but item does not.
         state = SyncState()
@@ -2113,7 +2079,6 @@ class TestComputeSyncPlanEdgeCases:
             item_type=ItemType.COMMAND,
             name="my-cmd",
             source_path=Path("/src/my-cmd.md"),
-            supported_platforms=(Platform.OPENCODE,),
         )
         state = SyncState()
 
@@ -2153,7 +2118,6 @@ class TestUpdateSyncState:
             name="my-skill",
             source_path=src_dir,
             files=("SKILL.md",),
-            supported_platforms=(Platform.OPENCODE,),
         )
 
         source_dir = tmp_path / "source"
@@ -2193,7 +2157,6 @@ class TestUpdateSyncState:
             name="no-state-skill",
             source_path=src_dir,
             files=("SKILL.md",),
-            supported_platforms=(Platform.OPENCODE,),
         )
 
         engine = SyncEngine(target_manager)
@@ -2220,7 +2183,6 @@ class TestUpdateSyncState:
             name="dry-skill",
             source_path=src_dir,
             files=("SKILL.md",),
-            supported_platforms=(Platform.OPENCODE,),
         )
 
         source_dir = tmp_path / "source"
@@ -2251,7 +2213,6 @@ class TestUpdateSyncState:
             name="graceful-skill",
             source_path=src_dir,
             files=("SKILL.md",),
-            supported_platforms=(Platform.OPENCODE,),
         )
 
         source_dir = tmp_path / "source"
@@ -2286,7 +2247,6 @@ class TestUpdateSyncState:
             name="multi-skill",
             source_path=src_dir,
             files=("SKILL.md",),
-            supported_platforms=(Platform.OPENCODE,),
         )
 
         source_dir = tmp_path / "source"
@@ -2321,7 +2281,6 @@ class TestUpdateSyncState:
             name="existing",
             source_path=skill_dir,
             files=("SKILL.md",),
-            supported_platforms=(Platform.OPENCODE,),
         )
 
         source_dir = tmp_path / "source"
@@ -2357,7 +2316,6 @@ class TestUpdateSyncState:
             name="recover-skill",
             source_path=src_dir,
             files=("SKILL.md",),
-            supported_platforms=(Platform.OPENCODE,),
         )
 
         source_dir = tmp_path / "source"
@@ -2399,7 +2357,6 @@ class TestExecutePlanErrorIsolation:
             name="crash-agent",
             source_path=src,
             files=("agent.md",),
-            supported_platforms=(Platform.OPENCODE,),
         )
         plan = SyncPlan(
             item=item,
@@ -2435,7 +2392,6 @@ class TestExecutePlanErrorIsolation:
             name="good-agent",
             source_path=src,
             files=("agent.md",),
-            supported_platforms=(Platform.OPENCODE,),
         )
 
         good_plan = SyncPlan(

@@ -65,15 +65,13 @@ def manager(fake_home: SimpleNamespace) -> Generator[TargetManager, None, None]:
 def _make_item(
     item_type: ItemType = ItemType.AGENT,
     name: str = "test-item",
-    platforms: tuple[Platform, ...] = (Platform.OPENCODE,),
 ) -> Item:
     """Create a minimal Item for testing."""
     return Item(
         item_type=item_type,
         name=name,
         source_path=Path("/src") / item_type.plural / name,
-        supported_platforms=platforms,
-    )
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +98,7 @@ class TestDifferDiff:
         fake_home: SimpleNamespace,
     ) -> None:
         # Create an installed item with known content.
-        target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
+        target_dir = manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         item_dir = target_dir / "stable-agent"
@@ -115,7 +113,6 @@ class TestDifferDiff:
             item_type=ItemType.AGENT,
             name="stable-agent",
             source_path=source_dir,
-            supported_platforms=(Platform.OPENCODE,),
         )
         differ = Differ(manager)
         results = differ.diff([item])
@@ -129,7 +126,7 @@ class TestDifferDiff:
         fake_home: SimpleNamespace,
     ) -> None:
         """Different file sizes are detected as UPDATED by metadata comparison."""
-        target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
+        target_dir = manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         item_dir = target_dir / "changed-agent"
@@ -145,7 +142,6 @@ class TestDifferDiff:
             item_type=ItemType.AGENT,
             name="changed-agent",
             source_path=source_dir,
-            supported_platforms=(Platform.OPENCODE,),
         )
         differ = Differ(manager)
         results = differ.diff([item])
@@ -175,7 +171,7 @@ class TestDifferDiff:
         fake_home: SimpleNamespace,
     ) -> None:
         """When file sizes differ, metadata check detects UPDATED."""
-        target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
+        target_dir = manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         item_dir = target_dir / "size-diff-agent"
@@ -193,7 +189,6 @@ class TestDifferDiff:
             item_type=ItemType.AGENT,
             name="size-diff-agent",
             source_path=source_dir,
-            supported_platforms=(Platform.OPENCODE,),
         )
         differ = Differ(manager)
         results = differ.diff([item])
@@ -208,7 +203,7 @@ class TestDifferDiff:
         fake_home: SimpleNamespace,
     ) -> None:
         """Directory items with different file counts are detected as updated."""
-        target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.SKILL)
+        target_dir = manager.get_target_dir(ItemType.SKILL)
         assert target_dir is not None
 
         skill_dir = target_dir / "count-skill"
@@ -224,7 +219,6 @@ class TestDifferDiff:
             item_type=ItemType.SKILL,
             name="count-skill",
             source_path=source_dir,
-            supported_platforms=(Platform.OPENCODE,),
         )
         differ = Differ(manager)
 
@@ -240,7 +234,7 @@ class TestDifferDiff:
         fake_home: SimpleNamespace,
     ) -> None:
         """Same file size but different content → UNCHANGED (metadata matches)."""
-        target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
+        target_dir = manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         item_dir = target_dir / "same-size-agent"
@@ -255,7 +249,6 @@ class TestDifferDiff:
             item_type=ItemType.AGENT,
             name="same-size-agent",
             source_path=source_dir,
-            supported_platforms=(Platform.OPENCODE,),
         )
         differ = Differ(manager)
         results = differ.diff([item])
@@ -279,7 +272,7 @@ class TestErrorHandling:
         fake_home: SimpleNamespace,
     ) -> None:
         """Target file exists but metadata comparison fails → UNCHANGED (conservative)."""
-        target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
+        target_dir = manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         item_dir = target_dir / "locked-agent"
@@ -294,7 +287,6 @@ class TestErrorHandling:
             item_type=ItemType.AGENT,
             name="locked-agent",
             source_path=source_dir,
-            supported_platforms=(Platform.OPENCODE,),
         )
         differ = Differ(manager)
 
@@ -342,7 +334,7 @@ class TestErrorHandling:
         fake_home: SimpleNamespace,
     ) -> None:
         """PermissionError during stat() should not crash, falls through to content comparison."""
-        target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
+        target_dir = manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         item_dir = target_dir / "perm-agent"
@@ -357,7 +349,6 @@ class TestErrorHandling:
             item_type=ItemType.AGENT,
             name="perm-agent",
             source_path=source_dir,
-            supported_platforms=(Platform.OPENCODE,),
         )
         differ = Differ(manager)
 
@@ -649,7 +640,7 @@ class TestMixedStatusResults:
         fake_home: SimpleNamespace,
     ) -> None:
         """Single diff call yields NEW, UPDATED, and UNCHANGED entries."""
-        target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
+        target_dir = manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         # UPDATED: installed with different content (different sizes)
@@ -678,19 +669,16 @@ class TestMixedStatusResults:
                 item_type=ItemType.AGENT,
                 name="upd-agent",
                 source_path=upd_src,
-                supported_platforms=(Platform.OPENCODE,),
             ),
             Item(
                 item_type=ItemType.AGENT,
                 name="uc-agent",
                 source_path=uc_src,
-                supported_platforms=(Platform.OPENCODE,),
             ),
             Item(
                 item_type=ItemType.AGENT,
                 name="new-agent",
                 source_path=new_src,
-                supported_platforms=(Platform.OPENCODE,),
             ),
         ]
 
@@ -708,7 +696,7 @@ class TestMixedStatusResults:
         fake_home: SimpleNamespace,
     ) -> None:
         """Items with same content are UNCHANGED."""
-        oc_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
+        oc_dir = manager.get_target_dir(ItemType.AGENT)
         assert oc_dir is not None
         item_dir = oc_dir / "split-agent"
         item_dir.mkdir()
@@ -722,7 +710,6 @@ class TestMixedStatusResults:
             item_type=ItemType.AGENT,
             name="split-agent",
             source_path=source_dir,
-            supported_platforms=(Platform.OPENCODE,),
         )
         differ = Differ(manager)
         results = differ.diff([item])
@@ -744,7 +731,7 @@ class TestMetadataDiffEdgeCases:
         fake_home: SimpleNamespace,
     ) -> None:
         """Source is a file but target is a directory → metadata differs."""
-        target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
+        target_dir = manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         # Create a directory at target with the item name
@@ -760,7 +747,6 @@ class TestMetadataDiffEdgeCases:
             item_type=ItemType.AGENT,
             name="type-mismatch-agent",
             source_path=source_file,
-            supported_platforms=(Platform.OPENCODE,),
         )
         differ = Differ(manager)
         results = differ.diff([item])
@@ -790,7 +776,7 @@ class TestMetadataDiffEdgeCases:
 
         Without checksum comparison, metadata match means unchanged.
         """
-        target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.SKILL)
+        target_dir = manager.get_target_dir(ItemType.SKILL)
         assert target_dir is not None
 
         skill_dir = target_dir / "tricky-skill"
@@ -805,7 +791,6 @@ class TestMetadataDiffEdgeCases:
             item_type=ItemType.SKILL,
             name="tricky-skill",
             source_path=source_dir,
-            supported_platforms=(Platform.OPENCODE,),
         )
         differ = Differ(manager)
         results = differ.diff([item])
@@ -829,7 +814,6 @@ class TestMultiPlatformDiff:
         """Item supporting OpenCode should appear in results."""
         item = _make_item(
             name="oc-only",
-            platforms=(Platform.OPENCODE,),
         )
         differ = Differ(manager)
         results = differ.diff([item])
@@ -881,7 +865,7 @@ class TestComputeContentDiff:
         fake_home: SimpleNamespace,
     ) -> None:
         """Unified diff should show added/removed lines for changed content."""
-        target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
+        target_dir = manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         # Create target with old content
@@ -904,7 +888,6 @@ class TestComputeContentDiff:
             item_type=ItemType.AGENT,
             name="diff-agent",
             source_path=source_dir,
-            supported_platforms=(Platform.OPENCODE,),
         )
         entry = DiffEntry(
             item=item,
@@ -927,7 +910,7 @@ class TestComputeContentDiff:
         fake_home: SimpleNamespace,
     ) -> None:
         """No diff lines when source and target have identical content."""
-        target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
+        target_dir = manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         content = "identical content\nline2\n"
@@ -943,7 +926,6 @@ class TestComputeContentDiff:
             item_type=ItemType.AGENT,
             name="same-agent",
             source_path=source_dir,
-            supported_platforms=(Platform.OPENCODE,),
         )
         entry = DiffEntry(item=item, status=DiffStatus.UPDATED)
         result = compute_content_diff(entry, manager)
@@ -963,7 +945,6 @@ class TestComputeContentDiff:
             item_type=ItemType.AGENT,
             name="missing-target",
             source_path=source_dir,
-            supported_platforms=(Platform.OPENCODE,),
         )
         entry = DiffEntry(item=item, status=DiffStatus.UPDATED)
 
@@ -983,7 +964,7 @@ class TestComputeContentDiff:
         fake_home: SimpleNamespace,
     ) -> None:
         """Binary content should produce a 'binary file' notice."""
-        target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
+        target_dir = manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         item_dir = target_dir / "binary-agent"
@@ -1006,7 +987,6 @@ class TestComputeContentDiff:
             item_type=ItemType.AGENT,
             name="binary-agent",
             source_path=source_dir,
-            supported_platforms=(Platform.OPENCODE,),
         )
         entry = DiffEntry(item=item, status=DiffStatus.UPDATED)
         result = compute_content_diff(entry, manager)
@@ -1028,7 +1008,6 @@ class TestComputeContentDiff:
             item_type=ItemType.AGENT,
             name="new-only",
             source_path=source_dir,
-            supported_platforms=(Platform.OPENCODE,),
         )
         entry = DiffEntry(item=item, status=DiffStatus.NEW)
         result = compute_content_diff(entry, manager)
@@ -1040,7 +1019,7 @@ class TestComputeContentDiff:
         fake_home: SimpleNamespace,
     ) -> None:
         """Diff should include context lines around the change."""
-        target_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
+        target_dir = manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         target_content = "line1\nline2\nline3\nline4\nline5\n"
@@ -1058,7 +1037,6 @@ class TestComputeContentDiff:
             item_type=ItemType.AGENT,
             name="context-agent",
             source_path=source_dir,
-            supported_platforms=(Platform.OPENCODE,),
         )
         entry = DiffEntry(item=item, status=DiffStatus.UPDATED)
         result = compute_content_diff(entry, manager)

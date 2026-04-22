@@ -316,7 +316,6 @@ class TestItem:
             meta=meta,
             version="3.0.0",
             files=("SKILL.md", "refs.yaml"),
-            supported_platforms=(Platform.OPENCODE,),
         )
         assert item.item_type == ItemType.SKILL
         assert item.meta is meta

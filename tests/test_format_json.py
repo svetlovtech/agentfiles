@@ -34,7 +34,6 @@ from agentfiles.models import (
 def _make_item(
     name: str = "test-agent",
     item_type: ItemType = ItemType.AGENT,
-    platforms: tuple[Platform, ...] = (Platform.OPENCODE,),
 ) -> Item:
     """Create a minimal Item for testing."""
     return Item(
@@ -43,8 +42,7 @@ def _make_item(
         source_path=Path(f"/fake/{item_type.plural}/{name}.md"),
         version="1.0.0",
         files=("file.md",),
-        supported_platforms=platforms,
-    )
+            )
 
 
 def _make_plan(
@@ -174,7 +172,7 @@ class TestFormatPlanJson:
         plan = _make_plan(item, SyncAction.INSTALL, "not installed")
 
         target_manager = MagicMock()
-        target_manager.resolve_platform_for.return_value = Platform.OPENCODE
+        target_manager.owns_target_dir.return_value = True
 
         result = _format_plan_json([plan], target_manager, dry_run=True)
         assert result == 0
@@ -191,7 +189,7 @@ class TestFormatPlanJson:
         plan = _make_plan(item, SyncAction.INSTALL, "not installed")
 
         target_manager = MagicMock()
-        target_manager.resolve_platform_for.return_value = Platform.OPENCODE
+        target_manager.owns_target_dir.return_value = True
 
         _format_plan_json([plan], target_manager, dry_run=True)
 
@@ -207,7 +205,7 @@ class TestFormatPlanJson:
         plan = _make_plan(item, SyncAction.UPDATE, "content differs")
 
         target_manager = MagicMock()
-        target_manager.resolve_platform_for.return_value = Platform.OPENCODE
+        target_manager.owns_target_dir.return_value = True
 
         _format_plan_json([plan], target_manager, dry_run=False)
 
@@ -229,7 +227,7 @@ class TestFormatPlanJson:
         )
 
         target_manager = MagicMock()
-        target_manager.resolve_platform_for.return_value = Platform.OPENCODE
+        target_manager.owns_target_dir.return_value = True
 
         _format_plan_json([install_plan, skip_plan], target_manager, dry_run=True)
 
@@ -251,7 +249,7 @@ class TestFormatPlanJson:
         )
 
         target_manager = MagicMock()
-        target_manager.resolve_platform_for.return_value = Platform.OPENCODE
+        target_manager.owns_target_dir.return_value = True
 
         _format_plan_json([plan1], target_manager, dry_run=True)
 
@@ -402,7 +400,7 @@ class TestJsonValidity:
     ) -> None:
         """Plan JSON has no trailing commas."""
         target_manager = MagicMock()
-        target_manager.resolve_platform_for.return_value = Platform.OPENCODE
+        target_manager.owns_target_dir.return_value = True
 
         plan = _make_plan()
         _format_plan_json([plan], target_manager, dry_run=True)

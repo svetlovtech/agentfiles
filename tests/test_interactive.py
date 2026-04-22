@@ -368,16 +368,16 @@ class TestInteractiveSessionRetry:
     ) -> None:
         """Invalid platform input triggers retry; valid input on second try works."""
         session = InteractiveSession(use_colors=False)
-        platforms = [Platform.OPENCODE]
+        platforms = []
         # First input "xyz" (invalid), second input "1" (valid)
         with patch("builtins.input", side_effect=["xyz", "1"]):
             result = session.select_platforms(platforms)
-        assert result == [Platform.OPENCODE]
+        assert result == []
 
     def test_select_platforms_returns_all_after_max_retries(self) -> None:
         """Exhausting retries on invalid input falls back to all platforms."""
         session = InteractiveSession(use_colors=False)
-        platforms = [Platform.OPENCODE]
+        platforms = []
         # All invalid inputs
         invalid = ["bad"] * 10  # More than _MAX_INPUT_RETRIES
         with patch("builtins.input", side_effect=invalid):
@@ -387,7 +387,7 @@ class TestInteractiveSessionRetry:
     def test_select_platforms_retry_then_all_keyword(self) -> None:
         """User can type 'all' during retry to select all platforms."""
         session = InteractiveSession(use_colors=False)
-        platforms = [Platform.OPENCODE]
+        platforms = []
         with patch("builtins.input", side_effect=["bad", "all"]):
             result = session.select_platforms(platforms)
         assert result == list(platforms)
@@ -395,7 +395,7 @@ class TestInteractiveSessionRetry:
     def test_select_platforms_retry_then_empty_selects_all(self) -> None:
         """User can press Enter during retry to accept all platforms."""
         session = InteractiveSession(use_colors=False)
-        platforms = [Platform.OPENCODE]
+        platforms = []
         with patch("builtins.input", side_effect=["bad", ""]):
             result = session.select_platforms(platforms)
         assert result == list(platforms)
@@ -846,7 +846,7 @@ class TestSelectionEOFHandling:
     def test_select_platforms_eof_returns_all(self) -> None:
         """EOFError during platform selection returns all platforms."""
         session = InteractiveSession(use_colors=False)
-        platforms = [Platform.OPENCODE]
+        platforms = []
         with patch("builtins.input", side_effect=EOFError):
             result = session.select_platforms(platforms)
         assert result == list(platforms)
@@ -855,8 +855,8 @@ class TestSelectionEOFHandling:
         """KeyboardInterrupt during platform selection returns all (no-op method)."""
         session = InteractiveSession(use_colors=False)
         with patch("builtins.input", side_effect=KeyboardInterrupt):
-            result = session.select_platforms([Platform.OPENCODE])
-        assert result == [Platform.OPENCODE]
+            result = session.select_platforms([])
+        assert result == []
 
     def test_select_item_types_eof_returns_all(self) -> None:
         """EOFError during item type selection returns all types."""

@@ -37,7 +37,6 @@ def _make_item(
         name=name,
         source_path=source_path or Path("/tmp/agents") / f"{name}.md",
         files=(f"{name}.md",),
-        supported_platforms=(Platform.OPENCODE,),
     )
 
 
@@ -46,7 +45,7 @@ def _make_target_manager(
 ) -> SyncTarget:
     mgr = MagicMock(spec=SyncTarget)
     mgr.get_target_dir.return_value = target_dir
-    mgr.resolve_platform_for.return_value = Platform.OPENCODE
+    mgr.owns_target_dir.return_value = True
     return mgr
 
 

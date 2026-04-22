@@ -406,16 +406,11 @@ class TargetManager:
 
     def get_target_dir(
         self,
-        platform: Platform,
         item_type: ItemType,
     ) -> Path | None:
         """Resolve the target directory for a specific item type.
 
-        The *platform* parameter is accepted for interface compatibility
-        but ignored — this manager always manages OpenCode.
-
         Args:
-            platform: The target platform (unused, kept for protocol compat).
             item_type: The category of item (agent, skill, …).
 
         Returns:
@@ -438,7 +433,6 @@ class TargetManager:
 
     def get_target_dir_for_scope(
         self,
-        platform: Platform,
         item_type: ItemType,
         scope: Scope,
         project_dir: Path | None = None,
@@ -451,12 +445,7 @@ class TargetManager:
         project-level path — the directory does **not** need to exist on
         disk (useful for install-to targets).
 
-        The *platform* parameter is accepted for interface compatibility
-        but ignored — this manager always manages OpenCode.
-
-        Args:
-            platform: The target platform (unused, kept for compat).
-            item_type: The category of item (agent, skill, …).
+        Args:            item_type: The category of item (agent, skill, …).
             scope: Configuration scope (``Scope.GLOBAL``,
                 ``Scope.PROJECT``, or ``Scope.LOCAL``).
             project_dir: Root project directory — **required** for
@@ -474,7 +463,7 @@ class TargetManager:
         scope_value = scope.value if hasattr(scope, "value") else str(scope)
 
         if scope_value == "global":
-            return self.get_target_dir(platform, item_type)
+            return self.get_target_dir(item_type)
 
         # PROJECT or LOCAL scope — resolve relative to project_dir.
         if project_dir is None:
@@ -502,14 +491,11 @@ class TargetManager:
 
         return None
 
-    def is_item_installed(self, item: Item, platform: Platform) -> bool:
+    def is_item_installed(self, item: Item) -> bool:
         """Check whether an item is already installed at the target.
 
         An item is considered installed when a directory (or file) matching
         its name exists inside the appropriate subdirectory.
-
-        The *platform* parameter is accepted for interface compatibility
-        but ignored — this manager always manages OpenCode.
 
         Returns ``False`` (never raises) when no target has been discovered,
         the subdirectory does not exist, or the directory cannot be accessed
@@ -517,8 +503,6 @@ class TargetManager:
 
         Args:
             item: The source item to check.
-            platform: The target platform (unused, kept for compat).
-
         Returns:
             ``True`` if a matching entry exists on disk.
 
@@ -526,7 +510,7 @@ class TargetManager:
         if self._targets is None:
             return False
 
-        target_dir = self.get_target_dir(platform, item.item_type)
+        target_dir = self.get_target_dir(item.item_type)
         if target_dir is None:
             return False
 
@@ -550,15 +534,11 @@ class TargetManager:
 
     def get_installed_items(
         self,
-        platform: Platform,
     ) -> list[tuple[ItemType, str]]:
         """List all installed items.
 
         Scans the subdirectories of the discovered target and returns
         the type and name of every entry found.
-
-        The *platform* parameter is accepted for interface compatibility
-        but ignored — this manager always manages OpenCode.
 
         Permission errors and other OS-level failures while scanning
         individual subdirectories are logged as warnings and skipped
@@ -566,7 +546,6 @@ class TargetManager:
         items from other subdirectories.
 
         Args:
-            platform: The platform to scan (unused, kept for compat).
 
         Returns:
             List of ``(item_type, name)`` tuples.
@@ -667,14 +646,14 @@ class TargetManager:
         """
         if self._targets is None:
             return {}
-        return dict(Counter(t.plural for t, _ in self.get_installed_items(Platform.OPENCODE)))
+        return dict(Counter(t.plural for t, _ in self.get_installed_items()))
 
-    def resolve_platform_for(
+    def owns_target_dir(
         self,
         item_type: ItemType,
         target_dir: Path,
-    ) -> Platform | None:
-        """Return ``Platform.OPENCODE`` if the target directory matches.
+    ) -> bool:
+        """Check whether a given target directory belongs to this manager.
 
         With only OpenCode supported, this is a simple existence check
         comparing the resolved target directory for *item_type* against
@@ -685,15 +664,15 @@ class TargetManager:
             target_dir: The directory to match.
 
         Returns:
-            ``Platform.OPENCODE`` if the directory matches, or ``None``.
+            ``True`` if the directory matches, ``False`` otherwise.
 
         """
         if self._targets is None:
-            return None
-        td = self.get_target_dir(Platform.OPENCODE, item_type)
+            return False
+        td = self.get_target_dir(item_type)
         if td is not None and td == target_dir:
-            return Platform.OPENCODE
-        return None
+            return True
+        return False
 
     # -- private helpers --------------------------------------------------
 

@@ -37,7 +37,6 @@ def make_item(
         item_type=item_type,
         name=name,
         source_path=source_path,
-        supported_platforms=(Platform.OPENCODE,),
     )
     defaults.update(overrides)
     return Item(**defaults)
@@ -50,7 +49,6 @@ def make_args(*, command: str, **overrides) -> SimpleNamespace:
         source=None,
         config=None,
         cache_dir=None,
-        target=None,
         item_type=None,
         non_interactive=True,
         dry_run=False,
@@ -129,10 +127,6 @@ def push_mocks(tmp_path: Path):
         mock.patch("agentfiles.cli._get_source") as mock_source,
         mock.patch("agentfiles.cli._create_sync_pipeline") as mock_pipeline,
         mock.patch(
-            "agentfiles.cli._resolve_platforms",
-            return_value=[Platform.OPENCODE],
-        ) as mock_platforms,
-        mock.patch(
             "agentfiles.cli._resolve_item_types",
             return_value=[ItemType.AGENT],
         ) as mock_types,
@@ -150,7 +144,6 @@ def push_mocks(tmp_path: Path):
             config=mock_config,
             source=mock_source,
             pipeline=mock_pipeline,
-            platforms=mock_platforms,
             types=mock_types,
             discover=mock_discover,
             resolve_filter=mock_resolve_filter,

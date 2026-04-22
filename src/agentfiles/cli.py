@@ -35,7 +35,7 @@ Common usage patterns::
     agentfiles pull
 
     # Pull in CI / scripting mode
-    agentfiles pull --yes --target opencode
+    agentfiles pull --yes
 
     # Pull with git update first
     agentfiles pull --update
@@ -105,29 +105,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-
-def _resolve_platforms(
-    target_flag: str | None,
-    config: AgentfilesConfig,
-) -> list[Platform]:
-    """Resolve which target platforms to operate on.
-
-    With only OpenCode supported, always returns ``[Platform.OPENCODE]``.
-
-    Args:
-        target_flag: Value of the ``--target`` CLI flag (ignored, kept for
-            interface compatibility).
-        config: Loaded ``AgentfilesConfig`` (unused, kept for interface
-            compatibility).
-
-    Returns:
-        List containing ``Platform.OPENCODE``.
-
-    """
-    from agentfiles.models import Platform
-
-    return [Platform.OPENCODE]
 
 
 def _resolve_item_types(type_flag: str | None) -> list[ItemType]:
@@ -484,7 +461,6 @@ class CommandContext:
     scanner: SourceScanner | None
     target_manager: TargetManager | None
     engine: SyncEngine | None
-    platforms: list[Platform]
     item_types: list[ItemType]
     scopes: list[Scope]
     project_dir: Path | None
@@ -539,7 +515,6 @@ def _build_context(
         )
 
     item_types = _resolve_item_types(getattr(args, "item_type", None))
-    platforms = _resolve_platforms(getattr(args, "target", None), config)
     scopes = _resolve_scope(getattr(args, "scope", None))
     only_set, except_set = _resolve_item_filter(args)
     item_keys: list[str] | None = getattr(args, "item", None)
@@ -552,7 +527,6 @@ def _build_context(
         scanner=scanner,
         target_manager=target_manager,
         engine=engine,
-        platforms=platforms,
         item_types=item_types,
         scopes=scopes,
         project_dir=project_dir_arg,
@@ -584,13 +558,12 @@ def _filter_items_by_installed(
         Filtered list of items.
 
     """
-    from agentfiles.models import Platform, TargetError
+    from agentfiles.models import TargetError
 
-    platform = Platform.OPENCODE
     result = []
     for item in items:
         try:
-            is_installed = target_manager.is_item_installed(item, platform)
+            is_installed = target_manager.is_item_installed(item)
         except TargetError:
             continue
         if is_installed == installed:
@@ -617,18 +590,15 @@ def _discover_installed_from_targets(
     Returns:
         Deduplicated list of ``Item`` objects with ``source_path``
         pointing to the on-disk location at the target platform.
-        Items found on multiple platforms include all of them in
-        ``supported_platforms``.
 
     """
-    from agentfiles.models import Item, ItemType, Platform as _Platform, TargetError
+    from agentfiles.models import Item, ItemType, TargetError
     from agentfiles.paths import get_installed_item_path
 
-    platform = _Platform.OPENCODE
     items: list[Item] = []
 
     try:
-        installed = target_manager.get_installed_items(platform)
+        installed = target_manager.get_installed_items()
     except TargetError:
         return items
 
@@ -636,7 +606,7 @@ def _discover_installed_from_targets(
         if item_type not in item_types:
             continue
 
-        target_dir = target_manager.get_target_dir(platform, item_type)
+        target_dir = target_manager.get_target_dir(item_type)
         if target_dir is None:
             continue
 
@@ -668,7 +638,6 @@ def _discover_installed_from_targets(
                 item_type=item_type,
                 name=name,
                 source_path=item_path,
-                supported_platforms=(platform,),
             )
         )
 
@@ -968,7 +937,10 @@ def cmd_pull(args: argparse.Namespace) -> int:
 
     items = _filter_items(all_items, ctx.item_types)
     items = _filter_items_by_scope(items, ctx.scopes)
-    platforms = ctx.platforms
+
+    from agentfiles.models import Platform
+
+    platforms = [Platform.OPENCODE]
 
     # Apply --only / --except item-name filters
     items = _apply_item_filter(items, ctx.only_set, ctx.except_set)
@@ -1262,7 +1234,10 @@ def cmd_push(args: argparse.Namespace) -> int:
     _, target_manager, engine = _create_sync_pipeline(source_dir, config, args)
 
     item_types = _resolve_item_types(args.item_type)
-    platforms = _resolve_platforms(args.target, config)
+
+    from agentfiles.models import Platform
+
+    platforms = [Platform.OPENCODE]
 
     # Discover items from target platforms, not from the source scanner.
     installed_items = _discover_installed_from_targets(
@@ -1498,7 +1473,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     if targets is not None:
         rows.append(
             [
-                targets.platform.display_name,
+                Platform.OPENCODE.display_name,
                 str(targets.config_dir),
                 str(summary.get("agents", 0)),
                 str(summary.get("skills", 0)),
@@ -1546,8 +1521,11 @@ def cmd_clean(args: argparse.Namespace) -> int:
     source_keys: set[str] = {item.item_key for item in all_source_items}
 
     target_manager = _discover_targets(config)
-    platforms = _resolve_platforms(args.target, config)
     item_types = _resolve_item_types(args.item_type)
+
+    from agentfiles.models import Platform
+
+    platforms = [Platform.OPENCODE]
 
     # Discover all installed items across target platforms.
     installed_items = _discover_installed_from_targets(
@@ -1560,18 +1538,11 @@ def cmd_clean(args: argparse.Namespace) -> int:
         info("No installed items found.")
         return 0
 
-    # Build a map: item_key → (Item, list of platforms where installed).
-    installed_by_key: dict[str, tuple[Item, list[Platform]]] = {}
-    for item in installed_items:
-        key = item.item_key
-        if key in installed_by_key:
-            existing_item, existing_platforms = installed_by_key[key]
-            existing_platforms.extend(item.supported_platforms)
-        else:
-            installed_by_key[key] = (item, list(item.supported_platforms))
+    # Build a set of installed item keys for fast lookup.
+    installed_keys: set[str] = {item.item_key for item in installed_items}
 
     # Orphans = installed items whose source no longer exists.
-    orphan_keys = sorted(set(installed_by_key.keys()) - source_keys)
+    orphan_keys = sorted(installed_keys - source_keys)
 
     if not orphan_keys:
         info("No orphaned items found.")
@@ -1579,12 +1550,9 @@ def cmd_clean(args: argparse.Namespace) -> int:
 
     # Filter orphans by requested item types.
     orphan_items: list[Item] = []
-    orphan_platforms_map: dict[str, list[Platform]] = {}
-    for key in orphan_keys:
-        item, item_platforms = installed_by_key[key]
-        if item.item_type in item_types:
+    for item in installed_items:
+        if item.item_key in orphan_keys and item.item_type in item_types:
             orphan_items.append(item)
-            orphan_platforms_map[key] = [p for p in item_platforms if p in platforms]
 
     # Apply --item key filters
     item_keys: list[str] | None = getattr(args, "item", None)
@@ -1594,13 +1562,11 @@ def cmd_clean(args: argparse.Namespace) -> int:
         info("No orphaned items found (after type filter).")
         return 0
 
-    # Display orphans with their platform coverage.
+    # Display orphans.
     print()
     bold(f"Found {len(orphan_items)} orphaned items:")
     for item in orphan_items:
-        plat_names = sorted(p.display_name for p in orphan_platforms_map.get(item.item_key, []))
-        plat_str = ", ".join(plat_names) if plat_names else "unknown"
-        print(f"  {item.item_key}{' ' * max(1, 30 - len(item.item_key))}[{plat_str}]")
+        print(f"  {item.item_key}")
 
     if args.dry_run:
         print()
@@ -1619,21 +1585,15 @@ def cmd_clean(args: argparse.Namespace) -> int:
     engine = SyncEngine(target_manager=target_manager)
 
     total_removed = 0
-    total_platforms_used: set[str] = set()
 
     for item in orphan_items:
-        item_platforms = orphan_platforms_map.get(item.item_key, [])
-        if not item_platforms:
-            continue
         report = engine.uninstall([item])
         if report.is_success:
             total_removed += sum(1 for r in report.uninstalled if r.is_success)
-            for p in item_platforms:
-                total_platforms_used.add(p.display_name)
 
     print()
     if total_removed:
-        bold(f"Removed {total_removed} items from {len(total_platforms_used)} platform(s).")
+        bold(f"Removed {total_removed} items.")
     else:
         warning("No items were removed.")
 
@@ -1919,7 +1879,7 @@ def _add_common_args(
 
     * **Source options** — ``source``, ``--config``, ``--cache-dir``,
       ``--project-dir``
-    * **Filter options** — ``--target``, ``--type``, ``--scope``,
+    * **Filter options** — ``--type``, ``--scope``,
       ``--only``, ``--except``
     * **Output options** — ``--dry-run``
     * **Sync options**  — ``--yes``
@@ -1965,12 +1925,6 @@ def _add_common_args(
         choices=["global", "project", "local", "all"],
         default=None,
         help="Filter by scope: global, project, local, or all (default: all)",
-    )
-    filter_group.add_argument(
-        "--target",
-        metavar="TARGET",
-        default=None,
-        help=("Target platform (e.g. opencode, all). Defaults to opencode."),
     )
     filter_group.add_argument(
         "--type",
@@ -2066,7 +2020,6 @@ def build_parser() -> argparse.ArgumentParser:
 examples:
   agentfiles pull                    Sync all items to all platforms
   agentfiles pull --update           Git pull source, then sync
-  agentfiles pull --target opencode  Sync only to OpenCode
   agentfiles pull --type agent       Sync only agents
   agentfiles pull --scope global     Sync only global-scope items
   agentfiles pull --only coder       Sync only the coder agent
@@ -2111,7 +2064,7 @@ examples:
   agentfiles pull --update                     Git pull source, then sync
   agentfiles pull --yes                        Non-interactive, accept all
   agentfiles pull --dry-run --verbose          Preview with detailed output
-  agentfiles pull --target opencode --type agent  Only agents to OpenCode
+  agentfiles pull --type agent                 Only agents
   agentfiles pull --only coder,solid-principles   Sync specific items
   agentfiles pull --scope global               Sync only global-scope items
   agentfiles pull --scope project --project-dir /path  Sync project items to dir
@@ -2147,7 +2100,6 @@ examples:
   agentfiles push                              Push all installed items interactively
   agentfiles push --yes                        Non-interactive, accept all
   agentfiles push --dry-run                    Preview what would be pushed
-  agentfiles push --target opencode            Push only from OpenCode
   agentfiles push --create-pr                  Push and open a pull request
   agentfiles push --create-pr --pr-title "My PR" --pr-branch feat/sync
 """,
@@ -2227,10 +2179,6 @@ examples:
         "--type",
         dest="item_type",
         help="Filter by item type (agent, skill, command, plugin, config, workflow)",
-    )
-    status_src.add_argument(
-        "--target",
-        help="Target platform filter",
     )
     status_src.add_argument(
         "--diff",
@@ -2333,7 +2281,6 @@ examples:
   agentfiles verify                       Check for drift (human output)
   agentfiles verify --format json         Machine-readable JSON output
   agentfiles verify --quiet               Only exit code, no output
-  agentfiles verify --target opencode     Check a specific platform
 """,
     )
     _add_common_args(verify_p)
