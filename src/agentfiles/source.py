@@ -483,9 +483,9 @@ def _count_source_dirs(path: Path) -> int:
 def _find_source_dir(start: Path) -> Path | None:
     """Walk *start* and its ancestors looking for an agentfiles source root.
 
-    A directory qualifies when it contains **at least two** of the four
+    A directory qualifies when it contains **at least two** of the six
     recognised source subdirectories (``agents``, ``skills``,
-    ``commands``, ``plugins``).
+    ``commands``, ``plugins``, ``configs``, ``workflows``).
 
     Returns:
         The qualifying ancestor path, or ``None`` if none is found.
@@ -699,7 +699,7 @@ class SourceResolver:
             raise SourceError(
                 "cannot auto-detect source from current directory. "
                 "Navigate to a project with at least 2 of: "
-                "agents/, skills/, commands/, plugins/ — or provide an explicit path"
+                "agents/, skills/, commands/, plugins/, configs/, workflows/ — or provide an explicit path"
             )
 
         return self._classify_dir(found, original_input="")

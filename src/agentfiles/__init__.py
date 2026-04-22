@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-"""agentfiles — Sync AI tool configurations across platforms.
+"""agentfiles — Sync AI tool configurations for OpenCode.
 
 Architecture Overview
 =====================
 agentfiles keeps AI tool configurations (agents, skills, commands, plugins)
-consistent across multiple target platforms (OpenCode, Claude Code,
-Windsurf, Cursor) by treating a source repository as the single source
-of truth and propagating changes through a three-stage pipeline::
+consistent for the OpenCode platform by treating a source repository as the
+single source of truth and propagating changes through a three-stage pipeline::
 
     ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
     │  Source Resolution │─▶│     Scanner      │─▶│     Differ      │
@@ -56,11 +55,6 @@ tokens    LLM token estimation (~4 chars/token heuristic)
 
 Extending the System
 --------------------
-Add a new platform:
-    1. Add enum value to ``Platform`` in models.py.
-    2. Add discovery logic in target.py (``_DISCOVERY_TABLE``).
-    3. Add alias in ``PLATFORM_ALIASES`` (models.py).
-
 Add a new item type:
     1. Add enum value to ``ItemType`` in models.py (set ``plural`` mapping).
     2. Write a scanner function ``(dir_path, *, gitignore) -> list[Item]``.
@@ -107,7 +101,6 @@ _EXPORT_MAP: dict[str, tuple[str, str]] = {
     "ItemState": ("agentfiles.models", "ItemState"),
     "ItemType": ("agentfiles.models", "ItemType"),
     "Platform": ("agentfiles.models", "Platform"),
-    "PlatformState": ("agentfiles.models", "PlatformState"),
     "SourceError": ("agentfiles.models", "SourceError"),
     "SourceInfo": ("agentfiles.models", "SourceInfo"),
     "SourceType": ("agentfiles.models", "SourceType"),
@@ -168,7 +161,6 @@ __all__ = [
     "Item",
     "ItemMeta",
     "ItemState",
-    "PlatformState",
     "SourceInfo",
     "SyncPlan",
     "SyncResult",

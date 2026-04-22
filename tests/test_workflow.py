@@ -81,11 +81,10 @@ def test_workflow_scanner_registered() -> None:
 
 
 @pytest.mark.unit
-def test_workflow_scanner_platforms() -> None:
-    """WORKFLOW scanner is registered for all four platforms."""
+def test_workflow_scanner_is_callable() -> None:
+    """WORKFLOW scanner is registered as a callable function."""
     entry = _SCANNER_REGISTRY[ItemType.WORKFLOW]
-    expected = {Platform.OPENCODE, Platform.CLAUDE_CODE, Platform.WINDSURF, Platform.CURSOR}
-    assert set(entry.platforms) == expected
+    assert callable(entry)
 
 
 # ---------------------------------------------------------------------------
@@ -169,5 +168,5 @@ def test_source_scanner_workflow_platforms(tmp_path: Path) -> None:
     workflow_items = [i for i in items if i.item_type == ItemType.WORKFLOW]
     assert len(workflow_items) == 1
     platforms = set(workflow_items[0].supported_platforms)
-    expected = {Platform.OPENCODE, Platform.CLAUDE_CODE, Platform.WINDSURF, Platform.CURSOR}
+    expected = {Platform.OPENCODE}
     assert platforms == expected

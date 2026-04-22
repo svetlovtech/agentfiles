@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -35,7 +34,7 @@ from agentfiles.models import (
 def _make_item(
     name: str = "test-agent",
     item_type: ItemType = ItemType.AGENT,
-    platforms: tuple[Platform, ...] = (Platform.OPENCODE, Platform.CLAUDE_CODE),
+    platforms: tuple[Platform, ...] = (Platform.OPENCODE,),
 ) -> Item:
     """Create a minimal Item for testing."""
     return Item(
@@ -89,45 +88,39 @@ class TestFormatStatusJson:
     """Tests for _format_status_json."""
 
     def test_basic_output_structure(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """JSON output has platforms dict and total_items."""
+        """JSON output has item type counts and total_items."""
         target_manager = MagicMock()
-        target_manager.targets = {
-            Platform.OPENCODE: MagicMock(config_dir=Path("/oc")),
-            Platform.CLAUDE_CODE: MagicMock(config_dir=Path("/cc")),
-        }
-        summary = {
-            Platform.OPENCODE: {"agents": 3, "skills": 5, "commands": 2, "plugins": 1},
-            Platform.CLAUDE_CODE: {"agents": 3, "skills": 5},
-        }
+        target_manager.targets = MagicMock(
+            platform=Platform.OPENCODE,
+            config_dir=Path("/oc"),
+        )
+        summary = {"agents": 3, "skills": 5, "commands": 2, "plugins": 1}
 
         result = _format_status_json(target_manager, summary)
         assert result == 0
 
         output = json.loads(capsys.readouterr().out)
-        assert "platforms" in output
         assert "total_items" in output
-        assert isinstance(output["platforms"], dict)
         assert isinstance(output["total_items"], int)
+        assert "agents" in output
+        assert "skills" in output
 
-    def test_platform_counts(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """Each platform has agents, skills, commands, plugins, and total."""
+    def test_item_counts(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Output has agents, skills, commands, plugins, and total."""
         target_manager = MagicMock()
-        target_manager.targets = {
-            Platform.OPENCODE: MagicMock(config_dir=Path("/oc")),
-        }
-        summary = {
-            Platform.OPENCODE: {"agents": 3, "skills": 5, "commands": 2, "plugins": 1},
-        }
+        target_manager.targets = MagicMock(
+            platform=Platform.OPENCODE,
+            config_dir=Path("/oc"),
+        )
+        summary = {"agents": 3, "skills": 5, "commands": 2, "plugins": 1}
 
         _format_status_json(target_manager, summary)
 
         output = json.loads(capsys.readouterr().out)
-        oc = output["platforms"]["opencode"]
-        assert oc["agents"] == 3
-        assert oc["skills"] == 5
-        assert oc["commands"] == 2
-        assert oc["plugins"] == 1
-        assert oc["total"] == 11
+        assert output["agents"] == 3
+        assert output["skills"] == 5
+        assert output["commands"] == 2
+        assert output["plugins"] == 1
         assert output["total_items"] == 11
 
     def test_missing_count_defaults_to_zero(
@@ -136,32 +129,32 @@ class TestFormatStatusJson:
     ) -> None:
         """Missing item types default to 0 in the output."""
         target_manager = MagicMock()
-        target_manager.targets = {
-            Platform.CURSOR: MagicMock(config_dir=Path("/cursor")),
-        }
-        summary = {Platform.CURSOR: {}}
-
-        _format_status_json(target_manager, summary)
-
-        output = json.loads(capsys.readouterr().out)
-        cursor = output["platforms"]["cursor"]
-        assert cursor["agents"] == 0
-        assert cursor["skills"] == 0
-        assert cursor["commands"] == 0
-        assert cursor["plugins"] == 0
-        assert cursor["total"] == 0
-
-    def test_snake_case_keys(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """All JSON keys use snake_case convention."""
-        target_manager = MagicMock()
-        target_manager.targets = {}
+        target_manager.targets = MagicMock(
+            platform=Platform.OPENCODE,
+            config_dir=Path("/oc"),
+        )
         summary = {}
 
         _format_status_json(target_manager, summary)
 
         output = json.loads(capsys.readouterr().out)
-        # Verify no camelCase or hyphenated keys at top level
-        assert set(output.keys()) == {"platforms", "total_items"}
+        assert output["agents"] == 0
+        assert output["skills"] == 0
+        assert output["commands"] == 0
+        assert output["plugins"] == 0
+        assert output["total_items"] == 0
+
+    def test_snake_case_keys(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """All JSON keys use snake_case convention."""
+        target_manager = MagicMock()
+        target_manager.targets = None
+        summary = {}
+
+        _format_status_json(target_manager, summary)
+
+        output = json.loads(capsys.readouterr().out)
+        # Verify no camelCase or hyphenated keys
+        assert set(output.keys()) == {"agents", "skills", "commands", "plugins", "total_items"}
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +186,7 @@ class TestFormatPlanJson:
         assert output["total"] == 1
 
     def test_plan_entry_fields(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """Each plan entry has item, action, platforms, and reason."""
+        """Each plan entry has item, action, and reason."""
         item = _make_item("coder", ItemType.AGENT)
         plan = _make_plan(item, SyncAction.INSTALL, "not installed")
 
@@ -206,7 +199,6 @@ class TestFormatPlanJson:
         entry = output["plans"][0]
         assert entry["item"] == "agent/coder"
         assert entry["action"] == "INSTALL"
-        assert isinstance(entry["platforms"], list)
         assert entry["reason"] == "not installed"
 
     def test_action_uppercase(self, capsys: pytest.CaptureFixture[str]) -> None:
@@ -245,11 +237,11 @@ class TestFormatPlanJson:
         assert output["total"] == 1
         assert output["plans"][0]["item"] == "agent/new-agent"
 
-    def test_grouped_by_item_and_action(
+    def test_single_platform_plan(
         self,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """Plans for the same item+action on different platforms are merged."""
+        """Plans for the same item+action are recorded."""
         item = _make_item("shared-agent")
         plan1 = SyncPlan(
             item=item,
@@ -257,29 +249,15 @@ class TestFormatPlanJson:
             target_dir=Path("/fake/oc/agents"),
             reason="not installed",
         )
-        plan2 = SyncPlan(
-            item=item,
-            action=SyncAction.INSTALL,
-            target_dir=Path("/fake/cc/agents"),
-            reason="not installed",
-        )
 
         target_manager = MagicMock()
+        target_manager.resolve_platform_for.return_value = Platform.OPENCODE
 
-        def mock_resolve_platform_for(item_type: Any, target_dir: Any) -> Platform | None:
-            mapping = {
-                Path("/fake/oc/agents"): Platform.OPENCODE,
-                Path("/fake/cc/agents"): Platform.CLAUDE_CODE,
-            }
-            return mapping.get(target_dir)
-
-        target_manager.resolve_platform_for.side_effect = mock_resolve_platform_for
-
-        _format_plan_json([plan1, plan2], target_manager, dry_run=True)
+        _format_plan_json([plan1], target_manager, dry_run=True)
 
         output = json.loads(capsys.readouterr().out)
         assert output["total"] == 1
-        assert set(output["plans"][0]["platforms"]) == {"opencode", "claude_code"}
+        assert output["plans"][0]["item"] == "agent/shared-agent"
 
     def test_empty_plans(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Empty plan list produces valid JSON with total 0."""
@@ -404,10 +382,11 @@ class TestJsonValidity:
     ) -> None:
         """Status JSON has no trailing commas."""
         target_manager = MagicMock()
-        target_manager.targets = {
-            Platform.OPENCODE: MagicMock(config_dir=Path("/oc")),
-        }
-        summary = {Platform.OPENCODE: {"agents": 1}}
+        target_manager.targets = MagicMock(
+            platform=Platform.OPENCODE,
+            config_dir=Path("/oc"),
+        )
+        summary = {"agents": 1}
 
         _format_status_json(target_manager, summary)
 

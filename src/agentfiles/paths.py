@@ -25,11 +25,9 @@ import stat as stat_mod
 from pathlib import Path
 
 from agentfiles.models import (
-    _CONFIG_TARGET_NAMES,
     SKILL_MAIN_FILE,
     Item,
     ItemType,
-    resolve_source_name_for_config,
     resolve_target_name,
 )
 
@@ -77,9 +75,7 @@ def get_installed_item_path(
 
     """
     if item_type == ItemType.CONFIG:
-        source_filename = f"{name}.json"
-        target_filename = _CONFIG_TARGET_NAMES.get(source_filename, source_filename)
-        return target_dir / target_filename
+        return target_dir / f"{name}.json"
     if item_type in (ItemType.AGENT, ItemType.COMMAND):
         return target_dir / f"{name}.md"
     return target_dir / name
@@ -105,8 +101,7 @@ def get_push_dest_path(source_dir: Path, item: Item) -> Path:
     if item.item_type in (ItemType.AGENT, ItemType.COMMAND):
         return source_dir / item.item_type.plural / item.name / item.source_path.name
     if item.item_type == ItemType.CONFIG and item.source_path.is_file():
-        source_filename = resolve_source_name_for_config(item.source_path.name)
-        return source_dir / item.item_type.plural / source_filename
+        return source_dir / item.item_type.plural / item.source_path.name
     if item.item_type == ItemType.PLUGIN and item.source_path.is_file():
         return source_dir / item.item_type.plural / item.source_path.name
     return source_dir / item.item_type.plural / item.name

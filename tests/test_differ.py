@@ -43,11 +43,7 @@ def fake_home(tmp_path: Path) -> SimpleNamespace:
     (oc_dir / "agent").mkdir(parents=True)
     (oc_dir / "skill").mkdir(parents=True)
 
-    cc_dir = home / ".claude"
-    (cc_dir / "agents").mkdir(parents=True)
-    (cc_dir / "skills").mkdir(parents=True)
-
-    return SimpleNamespace(home=home, opencode=oc_dir, claude=cc_dir)
+    return SimpleNamespace(home=home, opencode=oc_dir)
 
 
 @pytest.fixture
@@ -69,10 +65,7 @@ def manager(fake_home: SimpleNamespace) -> Generator[TargetManager, None, None]:
 def _make_item(
     item_type: ItemType = ItemType.AGENT,
     name: str = "test-item",
-    platforms: tuple[Platform, ...] = (
-        Platform.OPENCODE,
-        Platform.CLAUDE_CODE,
-    ),
+    platforms: tuple[Platform, ...] = (Platform.OPENCODE,),
 ) -> Item:
     """Create a minimal Item for testing."""
     return Item(
@@ -97,14 +90,9 @@ class TestDifferDiff:
 
         results = differ.diff([item])
 
-        assert Platform.OPENCODE in results
-        assert Platform.CLAUDE_CODE in results
-
-        for platform in (Platform.OPENCODE, Platform.CLAUDE_CODE):
-            entries = results[platform]
-            assert len(entries) == 1
-            assert entries[0].status == DiffStatus.NEW
-            assert entries[0].item.name == "new-agent"
+        assert len(results) == 1
+        assert results[0].status == DiffStatus.NEW
+        assert results[0].item.name == "new-agent"
 
     def test_unchanged_item_same_content(
         self,
@@ -132,9 +120,8 @@ class TestDifferDiff:
         differ = Differ(manager)
         results = differ.diff([item])
 
-        entries = results[Platform.OPENCODE]
-        assert len(entries) == 1
-        assert entries[0].status == DiffStatus.UNCHANGED
+        assert len(results) == 1
+        assert results[0].status == DiffStatus.UNCHANGED
 
     def test_updated_item_different_sizes(
         self,
@@ -163,39 +150,16 @@ class TestDifferDiff:
         differ = Differ(manager)
         results = differ.diff([item])
 
-        entries = results[Platform.OPENCODE]
-        assert len(entries) == 1
-        assert entries[0].status == DiffStatus.UPDATED
-
-    def test_platform_filter(self, manager: TargetManager) -> None:
-        item = _make_item(
-            platforms=(Platform.OPENCODE, Platform.CLAUDE_CODE),
-        )
-        differ = Differ(manager)
-
-        results = differ.diff([item], platforms=(Platform.OPENCODE,))
-
-        assert Platform.OPENCODE in results
-        assert Platform.CLAUDE_CODE not in results
-
-    def test_platform_filter_excludes_unsupported(self, manager: TargetManager) -> None:
-        item = _make_item(
-            platforms=(Platform.OPENCODE,),
-        )
-        differ = Differ(manager)
-
-        results = differ.diff([item], platforms=(Platform.CLAUDE_CODE,))
-
-        assert Platform.OPENCODE not in results
-        assert Platform.CLAUDE_CODE not in results
+        assert len(results) == 1
+        assert results[0].status == DiffStatus.UPDATED
 
     def test_empty_items_returns_empty(self, manager: TargetManager) -> None:
         differ = Differ(manager)
         results = differ.diff([])
 
-        assert results == {}
+        assert results == []
 
-    def test_multiple_items_across_platforms(self, manager: TargetManager) -> None:
+    def test_multiple_items(self, manager: TargetManager) -> None:
         items = [
             _make_item(name="agent-a"),
             _make_item(name="skill-b", item_type=ItemType.SKILL),
@@ -203,9 +167,7 @@ class TestDifferDiff:
         differ = Differ(manager)
         results = differ.diff(items)
 
-        for platform in (Platform.OPENCODE, Platform.CLAUDE_CODE):
-            assert platform in results
-            assert len(results[platform]) == 2
+        assert len(results) == 2
 
     def test_size_precheck_detects_update(
         self,
@@ -236,10 +198,9 @@ class TestDifferDiff:
         differ = Differ(manager)
         results = differ.diff([item])
 
-        entries = results[Platform.OPENCODE]
-        assert len(entries) == 1
-        assert entries[0].status == DiffStatus.UPDATED
-        assert entries[0].details == "size differs"
+        assert len(results) == 1
+        assert results[0].status == DiffStatus.UPDATED
+        assert results[0].details == "size differs"
 
     def test_directory_file_count_precheck(
         self,
@@ -269,10 +230,9 @@ class TestDifferDiff:
 
         results = differ.diff([item])
 
-        entries = results[Platform.OPENCODE]
-        assert len(entries) == 1
-        assert entries[0].status == DiffStatus.UPDATED
-        assert entries[0].details == "size differs"
+        assert len(results) == 1
+        assert results[0].status == DiffStatus.UPDATED
+        assert results[0].details == "size differs"
 
     def test_same_size_different_content_marked_unchanged(
         self,
@@ -300,10 +260,9 @@ class TestDifferDiff:
         differ = Differ(manager)
         results = differ.diff([item])
 
-        entries = results[Platform.OPENCODE]
-        assert len(entries) == 1
+        assert len(results) == 1
         # Same size → metadata matches → UNCHANGED
-        assert entries[0].status == DiffStatus.UNCHANGED
+        assert results[0].status == DiffStatus.UNCHANGED
 
 
 # ---------------------------------------------------------------------------
@@ -348,9 +307,8 @@ class TestErrorHandling:
         ):
             results = differ.diff([item])
 
-        entries = results[Platform.OPENCODE]
-        assert len(entries) == 1
-        assert entries[0].status == DiffStatus.UNCHANGED
+        assert len(results) == 1
+        assert results[0].status == DiffStatus.UNCHANGED
 
     def test_unexpected_exception_skips_item(
         self,
@@ -365,7 +323,7 @@ class TestErrorHandling:
         with mock.patch.object(
             differ,
             "_compare_item",
-            side_effect=lambda item, p: (
+            side_effect=lambda item: (
                 DiffEntry(item=item, status=DiffStatus.NEW)
                 if item.name == "good-agent"
                 else (_ for _ in ()).throw(OSError("unexpected I/O failure"))
@@ -374,9 +332,7 @@ class TestErrorHandling:
             results = differ.diff([bad_item, good_item])
 
         # The bad item was skipped but the good item was processed.
-        assert Platform.OPENCODE in results
-        entries = results[Platform.OPENCODE]
-        names = [e.item.name for e in entries]
+        names = [e.item.name for e in results]
         assert "good-agent" in names
         assert "bad-agent" not in names
 
@@ -420,10 +376,9 @@ class TestErrorHandling:
         with mock.patch.object(Path, "stat", _failing_stat):
             results = differ.diff([item])
 
-        entries = results[Platform.OPENCODE]
-        assert len(entries) == 1
+        assert len(results) == 1
         # Metadata check failed gracefully, still produced a result.
-        assert entries[0].status in (
+        assert results[0].status in (
             DiffStatus.NEW,
             DiffStatus.UPDATED,
             DiffStatus.UNCHANGED,
@@ -439,58 +394,43 @@ class TestFormatDiff:
     """Tests for the format_diff formatting function."""
 
     def test_empty_results(self) -> None:
-        result = format_diff({})
+        result = format_diff([])
         assert "No differences" in result
-
-    def test_includes_platform_header(self) -> None:
-        item = _make_item(name="a")
-        results = {
-            Platform.OPENCODE: [DiffEntry(item=item, status=DiffStatus.NEW)],
-        }
-
-        output = format_diff(results, use_colors=False)
-        assert "OpenCode" in output
 
     def test_includes_updated_entry(self) -> None:
         item = _make_item(name="changed")
-        results = {
-            Platform.CLAUDE_CODE: [
-                DiffEntry(
-                    item=item,
-                    status=DiffStatus.UPDATED,
-                    details="size differs",
-                ),
-            ],
-        }
+        entries = [
+            DiffEntry(
+                item=item,
+                status=DiffStatus.UPDATED,
+                details="size differs",
+            ),
+        ]
 
-        output = format_diff(results, use_colors=False)
+        output = format_diff(entries, use_colors=False)
         assert "~ changed" in output
         assert "content differs" in output
 
     def test_includes_unchanged_entry(self) -> None:
         item = _make_item(name="stable")
-        results = {
-            Platform.OPENCODE: [
-                DiffEntry(item=item, status=DiffStatus.UNCHANGED),
-            ],
-        }
+        entries = [
+            DiffEntry(item=item, status=DiffStatus.UNCHANGED),
+        ]
 
-        output = format_diff(results, use_colors=False)
+        output = format_diff(entries, use_colors=False)
         assert "= stable" in output
         assert "unchanged" in output
 
     def test_use_colors_true_includes_ansi(self) -> None:
         """When use_colors=True, ANSI codes appear."""
         item = _make_item(name="a")
-        results = {
-            Platform.OPENCODE: [DiffEntry(item=item, status=DiffStatus.NEW)],
-        }
+        entries = [DiffEntry(item=item, status=DiffStatus.NEW)]
 
         with (
             mock.patch("agentfiles.output._use_colors", True),
             mock.patch.dict(os.environ, {}, clear=True),
         ):
-            output = format_diff(results, use_colors=True)
+            output = format_diff(entries, use_colors=True)
 
         assert "\033" in output
 
@@ -498,8 +438,7 @@ class TestFormatDiff:
         """Verify DiffStatus.DELETED shows '-' symbol in output."""
         item = _make_item(name="deleted-agent")
         entry = DiffEntry(item=item, status=DiffStatus.DELETED, details="removed from source")
-        results = {Platform.OPENCODE: [entry]}
-        output = format_diff(results, use_colors=False)
+        output = format_diff([entry], use_colors=False)
         assert "deleted-agent" in output
         assert "- deleted-agent" in output
 
@@ -507,22 +446,19 @@ class TestFormatDiff:
         """Verify DiffStatus.CONFLICT shows '!' symbol in output."""
         item = _make_item(name="conflict-agent")
         entry = DiffEntry(item=item, status=DiffStatus.CONFLICT, details="both sides modified")
-        results = {Platform.OPENCODE: [entry]}
-        output = format_diff(results, use_colors=False)
+        output = format_diff([entry], use_colors=False)
         assert "conflict-agent" in output
         assert "! conflict-agent" in output
 
     def test_includes_item_type_summary(self) -> None:
         agent = _make_item(item_type=ItemType.AGENT, name="a1")
         skill = _make_item(item_type=ItemType.SKILL, name="s1")
-        results = {
-            Platform.OPENCODE: [
-                DiffEntry(item=agent, status=DiffStatus.NEW),
-                DiffEntry(item=skill, status=DiffStatus.NEW),
-            ],
-        }
+        entries = [
+            DiffEntry(item=agent, status=DiffStatus.NEW),
+            DiffEntry(item=skill, status=DiffStatus.NEW),
+        ]
 
-        output = format_diff(results, use_colors=False)
+        output = format_diff(entries, use_colors=False)
         assert "agents:" in output
         assert "skills:" in output
 
@@ -537,52 +473,45 @@ class TestFormatDiffJson:
 
     def test_valid_json(self) -> None:
         item = _make_item(name="a")
-        results = {
-            Platform.OPENCODE: [DiffEntry(item=item, status=DiffStatus.NEW)],
-        }
+        entries = [DiffEntry(item=item, status=DiffStatus.NEW)]
 
-        output = format_diff_json(results)
+        output = format_diff_json(entries)
         parsed = json.loads(output)
 
-        assert "platforms" in parsed
-        assert "opencode" in parsed["platforms"]
+        assert "items" in parsed
+        assert len(parsed["items"]) == 1
 
     def test_item_fields(self) -> None:
         item = _make_item(item_type=ItemType.SKILL, name="my-skill")
-        results = {
-            Platform.OPENCODE: [DiffEntry(item=item, status=DiffStatus.UPDATED)],
-        }
+        entries = [DiffEntry(item=item, status=DiffStatus.UPDATED)]
 
-        output = format_diff_json(results)
+        output = format_diff_json(entries)
         parsed = json.loads(output)
 
-        items = parsed["platforms"]["opencode"]["items"]
+        items = parsed["items"]
         assert len(items) == 1
         assert items[0]["name"] == "my-skill"
         assert items[0]["type"] == "skill"
         assert items[0]["status"] == "updated"
 
     def test_empty_results(self) -> None:
-        output = format_diff_json({})
+        output = format_diff_json([])
         parsed = json.loads(output)
 
-        assert parsed == {"platforms": {}}
+        assert parsed == {"items": []}
 
-    def test_multiple_platforms(self) -> None:
+    def test_multiple_entries(self) -> None:
         item_a = _make_item(name="a")
         item_b = _make_item(name="b")
-        results = {
-            Platform.OPENCODE: [DiffEntry(item=item_a, status=DiffStatus.NEW)],
-            Platform.CLAUDE_CODE: [DiffEntry(item=item_b, status=DiffStatus.UNCHANGED)],
-        }
+        entries = [
+            DiffEntry(item=item_a, status=DiffStatus.NEW),
+            DiffEntry(item=item_b, status=DiffStatus.UNCHANGED),
+        ]
 
-        output = format_diff_json(results)
+        output = format_diff_json(entries)
         parsed = json.loads(output)
 
-        assert "opencode" in parsed["platforms"]
-        assert "claude_code" in parsed["platforms"]
-        assert len(parsed["platforms"]["opencode"]["items"]) == 1
-        assert len(parsed["platforms"]["claude_code"]["items"]) == 1
+        assert len(parsed["items"]) == 2
 
     def test_json_includes_conflict_and_deleted(self) -> None:
         """Verify JSON output includes CONFLICT and DELETED status values."""
@@ -591,10 +520,9 @@ class TestFormatDiffJson:
             DiffEntry(item=item, status=DiffStatus.CONFLICT, details="conflict"),
             DiffEntry(item=item, status=DiffStatus.DELETED, details="deleted"),
         ]
-        results = {Platform.OPENCODE: entries}
-        output = format_diff_json(results)
+        output = format_diff_json(entries)
         data = json.loads(output)
-        statuses = [e["status"] for e in data["platforms"]["opencode"]["items"]]
+        statuses = [e["status"] for e in data["items"]]
         assert "conflict" in statuses
         assert "deleted" in statuses
 
@@ -612,21 +540,21 @@ class TestResolveTargetPath:
         manager: TargetManager,
     ) -> None:
         item = _make_item(name="test-agent")
-        result = _resolve_target_path(item, Platform.OPENCODE, manager)
+        result = _resolve_target_path(item, manager)
         assert result is not None
         assert "test-agent" in str(result)
 
     def test_returns_none_for_empty_manager(self) -> None:
-        empty_manager = TargetManager({})
+        empty_manager = TargetManager(None)
         item = _make_item(name="anything")
-        result = _resolve_target_path(item, Platform.OPENCODE, empty_manager)
+        result = _resolve_target_path(item, empty_manager)
         assert result is None
 
     def test_returns_none_for_wrong_platform_type(self) -> None:
         """Item type AGENT but platform has no agent dir → None."""
-        empty_manager = TargetManager({})
+        empty_manager = TargetManager(None)
         item = _make_item(item_type=ItemType.PLUGIN, name="p1")
-        result = _resolve_target_path(item, Platform.OPENCODE, empty_manager)
+        result = _resolve_target_path(item, empty_manager)
         assert result is None
 
 
@@ -708,49 +636,6 @@ class TestDirFileCount:
 
 
 # ---------------------------------------------------------------------------
-# _applicable_platforms — direct unit tests
-# ---------------------------------------------------------------------------
-
-
-class TestApplicablePlatforms:
-    """Tests for Differ._applicable_platforms."""
-
-    def test_all_platforms_when_no_filter(self, manager: TargetManager) -> None:
-        item = _make_item(
-            platforms=(Platform.OPENCODE, Platform.CLAUDE_CODE),
-        )
-        differ = Differ(manager)
-        result = differ._applicable_platforms(item, None)
-        assert set(result) == {Platform.OPENCODE, Platform.CLAUDE_CODE}
-
-    def test_filter_returns_intersection(self, manager: TargetManager) -> None:
-        item = _make_item(
-            platforms=(Platform.OPENCODE, Platform.CLAUDE_CODE),
-        )
-        differ = Differ(manager)
-        result = differ._applicable_platforms(
-            item,
-            (Platform.OPENCODE,),
-        )
-        assert result == [Platform.OPENCODE]
-
-    def test_filter_returns_empty_when_no_overlap(self, manager: TargetManager) -> None:
-        item = _make_item(platforms=(Platform.OPENCODE,))
-        differ = Differ(manager)
-        result = differ._applicable_platforms(
-            item,
-            (Platform.CLAUDE_CODE,),
-        )
-        assert result == []
-
-    def test_single_platform_item(self, manager: TargetManager) -> None:
-        item = _make_item(platforms=(Platform.CLAUDE_CODE,))
-        differ = Differ(manager)
-        result = differ._applicable_platforms(item, None)
-        assert result == [Platform.CLAUDE_CODE]
-
-
-# ---------------------------------------------------------------------------
 # Mixed status results
 # ---------------------------------------------------------------------------
 
@@ -812,19 +697,17 @@ class TestMixedStatusResults:
         differ = Differ(manager)
         results = differ.diff(items)
 
-        entries = results[Platform.OPENCODE]
-        status_map = {e.item.name: e.status for e in entries}
+        status_map = {e.item.name: e.status for e in results}
         assert status_map["upd-agent"] == DiffStatus.UPDATED
         assert status_map["uc-agent"] == DiffStatus.UNCHANGED
         assert status_map["new-agent"] == DiffStatus.NEW
 
-    def test_mixed_statuses_across_platforms(
+    def test_single_platform_unchanged(
         self,
         manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
-        """Different platforms may have different statuses for same item."""
-        # Install on OpenCode only (not Claude Code)
+        """Items with same content are UNCHANGED."""
         oc_dir = manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
         assert oc_dir is not None
         item_dir = oc_dir / "split-agent"
@@ -839,32 +722,12 @@ class TestMixedStatusResults:
             item_type=ItemType.AGENT,
             name="split-agent",
             source_path=source_dir,
-            supported_platforms=(Platform.OPENCODE, Platform.CLAUDE_CODE),
+            supported_platforms=(Platform.OPENCODE,),
         )
         differ = Differ(manager)
         results = differ.diff([item])
 
-        oc_entries = results[Platform.OPENCODE]
-        assert oc_entries[0].status == DiffStatus.UNCHANGED
-
-        cc_entries = results[Platform.CLAUDE_CODE]
-        assert cc_entries[0].status == DiffStatus.NEW
-
-
-# ---------------------------------------------------------------------------
-# Edge cases: items with no applicable platforms
-# ---------------------------------------------------------------------------
-
-
-class TestNoApplicablePlatforms:
-    """Tests for items that have no matching platforms after filtering."""
-
-    def test_empty_platforms_tuple(self, manager: TargetManager) -> None:
-        """Item with empty supported platforms produces no results."""
-        item = _make_item(platforms=())
-        differ = Differ(manager)
-        results = differ.diff([item])
-        assert results == {}
+        assert results[0].status == DiffStatus.UNCHANGED
 
 
 # ---------------------------------------------------------------------------
@@ -902,21 +765,20 @@ class TestMetadataDiffEdgeCases:
         differ = Differ(manager)
         results = differ.diff([item])
 
-        entries = results[Platform.OPENCODE]
-        assert len(entries) == 1
-        assert entries[0].status == DiffStatus.UPDATED
-        assert entries[0].details == "size differs"
+        assert len(results) == 1
+        assert results[0].status == DiffStatus.UPDATED
+        assert results[0].details == "size differs"
 
     def test_metadata_differs_returns_false_for_none_target_path(
         self,
         manager: TargetManager,
     ) -> None:
         """When _resolve_target_path returns None, metadata check returns False."""
-        empty_manager = TargetManager({})
+        empty_manager = TargetManager(None)
         item = _make_item(name="orphan")
         differ = Differ(empty_manager)
 
-        result = differ._metadata_differs(item, Platform.OPENCODE)
+        result = differ._metadata_differs(item)
         assert result is False
 
     def test_same_file_count_same_total_size_marked_unchanged(
@@ -948,9 +810,8 @@ class TestMetadataDiffEdgeCases:
         differ = Differ(manager)
         results = differ.diff([item])
 
-        entries = results[Platform.OPENCODE]
-        assert len(entries) == 1
-        assert entries[0].status == DiffStatus.UNCHANGED
+        assert len(results) == 1
+        assert results[0].status == DiffStatus.UNCHANGED
 
 
 # ---------------------------------------------------------------------------
@@ -959,41 +820,22 @@ class TestMetadataDiffEdgeCases:
 
 
 class TestMultiPlatformDiff:
-    """Tests for diff across more than the standard two platforms."""
+    """Tests for diff across the single supported platform."""
 
     def test_single_platform_item_only_on_that_platform(
         self,
         manager: TargetManager,
     ) -> None:
-        """Item supporting only Claude Code should only appear there."""
+        """Item supporting OpenCode should appear in results."""
         item = _make_item(
-            name="cc-only",
-            platforms=(Platform.CLAUDE_CODE,),
+            name="oc-only",
+            platforms=(Platform.OPENCODE,),
         )
         differ = Differ(manager)
         results = differ.diff([item])
 
-        assert Platform.CLAUDE_CODE in results
-        assert Platform.OPENCODE not in results
-        assert results[Platform.CLAUDE_CODE][0].status == DiffStatus.NEW
-
-    def test_all_supported_platforms_in_results(
-        self,
-        manager: TargetManager,
-    ) -> None:
-        """Item appears on all its supported platforms."""
-        item = _make_item(
-            name="multi",
-            platforms=(Platform.OPENCODE, Platform.CLAUDE_CODE),
-        )
-        differ = Differ(manager)
-        results = differ.diff([item])
-
-        assert Platform.OPENCODE in results
-        assert Platform.CLAUDE_CODE in results
-        for plat_entries in results.values():
-            assert len(plat_entries) == 1
-            assert plat_entries[0].status == DiffStatus.NEW
+        assert len(results) == 1
+        assert results[0].status == DiffStatus.NEW
 
 
 # ---------------------------------------------------------------------------
@@ -1068,7 +910,7 @@ class TestComputeContentDiff:
             item=item,
             status=DiffStatus.UPDATED,
         )
-        result = compute_content_diff(entry, Platform.OPENCODE, manager)
+        result = compute_content_diff(entry, manager)
 
         assert len(result) > 0
         # Should contain unified diff markers
@@ -1104,7 +946,7 @@ class TestComputeContentDiff:
             supported_platforms=(Platform.OPENCODE,),
         )
         entry = DiffEntry(item=item, status=DiffStatus.UPDATED)
-        result = compute_content_diff(entry, Platform.OPENCODE, manager)
+        result = compute_content_diff(entry, manager)
 
         assert result == []
 
@@ -1132,7 +974,7 @@ class TestComputeContentDiff:
             targets = TargetDiscovery().discover_all()
             tm = TargetManager(targets)
 
-        result = compute_content_diff(entry, Platform.OPENCODE, tm)
+        result = compute_content_diff(entry, tm)
         assert result == []
 
     def test_handles_binary_file_gracefully(
@@ -1167,7 +1009,7 @@ class TestComputeContentDiff:
             supported_platforms=(Platform.OPENCODE,),
         )
         entry = DiffEntry(item=item, status=DiffStatus.UPDATED)
-        result = compute_content_diff(entry, Platform.OPENCODE, manager)
+        result = compute_content_diff(entry, manager)
 
         assert len(result) == 1
         assert "binary file" in result[0]
@@ -1189,7 +1031,7 @@ class TestComputeContentDiff:
             supported_platforms=(Platform.OPENCODE,),
         )
         entry = DiffEntry(item=item, status=DiffStatus.NEW)
-        result = compute_content_diff(entry, Platform.OPENCODE, manager)
+        result = compute_content_diff(entry, manager)
         assert result == []
 
     def test_unified_diff_includes_context_lines(
@@ -1219,7 +1061,7 @@ class TestComputeContentDiff:
             supported_platforms=(Platform.OPENCODE,),
         )
         entry = DiffEntry(item=item, status=DiffStatus.UPDATED)
-        result = compute_content_diff(entry, Platform.OPENCODE, manager)
+        result = compute_content_diff(entry, manager)
 
         result_text = "\n".join(result)
         # Context lines (unchanged) should appear

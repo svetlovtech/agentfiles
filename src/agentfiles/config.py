@@ -3,7 +3,7 @@
 This module handles three clearly separated concerns:
 
 1. **Configuration data class** — :class:`AgentfilesConfig` defines runtime
-   settings (default platforms, symlinks, cache directory, etc.).
+   settings (symlinks, cache directory, custom paths, etc.).
 2. **Configuration file I/O** — Locating and loading YAML config from
    standard search locations (explicit path, CWD, home directory).
 3. **Sync state I/O** — Persisting and loading sync state to/from
@@ -23,11 +23,9 @@ from typing import Any
 import yaml
 
 from agentfiles.models import (
-    PLATFORM_ALIASES,
     AgentfilesError,
     ConfigError,
     ItemState,
-    PlatformState,
     SyncState,
 )
 
@@ -42,11 +40,9 @@ _STATE_FILENAME: str = ".agentfiles.state.yaml"
 # Mapping of YAML config keys to their type coercers.
 # Used by AgentfilesConfig._from_dict to declaratively convert parsed values.
 _FIELD_COERCERS: dict[str, type] = {
-    "default_platforms": list,
     "use_symlinks": bool,
     "cache_dir": str,
     "custom_paths": dict,
-    "platform_groups": dict,
 }
 
 
@@ -146,21 +142,15 @@ class AgentfilesConfig:
     3. ``~/.agentfiles.yaml`` or ``~/.agentfiles.yml``
 
     Attributes:
-        default_platforms: Platforms to sync when none are specified.
         use_symlinks: Create symlinks instead of copying files.
         cache_dir: Override the default cache directory for git clones.
         custom_paths: Mapping of platform name to config directory path.
-        platform_groups: Named groups of platforms (e.g. ``dev: [claude_code, cursor]``).
 
     """
 
-    default_platforms: list[str] = field(
-        default_factory=lambda: ["opencode", "claude_code", "windsurf", "cursor"],
-    )
     use_symlinks: bool = False
     cache_dir: str | None = None
     custom_paths: dict[str, str] = field(default_factory=dict)
-    platform_groups: dict[str, list[str]] = field(default_factory=dict)
 
     @classmethod
     def load(cls, config_path: Path | None = None) -> AgentfilesConfig:
@@ -243,20 +233,6 @@ def _validate_config_dict(data: dict[str, Any], path: Path) -> None:
         ConfigError: When a config value has an unexpected type.
 
     """
-    if "default_platforms" in data:
-        value = data["default_platforms"]
-        if not isinstance(value, list):
-            raise ConfigError(
-                f"invalid 'default_platforms' in '{path}': "
-                f"expected a list, got {type(value).__name__}"
-            )
-        for i, item in enumerate(value):
-            if not isinstance(item, str):
-                raise ConfigError(
-                    f"invalid 'default_platforms[{i}]' in '{path}': "
-                    f"expected a string, got {type(item).__name__}"
-                )
-
     if "custom_paths" in data:
         value = data["custom_paths"]
         if not isinstance(value, dict):
@@ -264,32 +240,6 @@ def _validate_config_dict(data: dict[str, Any], path: Path) -> None:
                 f"invalid 'custom_paths' in '{path}': "
                 f"expected a mapping, got {type(value).__name__}"
             )
-
-    if "platform_groups" in data:
-        value = data["platform_groups"]
-        if not isinstance(value, dict):
-            raise ConfigError(
-                f"invalid 'platform_groups' in '{path}': "
-                f"expected a mapping, got {type(value).__name__}"
-            )
-        for group_name, members in value.items():
-            if not isinstance(members, list):
-                raise ConfigError(
-                    f"invalid 'platform_groups.{group_name}' in '{path}': "
-                    f"expected a list, got {type(members).__name__}"
-                )
-            for i, member in enumerate(members):
-                if not isinstance(member, str):
-                    raise ConfigError(
-                        f"invalid 'platform_groups.{group_name}[{i}]' in '{path}': "
-                        f"expected a string, got {type(member).__name__}"
-                    )
-                if member.lower().strip() not in PLATFORM_ALIASES:
-                    valid = ", ".join(sorted(PLATFORM_ALIASES.keys()))
-                    raise ConfigError(
-                        f"invalid platform {member!r} in group {group_name!r} in '{path}'. "
-                        f"Valid names and aliases: {valid}"
-                    )
 
 
 # ---------------------------------------------------------------------------
@@ -404,6 +354,10 @@ def _parse_item_state(raw: dict[str, Any]) -> ItemState:
 def _parse_sync_state(data: dict[str, Any]) -> SyncState:
     """Construct a SyncState from a parsed YAML dictionary.
 
+    Supports both the current flat format and the legacy nested format
+    for backward compatibility.  The legacy format (key ``platforms`` present,
+    ``items`` absent) is automatically migrated.
+
     Args:
         data: Raw dictionary loaded from the state YAML file.
 
@@ -411,24 +365,35 @@ def _parse_sync_state(data: dict[str, Any]) -> SyncState:
         A fully populated SyncState instance.
 
     """
-    raw_platforms = data.get("platforms") or {}
-
-    platforms: dict[str, PlatformState] = {}
-    for name, pd in raw_platforms.items():
-        if not isinstance(pd, dict):
-            continue
-        raw_items = pd.get("items") or {}
+    # New flat format: items key present at top level.
+    if "items" in data:
+        raw_items = data["items"] or {}
         items = {
             key: _parse_item_state(item_data)
             for key, item_data in raw_items.items()
             if isinstance(item_data, dict)
         }
-        platforms[name] = PlatformState(path=str(pd.get("path", "")), items=items)
+        return SyncState(
+            version=str(data.get("version", "1.0")),
+            last_sync=str(data.get("last_sync", "")),
+            items=items,
+        )
+
+    # Legacy nested format: migrate platforms["opencode"]["items"] → items.
+    raw_platforms = data.get("platforms") or {}
+    items: dict[str, ItemState] = {}
+    for _name, pd in raw_platforms.items():
+        if not isinstance(pd, dict):
+            continue
+        raw_items = pd.get("items") or {}
+        for key, item_data in raw_items.items():
+            if isinstance(item_data, dict) and key not in items:
+                items[key] = _parse_item_state(item_data)
 
     return SyncState(
         version=str(data.get("version", "1.0")),
         last_sync=str(data.get("last_sync", "")),
-        platforms=platforms,
+        items=items,
     )
 
 
@@ -450,18 +415,12 @@ def _serialize_sync_state(state: SyncState) -> dict[str, Any]:
         A dictionary suitable for ``yaml.dump``.
 
     """
-    platforms = {
-        name: {
-            "path": ps.path,
-            "items": {key: _serialize_item_state(item) for key, item in ps.items.items()},
-        }
-        for name, ps in state.platforms.items()
-    }
+    items = {key: _serialize_item_state(item) for key, item in state.items.items()}
 
     return {
         "version": state.version,
         "last_sync": state.last_sync,
-        "platforms": platforms,
+        "items": items,
     }
 
 

@@ -20,7 +20,6 @@ from agentfiles.config import (
 )
 from agentfiles.models import (
     ConfigError,
-    PlatformState,
     SyncState,
 )
 
@@ -34,7 +33,6 @@ def valid_yaml_content() -> str:
     """Return a valid YAML configuration string."""
     return yaml.dump(
         {
-            "default_platforms": ["opencode"],
             "use_symlinks": True,
             "cache_dir": "/tmp/agentfiles-cache",
             "custom_paths": {"opencode": "/custom/opencode"},
@@ -60,14 +58,9 @@ class TestAgentfilesConfigCreation:
 
     def test_default_values(self) -> None:
         config = AgentfilesConfig()
-        assert config.default_platforms == ["opencode", "claude_code", "windsurf", "cursor"]
         assert config.use_symlinks is False
         assert config.cache_dir is None
         assert config.custom_paths == {}
-
-    def test_custom_platforms(self) -> None:
-        config = AgentfilesConfig(default_platforms=["opencode"])
-        assert config.default_platforms == ["opencode"]
 
     def test_custom_use_symlinks(self) -> None:
         config = AgentfilesConfig(use_symlinks=True)
@@ -83,12 +76,10 @@ class TestAgentfilesConfigCreation:
 
     def test_all_custom_values(self) -> None:
         config = AgentfilesConfig(
-            default_platforms=["claude_code"],
             use_symlinks=True,
             cache_dir="/cache",
             custom_paths={"opencode": "/custom"},
         )
-        assert config.default_platforms == ["claude_code"]
         assert config.use_symlinks is True
         assert config.cache_dir == "/cache"
         assert config.custom_paths == {"opencode": "/custom"}
@@ -105,7 +96,6 @@ class TestAgentfilesConfigImmutability:
     @pytest.mark.parametrize(
         "field, value",
         [
-            ("default_platforms", ["x"]),
             ("use_symlinks", True),
             ("cache_dir", "/tmp"),
             ("custom_paths", {}),
@@ -127,20 +117,17 @@ class TestFromDict:
 
     def test_full_dict(self) -> None:
         data = {
-            "default_platforms": ["opencode"],
             "use_symlinks": True,
             "cache_dir": "/cache",
             "custom_paths": {"opencode": "/x"},
         }
         config = AgentfilesConfig._from_dict(data)
-        assert config.default_platforms == ["opencode"]
         assert config.use_symlinks is True
         assert config.cache_dir == "/cache"
         assert config.custom_paths == {"opencode": "/x"}
 
     def test_empty_dict_returns_defaults(self) -> None:
         config = AgentfilesConfig._from_dict({})
-        assert config.default_platforms == ["opencode", "claude_code", "windsurf", "cursor"]
         assert config.use_symlinks is False
         assert config.cache_dir is None
         assert config.custom_paths == {}
@@ -149,7 +136,6 @@ class TestFromDict:
         data = {"use_symlinks": True}
         config = AgentfilesConfig._from_dict(data)
         assert config.use_symlinks is True
-        assert config.default_platforms == ["opencode", "claude_code", "windsurf", "cursor"]
         assert config.cache_dir is None
         assert config.custom_paths == {}
 
@@ -168,12 +154,6 @@ class TestFromDict:
     def test_cache_dir_coerced_to_str(self) -> None:
         config = AgentfilesConfig._from_dict({"cache_dir": Path("/tmp/cache")})
         assert config.cache_dir == "/tmp/cache"
-
-    def test_default_platforms_copied_to_list(self) -> None:
-        data = {"default_platforms": ["claude_code"]}
-        config = AgentfilesConfig._from_dict(data)
-        assert isinstance(config.default_platforms, list)
-        assert config.default_platforms == ["claude_code"]
 
     def test_custom_paths_copied_to_dict(self) -> None:
         data = {"custom_paths": {"opencode": "/o", "claude_code": "/c"}}
@@ -204,7 +184,6 @@ class TestLoad:
 
     def test_load_from_explicit_path(self, valid_config_file: Path) -> None:
         config = AgentfilesConfig.load(valid_config_file)
-        assert config.default_platforms == ["opencode"]
         assert config.use_symlinks is True
         assert config.cache_dir == "/tmp/agentfiles-cache"
         assert config.custom_paths == {"opencode": "/custom/opencode"}
@@ -220,7 +199,6 @@ class TestLoad:
             mock.patch.object(Path, "home", return_value=tmp_path),
         ):
             config = AgentfilesConfig.load(None)
-        assert config.default_platforms == ["opencode", "claude_code", "windsurf", "cursor"]
         assert config.use_symlinks is False
 
     def test_load_discovers_cwd_yaml(self, tmp_path: Path) -> None:
@@ -316,7 +294,6 @@ class TestLoad:
             mock.patch.object(Path, "home", return_value=home),
         ):
             config = AgentfilesConfig.load(None)
-        assert config.default_platforms == ["opencode", "claude_code", "windsurf", "cursor"]
         assert config.use_symlinks is False
 
 
@@ -356,7 +333,7 @@ class TestEdgeCases:
             config = AgentfilesConfig.load(None)
         # yaml.safe_load returns None for comment-only file, which gets
         # converted to {} via "yaml.safe_load(fh) or {}"
-        assert config.default_platforms == ["opencode", "claude_code", "windsurf", "cursor"]
+        assert config.use_symlinks is False
 
     def test_two_configs_with_same_defaults_are_equal(self) -> None:
         a = AgentfilesConfig()
@@ -395,22 +372,6 @@ class TestLoadExplicitErrors:
         cfg.write_text("\x00invalid: yaml: [", encoding="utf-8")
 
         with pytest.raises(ConfigError, match="malformed YAML"):
-            AgentfilesConfig.load(cfg)
-
-    def test_explicit_invalid_platforms_type_raises(self, tmp_path: Path) -> None:
-        """Explicit path with non-list default_platforms raises ConfigError."""
-        cfg = tmp_path / "bad.yaml"
-        cfg.write_text(yaml.dump({"default_platforms": "opencode"}), encoding="utf-8")
-
-        with pytest.raises(ConfigError, match="default_platforms"):
-            AgentfilesConfig.load(cfg)
-
-    def test_explicit_invalid_platforms_item_raises(self, tmp_path: Path) -> None:
-        """Explicit path with non-string platform item raises ConfigError."""
-        cfg = tmp_path / "bad.yaml"
-        cfg.write_text(yaml.dump({"default_platforms": [123]}), encoding="utf-8")
-
-        with pytest.raises(ConfigError, match=r"default_platforms\[0\]"):
             AgentfilesConfig.load(cfg)
 
     def test_explicit_invalid_custom_paths_type_raises(self, tmp_path: Path) -> None:
@@ -509,12 +470,6 @@ class TestSyncStateRecovery:
         new_state = SyncState(
             version="1.0",
             last_sync="2025-07-01T12:00:00Z",
-            platforms={
-                "opencode": PlatformState(
-                    path="/home/user/.config/opencode",
-                    items={},
-                ),
-            },
         )
         save_sync_state(tmp_path, new_state)
         loaded = load_sync_state(tmp_path)
@@ -551,12 +506,10 @@ class TestConfigLoadAllFields:
     def test_load_config_with_all_fields(self, tmp_path: Path) -> None:
         """Loading a YAML file with every field set populates all attributes."""
         data = {
-            "default_platforms": ["opencode", "claude_code", "windsurf"],
             "use_symlinks": True,
             "cache_dir": "/opt/agentfiles/cache",
             "custom_paths": {
                 "opencode": "/home/user/.config/opencode",
-                "claude_code": "/home/user/.claude",
             },
         }
         cfg_file = tmp_path / ".agentfiles.yaml"
@@ -564,21 +517,18 @@ class TestConfigLoadAllFields:
 
         config = AgentfilesConfig.load(cfg_file)
 
-        assert config.default_platforms == ["opencode", "claude_code", "windsurf"]
         assert config.use_symlinks is True
         assert config.cache_dir == "/opt/agentfiles/cache"
         assert config.custom_paths == {
             "opencode": "/home/user/.config/opencode",
-            "claude_code": "/home/user/.claude",
         }
 
     def test_load_config_all_fields_via_auto_discovery(self, tmp_path: Path) -> None:
         """Auto-discovery loads all fields from .agentfiles.yaml in CWD."""
         data = {
-            "default_platforms": ["cursor"],
             "use_symlinks": False,
             "cache_dir": "/var/cache/agentfiles",
-            "custom_paths": {"cursor": "/home/user/.cursor"},
+            "custom_paths": {"opencode": "/home/user/.config/opencode"},
         }
         cfg = tmp_path / ".agentfiles.yaml"
         cfg.write_text(yaml.dump(data), encoding="utf-8")
@@ -591,10 +541,9 @@ class TestConfigLoadAllFields:
         ):
             config = AgentfilesConfig.load(None)
 
-        assert config.default_platforms == ["cursor"]
         assert config.use_symlinks is False
         assert config.cache_dir == "/var/cache/agentfiles"
-        assert config.custom_paths == {"cursor": "/home/user/.cursor"}
+        assert config.custom_paths == {"opencode": "/home/user/.config/opencode"}
 
 
 # ---------------------------------------------------------------------------
@@ -605,18 +554,6 @@ class TestConfigLoadAllFields:
 class TestConfigLoadMissingOptionalFields:
     """Tests for loading config when some fields are absent from YAML."""
 
-    def test_load_with_only_default_platforms(self, tmp_path: Path) -> None:
-        """Only default_platforms is set; other fields use defaults."""
-        cfg = tmp_path / ".agentfiles.yaml"
-        cfg.write_text(yaml.dump({"default_platforms": ["windsurf"]}), encoding="utf-8")
-
-        config = AgentfilesConfig.load(cfg)
-
-        assert config.default_platforms == ["windsurf"]
-        assert config.use_symlinks is False
-        assert config.cache_dir is None
-        assert config.custom_paths == {}
-
     def test_load_with_only_use_symlinks(self, tmp_path: Path) -> None:
         """Only use_symlinks is set; other fields use defaults."""
         cfg = tmp_path / ".agentfiles.yaml"
@@ -624,7 +561,6 @@ class TestConfigLoadMissingOptionalFields:
 
         config = AgentfilesConfig.load(cfg)
 
-        assert config.default_platforms == ["opencode", "claude_code", "windsurf", "cursor"]
         assert config.use_symlinks is True
         assert config.cache_dir is None
         assert config.custom_paths == {}
@@ -636,7 +572,6 @@ class TestConfigLoadMissingOptionalFields:
 
         config = AgentfilesConfig.load(cfg)
 
-        assert config.default_platforms == ["opencode", "claude_code", "windsurf", "cursor"]
         assert config.use_symlinks is False
         assert config.cache_dir == "/tmp/my-cache"
         assert config.custom_paths == {}
@@ -651,7 +586,6 @@ class TestConfigLoadMissingOptionalFields:
 
         config = AgentfilesConfig.load(cfg)
 
-        assert config.default_platforms == ["opencode", "claude_code", "windsurf", "cursor"]
         assert config.use_symlinks is False
         assert config.cache_dir is None
         assert config.custom_paths == {"opencode": "/custom/path"}
@@ -783,7 +717,6 @@ class TestValidateConfigDict:
     def test_valid_full_config_passes(self, tmp_path: Path) -> None:
         """A fully valid config dict passes validation without error."""
         data = {
-            "default_platforms": ["opencode", "claude_code"],
             "use_symlinks": True,
             "cache_dir": "/cache",
             "custom_paths": {"opencode": "/path"},
@@ -793,28 +726,6 @@ class TestValidateConfigDict:
     def test_empty_dict_passes(self, tmp_path: Path) -> None:
         """An empty dict passes validation."""
         _validate_config_dict({}, tmp_path / "test.yaml")
-
-    def test_default_platforms_string_raises(self, tmp_path: Path) -> None:
-        """A string value for default_platforms raises ConfigError."""
-        data = {"default_platforms": "opencode"}
-        with pytest.raises(ConfigError, match="expected a list, got str"):
-            _validate_config_dict(data, tmp_path / "test.yaml")
-
-    def test_default_platforms_number_raises(self, tmp_path: Path) -> None:
-        """A numeric value for default_platforms raises ConfigError."""
-        data = {"default_platforms": 42}
-        with pytest.raises(ConfigError, match="expected a list, got int"):
-            _validate_config_dict(data, tmp_path / "test.yaml")
-
-    def test_default_platforms_non_string_item_raises(self, tmp_path: Path) -> None:
-        """A non-string item in default_platforms raises ConfigError with index."""
-        data = {"default_platforms": ["valid", 123, True]}
-        with pytest.raises(ConfigError, match=r"default_platforms\[1\]"):
-            _validate_config_dict(data, tmp_path / "test.yaml")
-
-    def test_default_platforms_empty_list_passes(self, tmp_path: Path) -> None:
-        """An empty list for default_platforms passes validation."""
-        _validate_config_dict({"default_platforms": []}, tmp_path / "test.yaml")
 
     def test_custom_paths_string_raises(self, tmp_path: Path) -> None:
         """A string value for custom_paths raises ConfigError."""
@@ -836,7 +747,7 @@ class TestValidateConfigDict:
     def test_path_included_in_error_message(self, tmp_path: Path) -> None:
         """The config file path is included in error messages."""
         cfg_path = tmp_path / "my-special-config.yaml"
-        data = {"default_platforms": "not_a_list"}
+        data = {"custom_paths": "not_a_mapping"}
         with pytest.raises(ConfigError):
             _validate_config_dict(data, cfg_path)
 
@@ -974,10 +885,10 @@ class TestCorruptedConfigRecovery:
             AgentfilesConfig.load(bad_cfg)
 
     def test_invalid_config_value_type_falls_through(self, tmp_path: Path) -> None:
-        """Config with wrong value types (e.g. string for platforms) falls through."""
+        """Config with wrong value types (e.g. string for custom_paths) falls through."""
         bad_cfg = tmp_path / ".agentfiles.yaml"
         bad_cfg.write_text(
-            yaml.dump({"default_platforms": "not_a_list"}),
+            yaml.dump({"custom_paths": "not_a_mapping"}),
             encoding="utf-8",
         )
 
@@ -996,4 +907,3 @@ class TestCorruptedConfigRecovery:
             config = AgentfilesConfig.load(None)
 
         assert config.use_symlinks is True
-        assert config.default_platforms == ["opencode", "claude_code", "windsurf", "cursor"]

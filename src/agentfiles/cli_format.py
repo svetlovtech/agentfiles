@@ -46,7 +46,6 @@ def _format_list_json(items: list[Item], show_tokens: bool) -> int:
             "type": item.item_type.value,
             "version": item.version,
             "files": len(item.files),
-            "platforms": item.platform_values,
         }
         if show_tokens and item.item_type in (ItemType.AGENT, ItemType.SKILL):
             est = token_estimate(item)
@@ -77,36 +76,36 @@ def _format_list_json(items: list[Item], show_tokens: bool) -> int:
 
 def _format_status_json(
     target_manager: Any,
-    summary: dict[Any, dict[str, int]],
+    summary: dict[str, int],
 ) -> int:
     """Format status output as JSON and print to stdout.
 
     Args:
         target_manager: Provides access to discovered platform paths.
-        summary: Per-platform item counts from ``platform_summary()``.
+        summary: Item counts from ``platform_summary()``.
 
     Returns:
         Exit code (always ``0``).
     """
-    platforms_data: dict[str, Any] = {}
-    total_items = 0
-    for platform in target_manager.targets:
-        counts = summary.get(platform, {})
-        agents = counts.get("agents", 0)
-        skills = counts.get("skills", 0)
-        commands = counts.get("commands", 0)
-        plugins = counts.get("plugins", 0)
-        platform_total = agents + skills + commands + plugins
-        platforms_data[platform.value] = {
-            "agents": agents,
-            "skills": skills,
-            "commands": commands,
-            "plugins": plugins,
-            "total": platform_total,
-        }
-        total_items += platform_total
+    if target_manager.targets is None:
+        print(
+            json.dumps(
+                {"agents": 0, "skills": 0, "commands": 0, "plugins": 0, "total_items": 0}, indent=2
+            )
+        )
+        return 0
+
+    agents = summary.get("agents", 0)
+    skills = summary.get("skills", 0)
+    commands = summary.get("commands", 0)
+    plugins = summary.get("plugins", 0)
+    total_items = agents + skills + commands + plugins
+
     output = {
-        "platforms": platforms_data,
+        "agents": agents,
+        "skills": skills,
+        "commands": commands,
+        "plugins": plugins,
         "total_items": total_items,
     }
     print(json.dumps(output, indent=2))
@@ -121,8 +120,6 @@ def _format_plan_json(
 ) -> int:
     """Format sync plans as JSON and print to stdout.
 
-    Groups plans by ``(item_key, action)`` to collect platform names.
-
     Args:
         plans: Planned sync operations from the engine.
         target_manager: Used to resolve platforms from target directories.
@@ -133,32 +130,18 @@ def _format_plan_json(
     """
     from agentfiles.models import SyncAction
 
-    # Group by (item_key, action) to merge per-platform entries.
-    grouped: dict[tuple[str, str], dict[str, Any]] = {}
+    plan_list: list[dict[str, Any]] = []
     for plan in plans:
         if plan.action == SyncAction.SKIP:
             continue
-        item_key = plan.item.item_key
-        action_label = plan.action.value.upper()
-        group_key = (item_key, action_label)
-
-        platform = target_manager.resolve_platform_for(
-            plan.item.item_type,
-            plan.target_dir,
-        )
-        platform_name = platform.value if platform else "unknown"
-
-        if group_key not in grouped:
-            grouped[group_key] = {
-                "item": item_key,
-                "action": action_label,
-                "platforms": [platform_name],
+        plan_list.append(
+            {
+                "item": plan.item.item_key,
+                "action": plan.action.value.upper(),
                 "reason": plan.reason,
             }
-        else:
-            grouped[group_key]["platforms"].append(platform_name)
+        )
 
-    plan_list = list(grouped.values())
     output = {
         "plans": plan_list,
         "total": len(plan_list),

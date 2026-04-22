@@ -2,7 +2,7 @@
 
 The ``SyncEngine`` bridges source items discovered by :class:`SourceScanner`
 with target directories provided by any object satisfying the
-:class:`SyncTarget` protocol.
+:class:`SyncTarget` protocol.  All operations target the OpenCode platform.
 
 Pipeline overview (plan → execute → report)::
 
@@ -10,10 +10,10 @@ Pipeline overview (plan → execute → report)::
     │ plan_sync │ ──► │ execute_plan  │ ──► │ aggregate │
     └──────────┘     └───────────────┘     └──────────┘
 
-1. **Plan** — :meth:`plan_sync` iterates over every (item, platform) pair
-   and dispatches to a *planning handler* (see ``_plan_handlers``) that
-   decides the concrete :class:`SyncAction` (INSTALL, UPDATE, UNINSTALL,
-   SKIP).  The result is an ordered list of :class:`SyncPlan` objects.
+1. **Plan** — :meth:`plan_sync` iterates over every item and dispatches to
+   a *planning handler* (see ``_plan_handlers``) that decides the concrete
+   :class:`SyncAction` (INSTALL, UPDATE, UNINSTALL, SKIP).  The result is
+   an ordered list of :class:`SyncPlan` objects.
 
 2. **Execute** — :meth:`execute_plan` walks the plan list and dispatches
    each entry to an *execution handler* (see ``_action_handlers``) that
@@ -30,9 +30,9 @@ available to log planned actions without touching the filesystem.
 
 Usage::
 
-    engine = SyncEngine(target_manager)
-    report = engine.sync(items, platforms=(Platform.OPENCODE,))
-    print(report.summary())
+     engine = SyncEngine(target_manager)
+     report = engine.sync(items)
+     print(report.summary())
 """
 
 from __future__ import annotations
@@ -56,7 +56,6 @@ from agentfiles.models import (
     ItemState,
     ItemType,
     Platform,
-    PlatformState,
     SyncAction,
     SyncPlan,
     SyncResult,
@@ -65,29 +64,6 @@ from agentfiles.models import (
 from agentfiles.paths import get_item_dest_path, get_push_dest_path
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Module-level constants
-# ---------------------------------------------------------------------------
-
-_DEFAULT_PLATFORMS: tuple[Platform, ...] = (
-    Platform.OPENCODE,
-    Platform.CLAUDE_CODE,
-    Platform.WINDSURF,
-    Platform.CURSOR,
-)
-
-
-def _iter_candidate_platforms(
-    item: Item,
-    platforms: tuple[Platform, ...] | list[Platform],
-) -> list[Platform]:
-    """Return platforms that are both supported by item and requested, sorted."""
-    return sorted(
-        set(item.supported_platforms) & set(platforms),
-        key=lambda p: p.value,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -282,20 +258,17 @@ class PushConflict:
 
     Attributes:
         item: The item with a conflict.
-        platform: The platform the item was discovered on.
         source_path: Path to the source repo copy.
         target_path: Path to the locally-installed copy.
     """
 
     item: Item
-    platform: Platform
     source_path: Path
     target_path: Path
 
 
 def detect_push_conflicts(
     items: list[Item],
-    platforms: tuple[Platform, ...],
     source_dir: Path,
     target_manager: SyncTarget,
 ) -> list[PushConflict]:
@@ -311,7 +284,6 @@ def detect_push_conflicts(
 
     Args:
         items: Installed items to check.
-        platforms: Platforms to consider.
         source_dir: Root of the source repository.
         target_manager: Provides target directory resolution.
 
@@ -330,41 +302,36 @@ def detect_push_conflicts(
     conflicts: list[PushConflict] = []
 
     for item in items:
-        candidate_platforms = _iter_candidate_platforms(item, platforms)
-        for platform in candidate_platforms:
-            try:
-                conflict = _check_push_conflict(
-                    item,
-                    platform,
-                    source_dir,
-                    target_manager,
-                    state,
-                )
-                if conflict is not None:
-                    conflicts.append(conflict)
-            except (AgentfilesError, OSError):
-                logger.debug(
-                    "Error checking conflict for %s on %s",
-                    item.name,
-                    platform.display_name,
-                    exc_info=True,
-                )
+        try:
+            conflict = _check_push_conflict(
+                item,
+                source_dir,
+                target_manager,
+                state,
+            )
+            if conflict is not None:
+                conflicts.append(conflict)
+        except (AgentfilesError, OSError):
+            logger.debug(
+                "Error checking conflict for %s",
+                item.name,
+                exc_info=True,
+            )
 
     return conflicts
 
 
 def _check_push_conflict(
     item: Item,
-    platform: Platform,
     source_dir: Path,
     target_manager: SyncTarget,
     state: SyncState,
 ) -> PushConflict | None:
-    """Check whether a single (item, platform) pair is a push conflict.
+    """Check whether a single item is a push conflict.
 
     Returns a :class:`PushConflict` if both sides changed, else ``None``.
     """
-    target_dir = target_manager.get_target_dir(platform, item.item_type)
+    target_dir = target_manager.get_target_dir(Platform.OPENCODE, item.item_type)
     if target_dir is None:
         return None
 
@@ -381,12 +348,8 @@ def _check_push_conflict(
         return None
 
     # Check if source repo version was modified after last sync.
-    platform_key = platform.value
     item_key = item.item_key
-    platform_state = state.platforms.get(platform_key)
-    if platform_state is None:
-        return None
-    item_state = platform_state.items.get(item_key)
+    item_state = state.items.get(item_key)
     if item_state is None or not item_state.synced_at:
         return None
 
@@ -407,7 +370,6 @@ def _check_push_conflict(
 
     return PushConflict(
         item=item,
-        platform=platform,
         source_path=dest_path,
         target_path=local_path,
     )
@@ -517,7 +479,7 @@ class SyncEngine:
         # When a new SyncAction is added to models.py:
         #
         #   1. Write a plan handler method (e.g. ``_plan_backup``) with
-        #      signature ``(Item, Platform, Path, SyncAction) -> SyncPlan | None``.
+        #      signature ``(Item, Path, SyncAction) -> SyncPlan | None``.
         #      Add it to ``_plan_handlers`` below.
         #
         #   2. Write an execute handler method (e.g. ``_execute_backup``) with
@@ -531,7 +493,7 @@ class SyncEngine:
         # through these dicts automatically — no other changes needed.
         self._plan_handlers: dict[
             SyncAction,
-            Callable[[Item, Platform, Path, SyncAction], SyncPlan | None],
+            Callable[[Item, Path, SyncAction], SyncPlan | None],
         ] = {
             SyncAction.INSTALL: self._plan_install_or_update,
             SyncAction.UPDATE: self._plan_install_or_update,
@@ -552,14 +514,9 @@ class SyncEngine:
     def plan_sync(
         self,
         items: list[Item],
-        platforms: tuple[Platform, ...],
         action: SyncAction = SyncAction.INSTALL,
     ) -> list[SyncPlan]:
-        """Build a :term:`SyncPlan` for every (item, platform) pair.
-
-        For each item the set of candidate platforms is intersected with the
-        caller-supplied *platforms* filter so that only supported combinations
-        are considered.
+        """Build a :term:`SyncPlan` for every item.
 
         The *action* parameter controls the planning strategy:
 
@@ -571,7 +528,6 @@ class SyncEngine:
 
         Args:
             items: Source items to plan for.
-            platforms: Platform filter.
             action: Desired sync action.
 
         Returns:
@@ -581,27 +537,23 @@ class SyncEngine:
         plans: list[SyncPlan] = []
 
         for item in items:
-            candidate_platforms = _iter_candidate_platforms(item, platforms)
-            for platform in candidate_platforms:
-                try:
-                    plan = self._plan_single(item, platform, action)
-                except (AgentfilesError, OSError) as exc:
-                    logger.warning(
-                        "Failed to plan %s for %s on %s: %s",
-                        action.value,
-                        item.name,
-                        platform.display_name,
-                        exc,
-                    )
-                    continue
-                if plan is not None:
-                    plans.append(plan)
+            try:
+                plan = self._plan_single(item, action)
+            except (AgentfilesError, OSError) as exc:
+                logger.warning(
+                    "Failed to plan %s for %s: %s",
+                    action.value,
+                    item.name,
+                    exc,
+                )
+                continue
+            if plan is not None:
+                plans.append(plan)
 
         logger.info(
-            "Planned %d operation(s) for %d item(s) across %d platform(s)",
+            "Planned %d operation(s) for %d item(s)",
             len(plans),
             len(items),
-            len(platforms),
         )
         return plans
 
@@ -646,7 +598,6 @@ class SyncEngine:
     def _run(
         self,
         items: list[Item],
-        platforms: tuple[Platform, ...],
         action: SyncAction,
         source_dir: Path | None = None,
     ) -> SyncReport:
@@ -662,7 +613,7 @@ class SyncEngine:
         subsequent ``compute_sync_plan`` calls can determine which items
         have been synced.
         """
-        plans = self.plan_sync(items, platforms, action=action)
+        plans = self.plan_sync(items, action=action)
         results = self.execute_plan(plans)
         report = self.aggregate(results)
         logger.info(report.summary())
@@ -682,7 +633,6 @@ class SyncEngine:
     def sync(
         self,
         items: list[Item],
-        platforms: tuple[Platform, ...] = _DEFAULT_PLATFORMS,
         *,
         source_dir: Path | None = None,
     ) -> SyncReport:
@@ -690,7 +640,6 @@ class SyncEngine:
 
         Args:
             items: Items to sync.
-            platforms: Platforms to target.
             source_dir: Root of the source repository.  When provided,
                 the sync state file (``.agentfiles.state.yaml``) is
                 updated after successful installation so that
@@ -701,29 +650,26 @@ class SyncEngine:
             Aggregated :class:`SyncReport`.
 
         """
-        return self._run(items, platforms, action=SyncAction.INSTALL, source_dir=source_dir)
+        return self._run(items, action=SyncAction.INSTALL, source_dir=source_dir)
 
     def uninstall(
         self,
         items: list[Item],
-        platforms: tuple[Platform, ...] = _DEFAULT_PLATFORMS,
     ) -> SyncReport:
         """Plan and execute removal of items from target platforms.
 
         Args:
             items: Items to uninstall.
-            platforms: Platforms to remove from.
 
         Returns:
             Aggregated :class:`SyncReport`.
 
         """
-        return self._run(items, platforms, action=SyncAction.UNINSTALL)
+        return self._run(items, action=SyncAction.UNINSTALL)
 
     def push(
         self,
         items: list[Item],
-        platforms: tuple[Platform, ...],
         *,
         source_dir: Path,
         dry_run: bool = False,
@@ -738,7 +684,6 @@ class SyncEngine:
 
         Args:
             items: Items to push.
-            platforms: Platforms to push from.
             source_dir: Root directory of the source repository.
             dry_run: If ``True``, plan operations without executing them.
 
@@ -747,32 +692,26 @@ class SyncEngine:
 
         """
         results: list[SyncResult] = []
-        # Track (item, platform) for each result so we can update state.
-        push_contexts: list[tuple[Item, Platform]] = []
 
         for item in items:
-            candidate_platforms = _iter_candidate_platforms(item, platforms)
-            for platform in candidate_platforms:
-                target_dir = self._target_manager.get_target_dir(
-                    platform,
-                    item.item_type,
+            target_dir = self._target_manager.get_target_dir(
+                Platform.OPENCODE,
+                item.item_type,
+            )
+            if target_dir is None:
+                logger.warning(
+                    "No target directory for %s — skipping push",
+                    item.name,
                 )
-                if target_dir is None:
-                    logger.warning(
-                        "No target directory for %s on %s — skipping push",
-                        item.name,
-                        platform.display_name,
-                    )
-                    continue
+                continue
 
-                result = self._push_item(
-                    item,
-                    target_dir,
-                    source_dir,
-                    dry_run,
-                )
-                results.append(result)
-                push_contexts.append((item, platform))
+            result = self._push_item(
+                item,
+                target_dir,
+                source_dir,
+                dry_run,
+            )
+            results.append(result)
 
         report = self.aggregate(results)
         logger.info("Push complete: %s", report.summary())
@@ -782,7 +721,6 @@ class SyncEngine:
         if not dry_run and has_successful_push:
             self._update_push_state(
                 results,
-                push_contexts,
                 source_dir,
             )
 
@@ -791,10 +729,9 @@ class SyncEngine:
     def compute_sync_plan(
         self,
         items: list[Item],
-        platforms: tuple[Platform, ...],
         state: SyncState,
         source_dir: Path,
-    ) -> list[tuple[Item, Platform, str]]:
+    ) -> list[tuple[Item, str]]:
         """Compute what needs to be pulled, pushed, or is in conflict.
 
         Checks each item against the target platform to determine whether
@@ -802,12 +739,11 @@ class SyncEngine:
 
         Args:
             items: Source items to evaluate.
-            platforms: Platforms to check.
             state: Previously recorded sync state.
             source_dir: Root directory of the source repository.
 
         Returns:
-            List of ``(item, platform, action)`` tuples where *action* is
+            List of ``(item, action)`` tuples where *action* is
             ``"pull"``, ``"push"``, ``"conflict"``, or ``"skip"``.
 
         Logic:
@@ -815,20 +751,17 @@ class SyncEngine:
             - item exists at target → ``"skip"``
 
         """
-        plan: list[tuple[Item, Platform, str]] = []
+        plan: list[tuple[Item, str]] = []
 
         for item in items:
-            candidate_platforms = _iter_candidate_platforms(item, platforms)
-            for platform in candidate_platforms:
-                action = self._compute_item_action(
-                    item,
-                    platform,
-                    state,
-                    source_dir,
-                )
-                plan.append((item, platform, action))
+            action = self._compute_item_action(
+                item,
+                state,
+                source_dir,
+            )
+            plan.append((item, action))
 
-        counts = Counter(action for _, _, action in plan)
+        counts = Counter(action for _, action in plan)
         logger.info(
             "Sync plan: %d pull, %d push, %d conflict, %d skip",
             counts["pull"],
@@ -848,27 +781,25 @@ class SyncEngine:
     def _plan_single(
         self,
         item: Item,
-        platform: Platform,
         action: SyncAction,
     ) -> SyncPlan | None:
-        """Build a single plan for (item, platform).
+        """Build a single plan for an item.
 
         Dispatches to the handler registered in ``_plan_handlers`` for the
         given *action*.  Adding a new action type only requires registering
         a new handler in ``__init__`` — this method stays unchanged.
         """
-        target_dir = self._target_manager.get_target_dir(platform, item.item_type)
+        target_dir = self._target_manager.get_target_dir(Platform.OPENCODE, item.item_type)
         if target_dir is None:
             logger.warning(
-                "No target directory for %s on %s — skipping",
+                "No target directory for %s — skipping",
                 item.name,
-                platform.display_name,
             )
             return None
 
         handler = self._plan_handlers.get(action)
         if handler is not None:
-            return handler(item, platform, target_dir, action)
+            return handler(item, target_dir, action)
 
         logger.warning("Unsupported plan action %s for %s", action.value, item.name)
         return None
@@ -876,7 +807,6 @@ class SyncEngine:
     def _plan_install_or_update(
         self,
         item: Item,
-        platform: Platform,
         target_dir: Path,
         requested_action: SyncAction,
     ) -> SyncPlan | None:
@@ -909,7 +839,6 @@ class SyncEngine:
     def _plan_uninstall(
         self,
         item: Item,
-        platform: Platform,
         target_dir: Path,
         _requested_action: SyncAction,
     ) -> SyncPlan | None:
@@ -1142,31 +1071,10 @@ class SyncEngine:
             if plan.action == SyncAction.UNINSTALL:
                 continue
 
-            platform = self._target_manager.resolve_platform_for(
-                plan.item.item_type,
-                plan.target_dir,
-            )
-            if platform is None:
-                logger.debug(
-                    "Cannot resolve platform for %s — skipping state update",
-                    plan.item.name,
-                )
-                continue
-
             item = plan.item
             item_key = item.item_key
-            platform_key = platform.value
 
-            if platform_key not in state.platforms:
-                target_dir = self._target_manager.get_target_dir(
-                    platform,
-                    item.item_type,
-                )
-                state.platforms[platform_key] = PlatformState(
-                    path=str(target_dir) if target_dir else "",
-                )
-
-            state.platforms[platform_key].items[item_key] = ItemState(
+            state.items[item_key] = ItemState(
                 synced_at=now,
             )
 
@@ -1184,7 +1092,6 @@ class SyncEngine:
     def _update_push_state(
         self,
         results: list[SyncResult],
-        push_contexts: list[tuple[Item, Platform]],
         source_dir: Path,
     ) -> None:
         """Update the state file after a successful push operation."""
@@ -1200,23 +1107,14 @@ class SyncEngine:
 
         now = datetime.now(tz=timezone.utc).isoformat()
 
-        for result, (item, platform) in zip(results, push_contexts, strict=True):
+        for result in results:
             if not result.is_success:
                 continue
 
+            item = result.plan.item
             item_key = item.item_key
-            platform_key = platform.value
 
-            target_dir = self._target_manager.get_target_dir(
-                platform,
-                item.item_type,
-            )
-
-            if platform_key not in state.platforms:
-                state.platforms[platform_key] = PlatformState(
-                    path=str(target_dir) if target_dir else "",
-                )
-            state.platforms[platform_key].items[item_key] = ItemState(
+            state.items[item_key] = ItemState(
                 synced_at=now,
             )
 
@@ -1332,16 +1230,15 @@ class SyncEngine:
     def _compute_item_action(
         self,
         item: Item,
-        platform: Platform,
         state: SyncState,
         source_dir: Path,
     ) -> str:
-        """Determine the sync action for a single (item, platform) pair.
+        """Determine the sync action for a single item.
 
         Without checksums, checks if the item exists at the target.
         Returns "pull" if not installed, "skip" if installed.
         """
-        target_dir = self._target_manager.get_target_dir(platform, item.item_type)
+        target_dir = self._target_manager.get_target_dir(Platform.OPENCODE, item.item_type)
         if target_dir is None:
             return "skip"
 

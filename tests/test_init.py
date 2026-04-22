@@ -54,7 +54,7 @@ def _make_item(
     item_type: ItemType = ItemType.AGENT,
     version: str = "1.0.0",
     files: tuple[str, ...] = ("test-item.md",),
-    platforms: tuple[Platform, ...] = (Platform.OPENCODE, Platform.CLAUDE_CODE),
+    platforms: tuple[Platform, ...] = (Platform.OPENCODE,),
     source_path: Path | None = None,
 ) -> Item:
     """Create a minimal Item for testing."""
@@ -69,15 +69,11 @@ def _make_item(
 
 
 def _make_config(
-    default_platforms: list[str] | None = None,
     use_symlinks: bool = False,
     custom_paths: dict[str, str] | None = None,
 ) -> Any:
     """Create a minimal config-like object for _resolve_platforms."""
-    if default_platforms is None:
-        default_platforms = ["opencode", "claude_code"]
     return argparse.Namespace(
-        default_platforms=default_platforms,
         use_symlinks=use_symlinks,
         custom_paths=custom_paths or {},
     )
@@ -109,7 +105,6 @@ class TestInitDirectories:
         content = config.read_text()
         assert "default_platforms:" in content
         assert "opencode" in content
-        assert "claude_code" in content
 
     def test_creates_state_yaml(self, tmp_path: Path) -> None:
         args = _make_args(str(tmp_path))
@@ -323,37 +318,25 @@ class TestCreateInitStructure:
 class TestResolvePlatforms:
     """Tests for _resolve_platforms helper."""
 
-    def test_all_flag_returns_all_platforms(self) -> None:
-        config = _make_config(default_platforms=["opencode"])
+    def test_all_flag_returns_opencode(self) -> None:
+        config = _make_config()
         result = _resolve_platforms("all", config)
-        assert set(result) == set(Platform)
+        assert result == [Platform.OPENCODE]
 
-    def test_specific_flag_returns_single_platform(self) -> None:
+    def test_specific_flag_returns_opencode(self) -> None:
         config = _make_config()
         result = _resolve_platforms("opencode", config)
         assert result == [Platform.OPENCODE]
 
-    def test_specific_flag_with_alias(self) -> None:
+    def test_none_flag_returns_opencode(self) -> None:
         config = _make_config()
-        result = _resolve_platforms("cc", config)
-        assert result == [Platform.CLAUDE_CODE]
-
-    def test_none_flag_uses_config_defaults(self) -> None:
-        config = _make_config(default_platforms=["opencode"])
         result = _resolve_platforms(None, config)
         assert result == [Platform.OPENCODE]
 
-    def test_none_flag_empty_config_returns_all(self) -> None:
-        config = _make_config(default_platforms=[])
-        result = _resolve_platforms(None, config)
-        assert set(result) == set(Platform)
-
-    def test_none_flag_skips_unknown_platform_in_config(self) -> None:
-        config = _make_config(default_platforms=["opencode", "nonexistent_platform"])
-        result = _resolve_platforms(None, config)
-        assert Platform.OPENCODE in result
-        # Unknown platform should be silently skipped
-        assert len(result) == 1
+    def test_unknown_flag_returns_opencode(self) -> None:
+        config = _make_config()
+        result = _resolve_platforms("nonexistent_platform", config)
+        assert result == [Platform.OPENCODE]
 
 
 # ---------------------------------------------------------------------------
@@ -523,7 +506,6 @@ class TestFormatListJson:
         assert "type" in entry
         assert "version" in entry
         assert "files" in entry
-        assert "platforms" in entry
         assert entry["version"] == "2.0.0"
 
     def test_json_without_tokens_has_no_estimate(self, capsys: pytest.CaptureFixture[str]) -> None:
@@ -812,7 +794,7 @@ class TestDiscoverInstalledFromTargets:
         assert items == []
 
     def test_deduplicates_across_platforms(self, tmp_path: Path) -> None:
-        """Same item on multiple platforms is returned once with all platforms."""
+        """Same item discovered multiple times is returned once."""
         agent_dir = tmp_path / "agents"
         agent_dir.mkdir()
         (agent_dir / "coder.md").write_text("# coder")
@@ -820,21 +802,17 @@ class TestDiscoverInstalledFromTargets:
         tm = MagicMock()
         tm.get_installed_items.return_value = [
             (ItemType.AGENT, "coder"),
-            (ItemType.AGENT, "coder"),
         ]
         tm.get_target_dir.return_value = agent_dir
 
         items = _discover_installed_from_targets(
             tm,
-            [Platform.OPENCODE, Platform.CLAUDE_CODE],
+            [Platform.OPENCODE],
             list(ItemType),
         )
-        # Deduplicated — single item with both platforms
+        # Single item
         assert len(items) == 1
-        assert set(items[0].supported_platforms) == {
-            Platform.OPENCODE,
-            Platform.CLAUDE_CODE,
-        }
+        assert Platform.OPENCODE in items[0].supported_platforms
 
 
 # ---------------------------------------------------------------------------
@@ -847,10 +825,10 @@ class TestResolvePlatformFor:
 
     def _make_target_manager(
         self,
-        targets: dict[Platform, TargetPaths] | None = None,
+        targets: TargetPaths | None = None,
     ) -> TargetManager:
         """Create a TargetManager with the given targets."""
-        return TargetManager(targets or {})
+        return TargetManager(targets)
 
     def test_finds_matching_platform(self, tmp_path: Path) -> None:
         target_dir = tmp_path / "agent"
@@ -858,7 +836,7 @@ class TestResolvePlatformFor:
         tp = TargetPaths(
             platform=Platform.OPENCODE, config_dir=tmp_path, subdirs={"agents": target_dir}
         )
-        tm = self._make_target_manager({Platform.OPENCODE: tp})
+        tm = self._make_target_manager(tp)
 
         result = tm.resolve_platform_for(ItemType.AGENT, target_dir)
         assert result == Platform.OPENCODE
@@ -869,7 +847,7 @@ class TestResolvePlatformFor:
         tp = TargetPaths(
             platform=Platform.OPENCODE, config_dir=tmp_path, subdirs={"agents": other_dir}
         )
-        tm = self._make_target_manager({Platform.OPENCODE: tp})
+        tm = self._make_target_manager(tp)
 
         result = tm.resolve_platform_for(ItemType.AGENT, tmp_path / "agents")
         assert result is None

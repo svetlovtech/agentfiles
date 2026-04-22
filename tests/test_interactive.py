@@ -14,13 +14,10 @@ from agentfiles.interactive import (
     InteractiveRunner,
     InteractiveSession,
     MenuRenderer,
-    _guess_platform,
-    _item_key,
     _parse_comma_list,
     _parse_ranges,
 )
 from agentfiles.models import (
-    DiffEntry,
     DiffStatus,
     Item,
     ItemType,
@@ -165,42 +162,6 @@ class TestParseRanges:
         assert _parse_ranges("5,1,3,3", 10) == [1, 3, 5]
 
 
-class TestGuessPlatform:
-    """Tests for _guess_platform()."""
-
-    def test_detects_opencode_from_path(self) -> None:
-        assert _guess_platform("/home/.config/opencode") == Platform.OPENCODE
-
-    def test_detects_opencode_case_insensitive(self) -> None:
-        assert _guess_platform("/HOME/OpenCode") == Platform.OPENCODE
-
-    def test_defaults_to_claude_code(self) -> None:
-        assert _guess_platform("/home/.claude") == Platform.CLAUDE_CODE
-
-    def test_defaults_for_plain_path(self) -> None:
-        assert _guess_platform("/tmp/target") == Platform.CLAUDE_CODE
-
-    def test_accepts_path_object(self) -> None:
-        assert _guess_platform(Path("/config/opencode")) == Platform.OPENCODE
-
-
-class TestItemKey:
-    """Tests for _item_key()."""
-
-    def test_returns_type_slash_name(self) -> None:
-        item = Item(
-            item_type=ItemType.AGENT,
-            name="test-agent",
-            source_path=Path("/src/test"),
-        )
-        assert _item_key(item) == "agent/test-agent"
-
-    def test_different_types_different_keys(self) -> None:
-        agent = Item(item_type=ItemType.AGENT, name="x", source_path=Path("/a"))
-        skill = Item(item_type=ItemType.SKILL, name="x", source_path=Path("/s"))
-        assert _item_key(agent) != _item_key(skill)
-
-
 # ---------------------------------------------------------------------------
 # MenuRenderer
 # ---------------------------------------------------------------------------
@@ -233,17 +194,6 @@ class TestMenuRenderer:
         # Verify ANSI escape codes are actually present (not stripped).
         assert result == expected
         assert "\033[" in result
-
-    def test_show_platforms_prints_numbered_list(
-        self, renderer: MenuRenderer, capsys: pytest.CaptureFixture
-    ) -> None:
-        platforms = [Platform.OPENCODE, Platform.CLAUDE_CODE]
-        renderer.show_platforms(platforms)
-        captured = capsys.readouterr()
-        assert "1)" in captured.out
-        assert "OpenCode" in captured.out
-        assert "2)" in captured.out
-        assert "Claude Code" in captured.out
 
     def test_show_item_types_prints_numbered_list(
         self, renderer: MenuRenderer, capsys: pytest.CaptureFixture
@@ -418,7 +368,7 @@ class TestInteractiveSessionRetry:
     ) -> None:
         """Invalid platform input triggers retry; valid input on second try works."""
         session = InteractiveSession(use_colors=False)
-        platforms = [Platform.OPENCODE, Platform.CLAUDE_CODE]
+        platforms = [Platform.OPENCODE]
         # First input "xyz" (invalid), second input "1" (valid)
         with patch("builtins.input", side_effect=["xyz", "1"]):
             result = session.select_platforms(platforms)
@@ -427,7 +377,7 @@ class TestInteractiveSessionRetry:
     def test_select_platforms_returns_all_after_max_retries(self) -> None:
         """Exhausting retries on invalid input falls back to all platforms."""
         session = InteractiveSession(use_colors=False)
-        platforms = [Platform.OPENCODE, Platform.CLAUDE_CODE]
+        platforms = [Platform.OPENCODE]
         # All invalid inputs
         invalid = ["bad"] * 10  # More than _MAX_INPUT_RETRIES
         with patch("builtins.input", side_effect=invalid):
@@ -437,7 +387,7 @@ class TestInteractiveSessionRetry:
     def test_select_platforms_retry_then_all_keyword(self) -> None:
         """User can type 'all' during retry to select all platforms."""
         session = InteractiveSession(use_colors=False)
-        platforms = [Platform.OPENCODE, Platform.CLAUDE_CODE]
+        platforms = [Platform.OPENCODE]
         with patch("builtins.input", side_effect=["bad", "all"]):
             result = session.select_platforms(platforms)
         assert result == list(platforms)
@@ -445,7 +395,7 @@ class TestInteractiveSessionRetry:
     def test_select_platforms_retry_then_empty_selects_all(self) -> None:
         """User can press Enter during retry to accept all platforms."""
         session = InteractiveSession(use_colors=False)
-        platforms = [Platform.OPENCODE, Platform.CLAUDE_CODE]
+        platforms = [Platform.OPENCODE]
         with patch("builtins.input", side_effect=["bad", ""]):
             result = session.select_platforms(platforms)
         assert result == list(platforms)
@@ -639,281 +589,6 @@ class TestMenuRendererWelcome:
             renderer.show_welcome()
         captured = capsys.readouterr()
         assert "agentfiles" in captured.out
-
-
-# ---------------------------------------------------------------------------
-# Additional InteractiveSession — select_diff_action edge cases
-# ---------------------------------------------------------------------------
-
-
-class TestSelectDiffActionEdgeCases:
-    """Extended tests for select_diff_action with more action types."""
-
-    @pytest.fixture
-    def session(self) -> InteractiveSession:
-        return InteractiveSession(use_colors=False)
-
-    @pytest.fixture
-    def sample_item(self) -> Item:
-        return Item(
-            item_type=ItemType.AGENT,
-            name="diff-agent",
-            source_path=Path("/src/diff-agent"),
-        )
-
-    def test_skip_action(
-        self,
-        session: InteractiveSession,
-        sample_item: Item,
-        capsys: pytest.CaptureFixture,
-    ) -> None:
-        """User picks 's' (skip) for a diff entry."""
-        entry = DiffEntry(item=sample_item, status=DiffStatus.UPDATED)
-        with patch("builtins.input", return_value="s"):
-            result = session.select_diff_action([(entry, Platform.OPENCODE)])
-        assert result["agent/diff-agent"] == SyncAction.SKIP
-
-    def test_update_action(
-        self,
-        session: InteractiveSession,
-        sample_item: Item,
-        capsys: pytest.CaptureFixture,
-    ) -> None:
-        """User picks 'u' (update) for a diff entry."""
-        entry = DiffEntry(item=sample_item, status=DiffStatus.UPDATED)
-        with patch("builtins.input", return_value="u"):
-            result = session.select_diff_action([(entry, Platform.OPENCODE)])
-        assert result["agent/diff-agent"] == SyncAction.UPDATE
-
-    def test_empty_input_defaults_to_skip(
-        self,
-        session: InteractiveSession,
-        sample_item: Item,
-        capsys: pytest.CaptureFixture,
-    ) -> None:
-        """Empty input during diff resolution defaults to skip."""
-        entry = DiffEntry(item=sample_item, status=DiffStatus.NEW)
-        with patch("builtins.input", return_value=""):
-            result = session.select_diff_action([(entry, Platform.CLAUDE_CODE)])
-        assert result["agent/diff-agent"] == SyncAction.SKIP
-
-    def test_multiple_entries_with_individual_choices(
-        self,
-        session: InteractiveSession,
-        capsys: pytest.CaptureFixture,
-    ) -> None:
-        """Each entry gets a separate prompt with individual choices."""
-        item1 = Item(
-            item_type=ItemType.AGENT,
-            name="first",
-            source_path=Path("/src/first"),
-        )
-        item2 = Item(
-            item_type=ItemType.SKILL,
-            name="second",
-            source_path=Path("/src/second"),
-        )
-        entries = [
-            (DiffEntry(item=item1, status=DiffStatus.NEW), Platform.OPENCODE),
-            (DiffEntry(item=item2, status=DiffStatus.UPDATED), Platform.CLAUDE_CODE),
-        ]
-        # First: install, Second: update
-        with patch("builtins.input", side_effect=["i", "u"]):
-            result = session.select_diff_action(entries)
-        assert result["agent/first"] == SyncAction.INSTALL
-        assert result["skill/second"] == SyncAction.UPDATE
-
-    def test_all_install_applies_to_remaining(
-        self,
-        session: InteractiveSession,
-        capsys: pytest.CaptureFixture,
-    ) -> None:
-        """'all' on first entry applies install to all subsequent entries."""
-        items = [
-            Item(
-                item_type=ItemType.AGENT,
-                name=f"item-{i}",
-                source_path=Path(f"/src/item-{i}"),
-            )
-            for i in range(4)
-        ]
-        entries = [(DiffEntry(item=it, status=DiffStatus.NEW), Platform.OPENCODE) for it in items]
-        # Only one input call: "a" (install all)
-        with patch("builtins.input", return_value="a"):
-            result = session.select_diff_action(entries)
-        assert len(result) == 4
-        for it in items:
-            assert result[it.item_key] == SyncAction.INSTALL
-
-
-# ---------------------------------------------------------------------------
-# Additional InteractiveSession — resolve_sync_conflicts edge cases
-# ---------------------------------------------------------------------------
-
-
-class TestResolveSyncConflictsEdgeCases:
-    """Extended tests for resolve_sync_conflicts with more actions."""
-
-    @pytest.fixture
-    def session(self) -> InteractiveSession:
-        return InteractiveSession(use_colors=False)
-
-    def test_push_action(self, session: InteractiveSession) -> None:
-        """'u' maps to 'push' action."""
-        conflicts = [("my-agent", "agent", "OpenCode")]
-        with patch("builtins.input", return_value="u"):
-            result = session.resolve_sync_conflicts(conflicts)
-        assert result["my-agent/OpenCode"] == "push"
-
-    def test_apply_to_all_pull(self, session: InteractiveSession) -> None:
-        """'a' then 'p' applies pull to all remaining conflicts."""
-        conflicts = [
-            ("agent-a", "agent", "OpenCode"),
-            ("skill-b", "skill", "Claude Code"),
-            ("agent-c", "agent", "OpenCode"),
-        ]
-        # First prompt: "a" (apply to all), second prompt: "p" (pull)
-        with patch("builtins.input", side_effect=["a", "p"]):
-            result = session.resolve_sync_conflicts(conflicts)
-        assert len(result) == 3
-        for key in result:
-            assert result[key] == "pull"
-
-    def test_apply_to_all_push(self, session: InteractiveSession) -> None:
-        """'a' then 'u' applies push to all remaining conflicts."""
-        conflicts = [
-            ("agent-a", "agent", "OpenCode"),
-            ("skill-b", "skill", "Claude Code"),
-        ]
-        with patch("builtins.input", side_effect=["a", "u"]):
-            result = session.resolve_sync_conflicts(conflicts)
-        assert result["agent-a/OpenCode"] == "push"
-        assert result["skill-b/Claude Code"] == "push"
-
-    def test_apply_to_all_defaults_to_skip(self, session: InteractiveSession) -> None:
-        """'a' with unknown sub-choice defaults to skip."""
-        conflicts = [
-            ("agent-a", "agent", "OpenCode"),
-            ("skill-b", "skill", "Claude Code"),
-        ]
-        # "a" (apply to all), then "xyz" (unknown) → defaults to skip
-        with patch("builtins.input", side_effect=["a", "xyz"]):
-            result = session.resolve_sync_conflicts(conflicts)
-        assert result["agent-a/OpenCode"] == "skip"
-        assert result["skill-b/Claude Code"] == "skip"
-
-    def test_empty_input_defaults_to_skip(self, session: InteractiveSession) -> None:
-        """Empty input during conflict resolution defaults to skip."""
-        conflicts = [("my-agent", "agent", "OpenCode")]
-        with patch("builtins.input", return_value=""):
-            result = session.resolve_sync_conflicts(conflicts)
-        assert result["my-agent/OpenCode"] == "skip"
-
-    def test_unknown_action_defaults_to_skip(self, session: InteractiveSession) -> None:
-        """Unrecognised action defaults to skip."""
-        conflicts = [("my-agent", "agent", "OpenCode")]
-        with patch("builtins.input", return_value="xyz"):
-            result = session.resolve_sync_conflicts(conflicts)
-        assert result["my-agent/OpenCode"] == "skip"
-
-    def test_mixed_choices_across_conflicts(self, session: InteractiveSession) -> None:
-        """Different conflicts can get different resolutions."""
-        conflicts = [
-            ("agent-a", "agent", "OpenCode"),
-            ("skill-b", "skill", "Claude Code"),
-        ]
-        # First: pull, Second: skip
-        with patch("builtins.input", side_effect=["p", "s"]):
-            result = session.resolve_sync_conflicts(conflicts)
-        assert result["agent-a/OpenCode"] == "pull"
-        assert result["skill-b/Claude Code"] == "skip"
-
-    def test_apply_to_all_with_push_keyword(self, session: InteractiveSession) -> None:
-        """Full keyword 'push' works for apply-to-all sub-choice."""
-        conflicts = [
-            ("agent-a", "agent", "OpenCode"),
-            ("skill-b", "skill", "Claude Code"),
-        ]
-        with patch("builtins.input", side_effect=["a", "push"]):
-            result = session.resolve_sync_conflicts(conflicts)
-        assert result["agent-a/OpenCode"] == "push"
-        assert result["skill-b/Claude Code"] == "push"
-
-
-# ---------------------------------------------------------------------------
-# Additional InteractiveSession — choose_push_items edge cases
-# ---------------------------------------------------------------------------
-
-
-class TestChoosePushItemsEdgeCases:
-    """Extended tests for choose_push_items with more scenarios."""
-
-    @pytest.fixture
-    def session(self) -> InteractiveSession:
-        return InteractiveSession(use_colors=False)
-
-    def test_no_matching_platforms_returns_empty(self, session: InteractiveSession) -> None:
-        """When platform input matches nothing, returns empty list."""
-        item = Item(
-            item_type=ItemType.AGENT,
-            name="push-agent",
-            source_path=Path("/src/push-agent"),
-        )
-        platforms = [Platform.OPENCODE]
-        # Platform "99" is out of range → no match
-        with patch("builtins.input", side_effect=["99", "1"]):
-            result = session.choose_push_items([item], platforms)
-        assert result == []
-
-    def test_specific_items_by_range(self, session: InteractiveSession) -> None:
-        """Items can be selected by range expression."""
-        items = [
-            Item(
-                item_type=ItemType.AGENT,
-                name=f"agent-{i}",
-                source_path=Path(f"/src/agent-{i}"),
-            )
-            for i in range(5)
-        ]
-        platforms = [Platform.OPENCODE]
-        # Platforms: all, Items: "1-3" (first three)
-        with patch("builtins.input", side_effect=["all", "1-3"]):
-            result = session.choose_push_items(items, platforms)
-        assert len(result) == 3
-        for item in items[:3]:
-            assert (item, Platform.OPENCODE) in result
-
-    def test_empty_items_input_returns_all(self, session: InteractiveSession) -> None:
-        """Empty items input after platform selection returns all items."""
-        item1 = Item(
-            item_type=ItemType.AGENT,
-            name="a1",
-            source_path=Path("/src/a1"),
-        )
-        item2 = Item(
-            item_type=ItemType.SKILL,
-            name="s1",
-            source_path=Path("/src/s1"),
-        )
-        platforms = [Platform.OPENCODE]
-        # Platforms: all, Items: empty → all items
-        with patch("builtins.input", side_effect=["all", ""]):
-            result = session.choose_push_items([item1, item2], platforms)
-        assert len(result) == 2
-
-    def test_multiple_platforms_expand_items(self, session: InteractiveSession) -> None:
-        """Each selected item is paired with each selected platform."""
-        item = Item(
-            item_type=ItemType.AGENT,
-            name="multi-agent",
-            source_path=Path("/src/multi-agent"),
-        )
-        platforms = [Platform.OPENCODE, Platform.CLAUDE_CODE]
-        with patch("builtins.input", side_effect=["1,2", "1"]):
-            result = session.choose_push_items([item], platforms)
-        assert len(result) == 2
-        assert (item, Platform.OPENCODE) in result
-        assert (item, Platform.CLAUDE_CODE) in result
 
 
 # ---------------------------------------------------------------------------
@@ -1171,19 +846,17 @@ class TestSelectionEOFHandling:
     def test_select_platforms_eof_returns_all(self) -> None:
         """EOFError during platform selection returns all platforms."""
         session = InteractiveSession(use_colors=False)
-        platforms = [Platform.OPENCODE, Platform.CLAUDE_CODE]
+        platforms = [Platform.OPENCODE]
         with patch("builtins.input", side_effect=EOFError):
             result = session.select_platforms(platforms)
         assert result == list(platforms)
 
-    def test_select_platforms_interrupt_raises(self) -> None:
-        """KeyboardInterrupt during platform selection propagates to caller."""
+    def test_select_platforms_interrupt_returns_all(self) -> None:
+        """KeyboardInterrupt during platform selection returns all (no-op method)."""
         session = InteractiveSession(use_colors=False)
-        with (
-            patch("builtins.input", side_effect=KeyboardInterrupt),
-            pytest.raises(KeyboardInterrupt),
-        ):
-            session.select_platforms([Platform.OPENCODE, Platform.CLAUDE_CODE])
+        with patch("builtins.input", side_effect=KeyboardInterrupt):
+            result = session.select_platforms([Platform.OPENCODE])
+        assert result == [Platform.OPENCODE]
 
     def test_select_item_types_eof_returns_all(self) -> None:
         """EOFError during item type selection returns all types."""

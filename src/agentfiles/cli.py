@@ -1,8 +1,8 @@
 """Command-line interface for the agentfiles tool.
 
 Exposes a single ``agentfiles`` CLI entry-point that orchestrates scanning,
-synchronisation, and interactive workflows across AI tool platforms
-(OpenCode, Claude Code, Cursor, Windsurf, etc.).
+synchronisation, and interactive workflows for AI tool platforms
+(OpenCode).
 
 Subcommands:
 
@@ -107,84 +107,27 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def _expand_platform_name(name: str, config: AgentfilesConfig) -> list[str]:
-    """Expand a single platform name or group name to a list of canonical platform names.
-
-    If *name* matches a key in ``config.platform_groups``, the group's
-    members are expanded (each resolved through :func:`resolve_platform`).
-    Otherwise *name* is treated as a direct platform name/alias.
-
-    Args:
-        name: A platform name, alias, or group name.
-        config: Loaded config providing ``platform_groups``.
-
-    Returns:
-        List of canonical platform value strings.
-
-    Raises:
-        ValueError: When *name* is not a known platform, alias, or group.
-
-    """
-    from agentfiles.models import resolve_platform
-
-    groups: dict[str, list[str]] = getattr(config, "platform_groups", {})
-    if name in groups:
-        return [resolve_platform(m) for m in groups[name]]
-    return [resolve_platform(name)]
-
-
 def _resolve_platforms(
     target_flag: str | None,
     config: AgentfilesConfig,
 ) -> list[Platform]:
     """Resolve which target platforms to operate on.
 
-    Resolution order:
-
-    1. ``"all"`` — return every known platform.
-    2. Explicit flag value — check if it matches a group in
-       ``config.platform_groups`` first; if so, expand to those platforms.
-       Otherwise treat as a direct platform name/alias.
-    3. ``None`` — fall back to ``config.default_platforms``; if that list
-       is empty or contains only unknown names, return every platform.
+    With only OpenCode supported, always returns ``[Platform.OPENCODE]``.
 
     Args:
-        target_flag: Value of the ``--target`` CLI flag (``"all"``, a
-            platform name, group name, or ``None``).
-        config: Loaded ``AgentfilesConfig`` providing ``default_platforms``
-            and ``platform_groups``.
+        target_flag: Value of the ``--target`` CLI flag (ignored, kept for
+            interface compatibility).
+        config: Loaded ``AgentfilesConfig`` (unused, kept for interface
+            compatibility).
 
     Returns:
-        List of ``Platform`` enums to operate on.
+        List containing ``Platform.OPENCODE``.
 
     """
     from agentfiles.models import Platform
 
-    if target_flag == "all":
-        return list(Platform)
-
-    if target_flag is not None:
-        canonicals = _expand_platform_name(target_flag, config)
-        # Deduplicate while preserving order.
-        seen: set[str] = set()
-        result: list[Platform] = []
-        for c in canonicals:
-            if c not in seen:
-                seen.add(c)
-                result.append(Platform(c))
-        return result
-
-    result = []
-    for name in config.default_platforms:
-        try:
-            for canonical in _expand_platform_name(name, config):
-                platform = Platform(canonical)
-                if platform not in result:
-                    result.append(platform)
-        except ValueError:
-            logger.warning("Unknown platform in config: %s", name)
-    # If config yielded no valid platforms, operate on all of them.
-    return result or list(Platform)
+    return [Platform.OPENCODE]
 
 
 def _resolve_item_types(type_flag: str | None) -> list[ItemType]:
@@ -403,23 +346,17 @@ def _apply_color_env(color: str) -> None:
 
 def _discover_targets(
     config: AgentfilesConfig,
-    *,
-    force_all: bool = False,
 ) -> TargetManager:
     """Discover installed AI tool platforms and build a ``TargetManager``.
 
-    Scans common install paths for OpenCode, Claude Code, Cursor, Windsurf,
-    etc.  Custom paths from the config override the defaults.
+    Scans common install paths for OpenCode.  Custom paths from the config
+    override the defaults.
 
     Args:
         config: Loaded ``AgentfilesConfig`` (may provide ``custom_paths``).
-        force_all: When ``True``, include platforms whose config directories
-            do not yet exist (using the first candidate path).  Suitable for
-            ``pull`` / ``install`` operations where the engine will create
-            the directories.
 
     Returns:
-        A ``TargetManager`` with at least one discovered platform.
+        A ``TargetManager`` with a discovered platform.
 
     Raises:
         AgentfilesError: When no platforms are discovered on the system.
@@ -428,13 +365,11 @@ def _discover_targets(
     from agentfiles.models import AgentfilesError
     from agentfiles.target import build_target_manager
 
-    target_manager = build_target_manager(config.custom_paths, force_all=force_all)
+    target_manager = build_target_manager(config.custom_paths)
 
-    if not target_manager.targets:
+    if target_manager.targets is None:
         raise AgentfilesError(
-            "No target platforms found. Install at least one supported tool: "
-            "OpenCode (https://opencode.ai), Claude Code (https://claude.ai/code), "
-            "Windsurf (https://codeium.com/windsurf), or Cursor (https://cursor.com). "
+            "No target platforms found. Install OpenCode (https://opencode.ai). "
             "Alternatively, use --config to specify custom_paths for your platform"
         )
 
@@ -504,8 +439,6 @@ def _create_sync_pipeline(
     source_dir: Path,
     config: AgentfilesConfig,
     args: argparse.Namespace,
-    *,
-    force_all: bool = False,
 ) -> tuple[SourceScanner, TargetManager, SyncEngine]:
     """Create the configured scanner, target manager, and sync engine.
 
@@ -516,8 +449,6 @@ def _create_sync_pipeline(
         source_dir: Resolved local path to the source repository.
         config: Loaded ``AgentfilesConfig``.
         args: Parsed CLI namespace (reads ``symlinks`` and ``dry_run``).
-        force_all: When ``True``, include platforms whose config directories
-            do not yet exist.
 
     Returns:
         ``(scanner, target_manager, engine)`` tuple ready for use.
@@ -527,7 +458,7 @@ def _create_sync_pipeline(
     from agentfiles.scanner import SourceScanner
 
     scanner = SourceScanner(source_dir)
-    target_manager = _discover_targets(config, force_all=force_all)
+    target_manager = _discover_targets(config)
     engine = SyncEngine(
         target_manager=target_manager,
         use_symlinks=getattr(args, "symlinks", False) or config.use_symlinks,
@@ -568,7 +499,6 @@ def _build_context(
     args: argparse.Namespace,
     *,
     needs_pipeline: bool = True,
-    force_all: bool = False,
 ) -> CommandContext:
     """Build shared command context from CLI arguments.
 
@@ -583,8 +513,6 @@ def _build_context(
             target manager, engine).  When ``False``, skip pipeline
             creation — *source_dir*, *scanner*, *target_manager*, and
             *engine* will be ``None``.
-        force_all: When ``True``, include platforms whose config
-            directories do not yet exist.
 
     Returns:
         A populated :class:`CommandContext` instance.
@@ -608,7 +536,6 @@ def _build_context(
             source_dir,
             config,
             args,
-            force_all=force_all,
         )
 
     item_types = _resolve_item_types(getattr(args, "item_type", None))
@@ -657,18 +584,17 @@ def _filter_items_by_installed(
         Filtered list of items.
 
     """
-    from agentfiles.models import TargetError
+    from agentfiles.models import Platform, TargetError
 
+    platform = Platform.OPENCODE
     result = []
     for item in items:
-        for platform in platforms:
-            try:
-                is_installed = target_manager.is_item_installed(item, platform)
-            except TargetError:
-                continue
-            if is_installed == installed:
-                result.append(item)
-                break
+        try:
+            is_installed = target_manager.is_item_installed(item, platform)
+        except TargetError:
+            continue
+        if is_installed == installed:
+            result.append(item)
     return result
 
 
@@ -695,63 +621,54 @@ def _discover_installed_from_targets(
         ``supported_platforms``.
 
     """
-    from agentfiles.models import Item, ItemType, TargetError
+    from agentfiles.models import Item, ItemType, Platform as _Platform, TargetError
     from agentfiles.paths import get_installed_item_path
 
-    # Collect (item_type, name) → (first on-disk path, all platforms).
-    registry: dict[tuple[ItemType, str], tuple[Path, list[Platform]]] = {}
-
-    for platform in platforms:
-        try:
-            installed = target_manager.get_installed_items(platform)
-        except TargetError:
-            # Platform not discovered on this machine — skip gracefully.
-            continue
-        for item_type, name in installed:
-            if item_type not in item_types:
-                continue
-
-            target_dir = target_manager.get_target_dir(platform, item_type)
-            if target_dir is None:
-                continue
-
-            item_path = get_installed_item_path(target_dir, item_type, name)
-
-            # For file-based items (agents, commands) installed as directories
-            # (e.g. orchestrator/orchestrator.md), fall back to the directory
-            # form if the flat-file path doesn't exist.
-            if not item_path.exists() and item_type.is_file_based:
-                dir_path = target_dir / name
-                if dir_path.is_dir():
-                    item_path = dir_path
-
-            if not item_path.exists():
-                continue
-
-            # For plugins, prefer the source file (.ts/.yaml/.yml/.py/.js)
-            # over the compiled extensionless file so that push preserves
-            # the original filename with extension.
-            if item_type == ItemType.PLUGIN and item_path.is_file() and not item_path.suffix:
-                for ext in (".ts", ".yaml", ".yml", ".py", ".js"):
-                    src_path = item_path.with_suffix(ext)
-                    if src_path.exists():
-                        item_path = src_path
-                        break
-
-            key = (item_type, name)
-            if key in registry:
-                registry[key][1].append(platform)
-            else:
-                registry[key] = (item_path, [platform])
-
+    platform = _Platform.OPENCODE
     items: list[Item] = []
-    for (item_type, name), (item_path, item_platforms) in registry.items():
+
+    try:
+        installed = target_manager.get_installed_items(platform)
+    except TargetError:
+        return items
+
+    for item_type, name in installed:
+        if item_type not in item_types:
+            continue
+
+        target_dir = target_manager.get_target_dir(platform, item_type)
+        if target_dir is None:
+            continue
+
+        item_path = get_installed_item_path(target_dir, item_type, name)
+
+        # For file-based items (agents, commands) installed as directories
+        # (e.g. orchestrator/orchestrator.md), fall back to the directory
+        # form if the flat-file path doesn't exist.
+        if not item_path.exists() and item_type.is_file_based:
+            dir_path = target_dir / name
+            if dir_path.is_dir():
+                item_path = dir_path
+
+        if not item_path.exists():
+            continue
+
+        # For plugins, prefer the source file (.ts/.yaml/.yml/.py/.js)
+        # over the compiled extensionless file so that push preserves
+        # the original filename with extension.
+        if item_type == ItemType.PLUGIN and item_path.is_file() and not item_path.suffix:
+            for ext in (".ts", ".yaml", ".yml", ".py", ".js"):
+                src_path = item_path.with_suffix(ext)
+                if src_path.exists():
+                    item_path = src_path
+                    break
+
         items.append(
             Item(
                 item_type=item_type,
                 name=name,
                 source_path=item_path,
-                supported_platforms=tuple(item_platforms),
+                supported_platforms=(platform,),
             )
         )
 
@@ -1016,7 +933,7 @@ def cmd_pull(args: argparse.Namespace) -> int:
     from agentfiles.interactive import InteractiveSession
     from agentfiles.output import bold, format_item_count, info, warning
 
-    ctx = _build_context(args, force_all=True)
+    ctx = _build_context(args)
     scanner = ctx.scanner
     target_manager = ctx.target_manager
     engine = ctx.engine
@@ -1072,7 +989,7 @@ def cmd_pull(args: argparse.Namespace) -> int:
     from agentfiles.models import SyncAction
 
     sync_action = SyncAction.UPDATE if pull_mode in ("update", "full") else SyncAction.INSTALL
-    plans = engine.plan_sync(items, tuple(platforms), action=sync_action)
+    plans = engine.plan_sync(items, action=sync_action)
 
     fmt = ctx.fmt
 
@@ -1384,7 +1301,6 @@ def cmd_push(args: argparse.Namespace) -> int:
 
     conflicts = detect_push_conflicts(
         installed_items,
-        tuple(platforms),
         source_dir,
         target_manager,
     )
@@ -1429,9 +1345,7 @@ def cmd_push(args: argparse.Namespace) -> int:
             info("All items skipped due to conflicts.")
             return 0
 
-    report = engine.push(
-        installed_items, tuple(platforms), source_dir=source_dir, dry_run=args.dry_run
-    )
+    report = engine.push(installed_items, source_dir=source_dir, dry_run=args.dry_run)
 
     fmt = getattr(args, "format", "text")
     if fmt == "json":
@@ -1538,31 +1452,26 @@ def cmd_status(args: argparse.Namespace) -> int:
         item_types = _resolve_item_types(getattr(args, "item_type", None))
         items = _scan_filtered(scanner, item_types)
         _, target_manager, _ = _create_sync_pipeline(source_dir, config, args)
-        platforms = _resolve_platforms(getattr(args, "target", None), config)
-        platform_tuple = tuple(platforms) if platforms else None
         differ = Differ(target_manager)
-        diff_results = differ.diff(items, platforms=platform_tuple)
+        diff_results = differ.diff(items)
         fmt = getattr(args, "format", "text")
         if fmt == "json":
-            print(json.dumps(format_diff_json(diff_results), indent=2))
+            print(format_diff_json(diff_results))
             return 0
         verbose = getattr(args, "verbose_diff", False)
-        # Build content_diffs dict keyed by (item_key, platform_value) only
+        # Build content_diffs dict keyed by item_key only
         # for UPDATED entries so format_diff can render inline diffs.
         content_diffs = None
         if verbose:
             content_diffs = {}
-            for _platform, entries in diff_results.items():
-                for _entry in entries:
-                    if _entry.status == DiffStatus.UPDATED:
-                        diff_lines = compute_content_diff(
-                            _entry,
-                            _platform,
-                            target_manager,
-                        )
-                        if diff_lines:
-                            key = (_entry.item.item_key, _platform.value)
-                            content_diffs[key] = diff_lines
+            for _entry in diff_results:
+                if _entry.status == DiffStatus.UPDATED:
+                    diff_lines = compute_content_diff(
+                        _entry,
+                        target_manager,
+                    )
+                    if diff_lines:
+                        content_diffs[_entry.item.item_key] = diff_lines
         output = format_diff(
             diff_results,
             use_colors=False,
@@ -1585,16 +1494,16 @@ def cmd_status(args: argparse.Namespace) -> int:
     headers = ["Platform", "Path", "Agents", "Skills", "Commands", "Plugins"]
     rows: list[list[str]] = []
 
-    for platform, paths in target_manager.targets.items():
-        counts = summary.get(platform, {})
+    targets = target_manager.targets
+    if targets is not None:
         rows.append(
             [
-                platform.display_name,
-                str(paths.config_dir),
-                str(counts.get("agents", 0)),
-                str(counts.get("skills", 0)),
-                str(counts.get("commands", 0)),
-                str(counts.get("plugins", 0)),
+                targets.platform.display_name,
+                str(targets.config_dir),
+                str(summary.get("agents", 0)),
+                str(summary.get("skills", 0)),
+                str(summary.get("commands", 0)),
+                str(summary.get("plugins", 0)),
             ]
         )
 
@@ -1716,7 +1625,7 @@ def cmd_clean(args: argparse.Namespace) -> int:
         item_platforms = orphan_platforms_map.get(item.item_key, [])
         if not item_platforms:
             continue
-        report = engine.uninstall([item], tuple(item_platforms))
+        report = engine.uninstall([item])
         if report.is_success:
             total_removed += sum(1 for r in report.uninstalled if r.is_success)
             for p in item_platforms:
@@ -1776,9 +1685,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     if config_path.exists():
         info(f"Config already exists: {config_path}")
     else:
-        config_content = (
-            "# agentfiles configuration\ndefault_platforms:\n  - opencode\n  - claude_code\n"
-        )
+        config_content = "# agentfiles configuration\ndefault_platforms:\n  - opencode\n"
         try:
             config_path.write_text(config_content)
         except OSError as exc:
@@ -1828,7 +1735,7 @@ def _update_sync_state_from_results(
     """
     from datetime import datetime, timezone
 
-    from agentfiles.models import ItemState, PlatformState
+    from agentfiles.models import ItemState
 
     for result in results:
         if not result.is_success:
@@ -1843,14 +1750,8 @@ def _update_sync_state_from_results(
         if platform is None:
             continue
 
-        platform_key = platform.value
-        if platform_key not in state.platforms:
-            state.platforms[platform_key] = PlatformState(
-                path=str(plan.target_dir),
-            )
-
         item_key = item.item_key
-        state.platforms[platform_key].items[item_key] = ItemState(
+        state.items[item_key] = ItemState(
             synced_at=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -1921,26 +1822,22 @@ def cmd_verify(args: argparse.Namespace) -> int:
     item_types = _resolve_item_types(getattr(args, "item_type", None))
     items = _scan_filtered(scanner, item_types)
     _, target_manager, _ = _create_sync_pipeline(source_dir, config, args)
-    platforms = _resolve_platforms(getattr(args, "target", None), config)
-    platform_tuple = tuple(platforms) if platforms else None
 
     differ = Differ(target_manager)
-    diff_results = differ.diff(items, platforms=platform_tuple)
+    diff_results = differ.diff(items)
 
     # Classify drift
     drift_entries: list[dict[str, str]] = []
-    for platform, entries in diff_results.items():
-        for entry in entries:
-            if entry.status != DiffStatus.UNCHANGED:
-                drift_entries.append(
-                    {
-                        "platform": platform.value,
-                        "item": entry.item.name,
-                        "type": entry.item.item_type.value,
-                        "status": entry.status.value,
-                        "details": entry.details or "",
-                    }
-                )
+    for entry in diff_results:
+        if entry.status != DiffStatus.UNCHANGED:
+            drift_entries.append(
+                {
+                    "item": entry.item.name,
+                    "type": entry.item.item_type.value,
+                    "status": entry.status.value,
+                    "details": entry.details or "",
+                }
+            )
 
     has_drift = len(drift_entries) > 0
 
@@ -1948,7 +1845,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
         if fmt == "json":
             result = {
                 "drift": has_drift,
-                "total_items": sum(len(e) for e in diff_results.values()),
+                "total_items": len(diff_results),
                 "drifted_items": len(drift_entries),
                 "details": drift_entries,
             }
@@ -1957,10 +1854,9 @@ def cmd_verify(args: argparse.Namespace) -> int:
             if has_drift:
                 print(f"Drift detected: {len(drift_entries)} item(s) out of sync")
                 for d in drift_entries:
-                    print(f"  [{d['status']}] {d['item']} ({d['platform']})")
+                    print(f"  [{d['status']}] {d['item']}")
             else:
-                total = sum(len(e) for e in diff_results.values())
-                print(f"No drift detected ({total} item(s) in sync)")
+                print(f"No drift detected ({len(diff_results)} item(s) in sync)")
 
     return 1 if has_drift else 0
 
@@ -2074,10 +1970,7 @@ def _add_common_args(
         "--target",
         metavar="TARGET",
         default=None,
-        help=(
-            "Target platform, alias, or group name defined in platform_groups "
-            "(e.g. opencode, cc, dev). Use 'all' for every platform."
-        ),
+        help=("Target platform (e.g. opencode, all). Defaults to opencode."),
     )
     filter_group.add_argument(
         "--type",
@@ -2333,7 +2226,7 @@ examples:
     status_src.add_argument(
         "--type",
         dest="item_type",
-        help="Filter by item type (agent, skill, command, plugin)",
+        help="Filter by item type (agent, skill, command, plugin, config, workflow)",
     )
     status_src.add_argument(
         "--target",
@@ -2440,7 +2333,7 @@ examples:
   agentfiles verify                       Check for drift (human output)
   agentfiles verify --format json         Machine-readable JSON output
   agentfiles verify --quiet               Only exit code, no output
-  agentfiles verify --target claude-code   Check a specific platform
+  agentfiles verify --target opencode     Check a specific platform
 """,
     )
     _add_common_args(verify_p)

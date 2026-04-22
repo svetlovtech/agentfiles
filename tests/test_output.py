@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import agentfiles.output as _output_module
-from agentfiles.models import DiffEntry, DiffStatus, Item, ItemType, Platform
+from agentfiles.models import DiffEntry, DiffStatus, Item, ItemType
 from agentfiles.output import (
     Colors,
     _diff_status_symbol,
@@ -29,7 +29,6 @@ from agentfiles.output import (
     info,
     init_logging,
     print_banner,
-    print_item_status,
     print_section,
     print_table,
     should_use_colors,
@@ -927,13 +926,13 @@ class TestFormatDiff:
 
     def test_empty_dict_returns_no_differences(self) -> None:
         """Empty diff_results should produce 'No differences found.'."""
-        result = format_diff({}, use_colors=False)
+        result = format_diff([], use_colors=False)
         assert result == "No differences found."
 
     def test_empty_dict_with_colors_returns_dimmed(self) -> None:
         """Empty diff with colors should dim the message."""
         with patch("agentfiles.output._use_colors", True):
-            result = format_diff({}, use_colors=True)
+            result = format_diff([], use_colors=True)
         assert "No differences found." in result
         assert Colors.DIM in result
         assert Colors.RESET in result
@@ -943,11 +942,9 @@ class TestFormatDiff:
         item = _make_item("my-agent")
         entry = DiffEntry(item=item, status=DiffStatus.NEW)
         result = format_diff(
-            {Platform.OPENCODE: [entry]},
+            [entry],
             use_colors=False,
         )
-        assert "OpenCode" in result
-        assert "opencode" in result
         assert "my-agent" in result
         assert "new" in result
 
@@ -959,7 +956,7 @@ class TestFormatDiff:
             DiffEntry(item=_make_item("zeta"), status=DiffStatus.NEW),
         ]
         result = format_diff(
-            {Platform.OPENCODE: entries},
+            entries,
             use_colors=False,
         )
         lines = result.strip().splitlines()
@@ -973,19 +970,15 @@ class TestFormatDiff:
         assert "beta" in entry_lines[2]
 
     def test_multiple_platforms(self) -> None:
-        """Multiple platforms should produce separate sections."""
-        entry = DiffEntry(item=_make_item("agent-a"), status=DiffStatus.NEW)
+        """Multiple item types should produce combined output."""
+        entry_oc = DiffEntry(item=_make_item("agent-a"), status=DiffStatus.NEW)
+        entry_oc2 = DiffEntry(item=_make_item("agent-b"), status=DiffStatus.UPDATED)
         result = format_diff(
-            {
-                Platform.OPENCODE: [entry],
-                Platform.CLAUDE_CODE: [entry],
-            },
+            [entry_oc, entry_oc2],
             use_colors=False,
         )
-        assert "OpenCode" in result
-        assert "Claude Code" in result
-        # Sections separated by double newline
-        assert "\n\n" in result
+        assert "agent-a" in result
+        assert "agent-b" in result
 
     def test_summary_line_includes_item_type(self) -> None:
         """Summary should mention the item type plural and status counts."""
@@ -994,7 +987,7 @@ class TestFormatDiff:
             DiffEntry(item=_make_item("b"), status=DiffStatus.UNCHANGED),
         ]
         result = format_diff(
-            {Platform.OPENCODE: entries},
+            entries,
             use_colors=False,
         )
         assert "agents" in result
@@ -1004,20 +997,20 @@ class TestFormatDiff:
     def test_colors_disabled_no_ansi(self) -> None:
         """When use_colors=False, output should contain no ANSI codes."""
         entry = DiffEntry(item=_make_item("x"), status=DiffStatus.NEW)
-        result = format_diff({Platform.OPENCODE: [entry]}, use_colors=False)
+        result = format_diff([entry], use_colors=False)
         assert "\033[" not in result
 
     def test_colors_enabled_includes_ansi(self) -> None:
         """When use_colors=True, output should contain ANSI codes."""
         with patch("agentfiles.output._use_colors", True):
             entry = DiffEntry(item=_make_item("x"), status=DiffStatus.NEW)
-            result = format_diff({Platform.OPENCODE: [entry]}, use_colors=True)
+            result = format_diff([entry], use_colors=True)
         assert "\033[" in result
 
     def test_deleted_status_in_diff(self) -> None:
         """Deleted items should appear with '-' symbol."""
         entry = DiffEntry(item=_make_item("gone"), status=DiffStatus.DELETED)
-        result = format_diff({Platform.OPENCODE: [entry]}, use_colors=False)
+        result = format_diff([entry], use_colors=False)
         assert "-" in result
         assert "gone" in result
         assert "deleted from source" in result
@@ -1025,7 +1018,7 @@ class TestFormatDiff:
     def test_conflict_status_in_diff(self) -> None:
         """Conflicting items should appear with '!' symbol."""
         entry = DiffEntry(item=_make_item("clash"), status=DiffStatus.CONFLICT)
-        result = format_diff({Platform.OPENCODE: [entry]}, use_colors=False)
+        result = format_diff([entry], use_colors=False)
         assert "!" in result
         assert "clash" in result
 
@@ -1038,7 +1031,7 @@ class TestFormatDiff:
                 status=DiffStatus.UPDATED,
             ),
         ]
-        result = format_diff({Platform.OPENCODE: entries}, use_colors=False)
+        result = format_diff(entries, use_colors=False)
         assert "agents" in result
         assert "skills" in result
 
@@ -1050,7 +1043,7 @@ class TestFormatDiffVerbose:
         """Verbose=True without content_diffs should not crash."""
         entry = DiffEntry(item=_make_item("x"), status=DiffStatus.UPDATED)
         result = format_diff(
-            {Platform.OPENCODE: [entry]},
+            [entry],
             use_colors=False,
             verbose=True,
             content_diffs=None,
@@ -1073,9 +1066,9 @@ class TestFormatDiffVerbose:
             "+line2 new",
             " line3",
         ]
-        content_diffs = {("agent/coder", "opencode"): diff_lines}
+        content_diffs = {"agent/coder": diff_lines}
         result = format_diff(
-            {Platform.OPENCODE: [entry]},
+            [entry],
             use_colors=False,
             verbose=True,
             content_diffs=content_diffs,
@@ -1089,9 +1082,9 @@ class TestFormatDiffVerbose:
         """NEW entries should not show content diff even in verbose mode."""
         item = _make_item("new-agent")
         entry = DiffEntry(item=item, status=DiffStatus.NEW)
-        content_diffs = {("agent/new-agent", "opencode"): ["should not appear"]}
+        content_diffs = {"agent/new-agent": ["should not appear"]}
         result = format_diff(
-            {Platform.OPENCODE: [entry]},
+            [entry],
             use_colors=False,
             verbose=True,
             content_diffs=content_diffs,
@@ -1103,9 +1096,9 @@ class TestFormatDiffVerbose:
         """UNCHANGED entries should not show content diff."""
         item = _make_item("same")
         entry = DiffEntry(item=item, status=DiffStatus.UNCHANGED)
-        content_diffs = {("agent/same", "opencode"): ["should not appear"]}
+        content_diffs = {"agent/same": ["should not appear"]}
         result = format_diff(
-            {Platform.OPENCODE: [entry]},
+            [entry],
             use_colors=False,
             verbose=True,
             content_diffs=content_diffs,
@@ -1124,10 +1117,10 @@ class TestFormatDiffVerbose:
             "+added",
             " context",
         ]
-        content_diffs = {("agent/colored", "opencode"): diff_lines}
+        content_diffs = {"agent/colored": diff_lines}
         with patch("agentfiles.output._use_colors", True):
             result = format_diff(
-                {Platform.OPENCODE: [entry]},
+                [entry],
                 use_colors=True,
                 verbose=True,
                 content_diffs=content_diffs,
@@ -1141,7 +1134,7 @@ class TestFormatDiffVerbose:
         entry = DiffEntry(item=item, status=DiffStatus.UPDATED)
         content_diffs = {}  # Empty — no matching key
         result = format_diff(
-            {Platform.OPENCODE: [entry]},
+            [entry],
             use_colors=False,
             verbose=True,
             content_diffs=content_diffs,
@@ -1155,9 +1148,9 @@ class TestFormatDiffVerbose:
         item = _make_item("x")
         entry = DiffEntry(item=item, status=DiffStatus.UPDATED)
         diff_lines = ["--- old", "+++ new", "-removed", "+added"]
-        content_diffs = {("agent/x", "opencode"): diff_lines}
+        content_diffs = {"agent/x": diff_lines}
         result = format_diff(
-            {Platform.OPENCODE: [entry]},
+            [entry],
             use_colors=False,
             verbose=False,
             content_diffs=content_diffs,
@@ -1174,21 +1167,20 @@ class TestFormatDiffVerbose:
 class TestFormatDiffJson:
     """Tests for format_diff_json() JSON output."""
 
-    def test_empty_dict_returns_valid_json(self) -> None:
-        """Empty diff should produce valid JSON with empty platforms."""
-        result = format_diff_json({})
+    def test_empty_list_returns_valid_json(self) -> None:
+        """Empty diff should produce valid JSON with empty items."""
+        result = format_diff_json([])
         parsed = json.loads(result)
-        assert parsed == {"platforms": {}}
+        assert parsed == {"items": []}
 
     def test_single_entry_produces_valid_structure(self) -> None:
         """Single entry should produce correct JSON structure."""
         item = _make_item("test-agent")
         entry = DiffEntry(item=item, status=DiffStatus.NEW)
-        result = format_diff_json({Platform.OPENCODE: [entry]})
+        result = format_diff_json([entry])
         parsed = json.loads(result)
-        assert "platforms" in parsed
-        assert "opencode" in parsed["platforms"]
-        items = parsed["platforms"]["opencode"]["items"]
+        assert "items" in parsed
+        items = parsed["items"]
         assert len(items) == 1
         assert items[0]["name"] == "test-agent"
         assert items[0]["type"] == "agent"
@@ -1200,43 +1192,33 @@ class TestFormatDiffJson:
             DiffEntry(item=_make_item("a"), status=DiffStatus.NEW),
             DiffEntry(item=_make_item("b"), status=DiffStatus.DELETED),
         ]
-        result = format_diff_json({Platform.OPENCODE: entries})
+        result = format_diff_json(entries)
         parsed = json.loads(result)
-        items = parsed["platforms"]["opencode"]["items"]
+        items = parsed["items"]
         assert len(items) == 2
-
-    def test_multiple_platforms(self) -> None:
-        """Multiple platforms should each appear as separate keys."""
-        entry = DiffEntry(item=_make_item("x"), status=DiffStatus.NEW)
-        result = format_diff_json(
-            {Platform.OPENCODE: [entry], Platform.CLAUDE_CODE: [entry]},
-        )
-        parsed = json.loads(result)
-        assert "opencode" in parsed["platforms"]
-        assert "claude_code" in parsed["platforms"]
 
     def test_json_is_indented(self) -> None:
         """Output should be pretty-printed with 2-space indent."""
         entry = DiffEntry(item=_make_item("x"), status=DiffStatus.NEW)
-        result = format_diff_json({Platform.OPENCODE: [entry]})
+        result = format_diff_json([entry])
         assert "  " in result  # 2-space indent present
 
     def test_all_status_values_in_json(self) -> None:
         """All DiffStatus values should serialize correctly."""
         for status in DiffStatus:
             entry = DiffEntry(item=_make_item(f"item-{status.value}"), status=status)
-            result = format_diff_json({Platform.OPENCODE: [entry]})
+            result = format_diff_json([entry])
             parsed = json.loads(result)
-            assert parsed["platforms"]["opencode"]["items"][0]["status"] == status.value
+            assert parsed["items"][0]["status"] == status.value
 
     def test_all_item_types_in_json(self) -> None:
         """All ItemType values should serialize correctly."""
         for item_type in ItemType:
             item = _make_item(f"item-{item_type.value}", item_type)
             entry = DiffEntry(item=item, status=DiffStatus.NEW)
-            result = format_diff_json({Platform.OPENCODE: [entry]})
+            result = format_diff_json([entry])
             parsed = json.loads(result)
-            assert parsed["platforms"]["opencode"]["items"][0]["type"] == item_type.value
+            assert parsed["items"][0]["type"] == item_type.value
 
 
 # ---------------------------------------------------------------------------
@@ -1555,68 +1537,3 @@ class TestPrintSection:
             print_section("Test")
         # dim() calls _safe_write once
         assert mock_write.called
-
-
-# ---------------------------------------------------------------------------
-# print_item_status
-# ---------------------------------------------------------------------------
-
-
-class TestPrintItemStatus:
-    """Tests for print_item_status() single item status line."""
-
-    def test_basic_status_line(self, capsys: pytest.CaptureFixture) -> None:
-        """Minimal status line with key and status."""
-        print_item_status("agent/coder", "✅", [])
-        captured = capsys.readouterr()
-        assert "✅ agent/coder" in captured.out
-
-    def test_with_platforms(self, capsys: pytest.CaptureFixture) -> None:
-        """Platforms should appear in brackets."""
-        print_item_status("skill/coder", "✅", ["opencode", "claude_code"])
-        captured = capsys.readouterr()
-        assert "[opencode, claude_code]" in captured.out
-
-    def test_with_detail(self, capsys: pytest.CaptureFixture) -> None:
-        """Detail text should appear after em-dash."""
-        print_item_status("agent/coder", "⚠️", ["opencode"], detail="content differs")
-        captured = capsys.readouterr()
-        assert "content differs" in captured.out
-        assert "\u2014" in captured.out  # em-dash
-
-    def test_no_platforms_omits_brackets(
-        self,
-        capsys: pytest.CaptureFixture,
-    ) -> None:
-        """Empty platforms list should not produce brackets."""
-        print_item_status("agent/test", "❌", [])
-        captured = capsys.readouterr()
-        assert "[" not in captured.out
-
-    def test_no_detail_omits_dash(self, capsys: pytest.CaptureFixture) -> None:
-        """No detail text should not produce em-dash."""
-        print_item_status("agent/test", "✅", ["opencode"])
-        captured = capsys.readouterr()
-        assert "\u2014" not in captured.out
-
-    def test_full_status_line(self, capsys: pytest.CaptureFixture) -> None:
-        """All fields populated should produce expected format."""
-        print_item_status(
-            "skill/python-review",
-            "✅",
-            ["opencode"],
-            detail="up to date",
-        )
-        captured = capsys.readouterr()
-        line = captured.out.rstrip("\n")
-        assert line.startswith("  ✅ skill/python-review [opencode]")
-        assert line.endswith("up to date")
-
-    def test_routes_through_safe_write(self) -> None:
-        """print_item_status should route through _safe_write."""
-        with patch("agentfiles.output._safe_write") as mock_write:
-            print_item_status("x", "✅", ["opencode"], detail="ok")
-        mock_write.assert_called_once()
-        written = mock_write.call_args[0][0]
-        assert "x" in written
-        assert "opencode" in written

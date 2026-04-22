@@ -1,4 +1,4 @@
-"""Tests for sync state models and I/O — ItemState, PlatformState, SyncState."""
+"""Tests for sync state models and I/O — ItemState, SyncState."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 from agentfiles.config import load_sync_state, save_sync_state
-from agentfiles.models import ItemState, PlatformState, SyncState
+from agentfiles.models import ItemState, SyncState
 
 # ---------------------------------------------------------------------------
 # ItemState
@@ -40,38 +40,6 @@ class TestItemState:
 
 
 # ---------------------------------------------------------------------------
-# PlatformState
-# ---------------------------------------------------------------------------
-
-
-class TestPlatformState:
-    """Tests for PlatformState dataclass."""
-
-    def test_default_values(self) -> None:
-        state = PlatformState()
-        assert state.path == ""
-        assert state.items == {}
-
-    def test_custom_values(self) -> None:
-        items = {"agent/coder": ItemState(synced_at="2025-01-01T00:00:00Z")}
-        state = PlatformState(path="/home/user/.config/opencode", items=items)
-        assert state.path == "/home/user/.config/opencode"
-        assert len(state.items) == 1
-
-    def test_frozen(self) -> None:
-        state = PlatformState(path="/test")
-        with pytest.raises(AttributeError):
-            state.path = "/changed"  # type: ignore[misc]
-
-    def test_default_factory_isolation(self) -> None:
-        """Each instance gets its own items dict."""
-        a = PlatformState()
-        b = PlatformState()
-        a.items["test"] = ItemState()  # type: ignore[index]
-        assert "test" not in b.items
-
-
-# ---------------------------------------------------------------------------
 # SyncState
 # ---------------------------------------------------------------------------
 
@@ -83,36 +51,33 @@ class TestSyncState:
         state = SyncState()
         assert state.version == "1.0"
         assert state.last_sync == ""
-        assert state.platforms == {}
+        assert state.items == {}
 
     def test_mutable(self) -> None:
         """SyncState must be mutable for updates during sync."""
         state = SyncState()
         state.version = "2.0"
         state.last_sync = "2025-06-01T12:00:00Z"
-        state.platforms["opencode"] = PlatformState(path="/test")
+        state.items["agent/coder"] = ItemState(synced_at="2025-01-01T00:00:00Z")
         assert state.version == "2.0"
         assert state.last_sync == "2025-06-01T12:00:00Z"
-        assert "opencode" in state.platforms
+        assert "agent/coder" in state.items
 
     def test_default_factory_isolation(self) -> None:
-        """Each instance gets its own platforms dict."""
+        """Each instance gets its own items dict."""
         a = SyncState()
         b = SyncState()
-        a.platforms["test"] = PlatformState()
-        assert "test" not in b.platforms
+        a.items["test"] = ItemState()
+        assert "test" not in b.items
 
-    def test_with_platforms(self) -> None:
-        items = {"skill/reviewer": ItemState(synced_at="2025-01-01T00:00:00Z")}
-        platforms = {
-            "opencode": PlatformState(
-                path="/home/user/.config/opencode",
-                items=items,
-            ),
+    def test_with_items(self) -> None:
+        items = {
+            "skill/reviewer": ItemState(synced_at="2025-01-01T00:00:00Z"),
+            "agent/coder": ItemState(synced_at="2025-01-02T00:00:00Z"),
         }
-        state = SyncState(version="1.0", platforms=platforms)
-        assert "opencode" in state.platforms
-        assert "skill/reviewer" in state.platforms["opencode"].items
+        state = SyncState(version="1.0", items=items)
+        assert "skill/reviewer" in state.items
+        assert "agent/coder" in state.items
 
 
 # ---------------------------------------------------------------------------
@@ -127,9 +92,73 @@ class TestLoadSyncState:
         state = load_sync_state(tmp_path)
         assert state.version == "1.0"
         assert state.last_sync == ""
-        assert state.platforms == {}
+        assert state.items == {}
 
     def test_loads_valid_state_file(self, tmp_path: Path) -> None:
+        state_data = {
+            "version": "1.0",
+            "last_sync": "2025-06-01T12:00:00Z",
+            "items": {
+                "agent/coder": {
+                    "synced_at": "2025-06-01T11:00:00Z",
+                },
+            },
+        }
+        state_file = tmp_path / ".agentfiles.state.yaml"
+        state_file.write_text(yaml.dump(state_data), encoding="utf-8")
+
+        state = load_sync_state(tmp_path)
+        assert state.version == "1.0"
+        assert state.last_sync == "2025-06-01T12:00:00Z"
+        assert "agent/coder" in state.items
+
+        item = state.items["agent/coder"]
+        assert item.synced_at == "2025-06-01T11:00:00Z"
+
+    def test_loads_empty_state_file(self, tmp_path: Path) -> None:
+        state_file = tmp_path / ".agentfiles.state.yaml"
+        state_file.write_text("# empty\n", encoding="utf-8")
+
+        state = load_sync_state(tmp_path)
+        assert state.version == "1.0"
+        assert state.items == {}
+
+    def test_loads_state_with_empty_items(self, tmp_path: Path) -> None:
+        state_data = {
+            "version": "1.0",
+            "items": {},
+        }
+        state_file = tmp_path / ".agentfiles.state.yaml"
+        state_file.write_text(yaml.dump(state_data), encoding="utf-8")
+
+        state = load_sync_state(tmp_path)
+        assert state.items == {}
+
+    def test_skips_non_dict_item_data(self, tmp_path: Path) -> None:
+        state_data = {
+            "version": "1.0",
+            "items": {"agent/bad": "not_a_dict"},
+        }
+        state_file = tmp_path / ".agentfiles.state.yaml"
+        state_file.write_text(yaml.dump(state_data), encoding="utf-8")
+
+        state = load_sync_state(tmp_path)
+        assert "agent/bad" not in state.items
+
+    def test_handles_missing_item_fields(self, tmp_path: Path) -> None:
+        state_data = {
+            "version": "1.0",
+            "items": {"agent/minimal": {}},
+        }
+        state_file = tmp_path / ".agentfiles.state.yaml"
+        state_file.write_text(yaml.dump(state_data), encoding="utf-8")
+
+        state = load_sync_state(tmp_path)
+        item = state.items["agent/minimal"]
+        assert item.synced_at == ""
+
+    def test_loads_legacy_platforms_format(self, tmp_path: Path) -> None:
+        """Legacy state files with 'platforms' key are migrated to flat 'items'."""
         state_data = {
             "version": "1.0",
             "last_sync": "2025-06-01T12:00:00Z",
@@ -149,100 +178,8 @@ class TestLoadSyncState:
 
         state = load_sync_state(tmp_path)
         assert state.version == "1.0"
-        assert state.last_sync == "2025-06-01T12:00:00Z"
-        assert "opencode" in state.platforms
-
-        platform = state.platforms["opencode"]
-        assert platform.path == "/home/user/.config/opencode"
-        assert "agent/coder" in platform.items
-
-        item = platform.items["agent/coder"]
-        assert item.synced_at == "2025-06-01T11:00:00Z"
-
-    def test_loads_empty_state_file(self, tmp_path: Path) -> None:
-        state_file = tmp_path / ".agentfiles.state.yaml"
-        state_file.write_text("# empty\n", encoding="utf-8")
-
-        state = load_sync_state(tmp_path)
-        assert state.version == "1.0"
-        assert state.platforms == {}
-
-    def test_loads_state_with_empty_platforms(self, tmp_path: Path) -> None:
-        state_data = {"version": "1.0", "last_sync": "", "platforms": {}}
-        state_file = tmp_path / ".agentfiles.state.yaml"
-        state_file.write_text(yaml.dump(state_data), encoding="utf-8")
-
-        state = load_sync_state(tmp_path)
-        assert state.platforms == {}
-
-    def test_loads_state_with_empty_items(self, tmp_path: Path) -> None:
-        state_data = {
-            "version": "1.0",
-            "platforms": {"opencode": {"path": "/test", "items": {}}},
-        }
-        state_file = tmp_path / ".agentfiles.state.yaml"
-        state_file.write_text(yaml.dump(state_data), encoding="utf-8")
-
-        state = load_sync_state(tmp_path)
-        assert "opencode" in state.platforms
-        assert state.platforms["opencode"].items == {}
-
-    def test_skips_non_dict_platform_data(self, tmp_path: Path) -> None:
-        state_data = {
-            "version": "1.0",
-            "platforms": {"opencode": "not_a_dict"},
-        }
-        state_file = tmp_path / ".agentfiles.state.yaml"
-        state_file.write_text(yaml.dump(state_data), encoding="utf-8")
-
-        state = load_sync_state(tmp_path)
-        # non-dict platform data should be skipped
-        assert state.platforms == {}
-
-    def test_skips_non_dict_item_data(self, tmp_path: Path) -> None:
-        state_data = {
-            "version": "1.0",
-            "platforms": {
-                "opencode": {
-                    "path": "/test",
-                    "items": {"agent/bad": "not_a_dict"},
-                },
-            },
-        }
-        state_file = tmp_path / ".agentfiles.state.yaml"
-        state_file.write_text(yaml.dump(state_data), encoding="utf-8")
-
-        state = load_sync_state(tmp_path)
-        assert "opencode" in state.platforms
-        assert state.platforms["opencode"].items == {}
-
-    def test_handles_missing_item_fields(self, tmp_path: Path) -> None:
-        state_data = {
-            "version": "1.0",
-            "platforms": {
-                "opencode": {
-                    "path": "/test",
-                    "items": {"agent/minimal": {}},
-                },
-            },
-        }
-        state_file = tmp_path / ".agentfiles.state.yaml"
-        state_file.write_text(yaml.dump(state_data), encoding="utf-8")
-
-        state = load_sync_state(tmp_path)
-        item = state.platforms["opencode"].items["agent/minimal"]
-        assert item.synced_at == ""
-
-    def test_handles_missing_platform_path(self, tmp_path: Path) -> None:
-        state_data = {
-            "version": "1.0",
-            "platforms": {"opencode": {"items": {}}},
-        }
-        state_file = tmp_path / ".agentfiles.state.yaml"
-        state_file.write_text(yaml.dump(state_data), encoding="utf-8")
-
-        state = load_sync_state(tmp_path)
-        assert state.platforms["opencode"].path == ""
+        assert "agent/coder" in state.items
+        assert state.items["agent/coder"].synced_at == "2025-06-01T11:00:00Z"
 
 
 # ---------------------------------------------------------------------------
@@ -281,14 +218,9 @@ class TestSaveSyncState:
         state = SyncState(
             version="1.0",
             last_sync="2025-06-01T12:00:00Z",
-            platforms={
-                "opencode": PlatformState(
-                    path="/home/user/.config/opencode",
-                    items={
-                        "agent/coder": ItemState(
-                            synced_at="2025-06-01T11:00:00Z",
-                        ),
-                    },
+            items={
+                "agent/coder": ItemState(
+                    synced_at="2025-06-01T11:00:00Z",
                 ),
             },
         )
@@ -298,13 +230,9 @@ class TestSaveSyncState:
         loaded = yaml.safe_load(content)
         assert loaded["version"] == "1.0"
         assert loaded["last_sync"] == "2025-06-01T12:00:00Z"
-        assert "opencode" in loaded["platforms"]
+        assert "items" in loaded
 
-        platform = loaded["platforms"]["opencode"]
-        assert platform["path"] == "/home/user/.config/opencode"
-        assert "agent/coder" in platform["items"]
-
-        item = platform["items"]["agent/coder"]
+        item = loaded["items"]["agent/coder"]
         assert item["synced_at"] == "2025-06-01T11:00:00Z"
 
 
@@ -323,31 +251,18 @@ class TestSyncStateRoundTrip:
 
         assert loaded.version == original.version
         assert loaded.last_sync == original.last_sync
-        assert loaded.platforms == original.platforms
+        assert loaded.items == original.items
 
     def test_round_trip_full_state(self, tmp_path: Path) -> None:
         original = SyncState(
             version="1.0",
             last_sync="2025-06-01T12:00:00Z",
-            platforms={
-                "opencode": PlatformState(
-                    path="/home/user/.config/opencode",
-                    items={
-                        "agent/coder": ItemState(
-                            synced_at="2025-06-01T11:00:00Z",
-                        ),
-                        "skill/reviewer": ItemState(
-                            synced_at="2025-06-01T10:00:00Z",
-                        ),
-                    },
+            items={
+                "agent/coder": ItemState(
+                    synced_at="2025-06-01T11:00:00Z",
                 ),
-                "claude_code": PlatformState(
-                    path="/home/user/.claude",
-                    items={
-                        "agent/architect": ItemState(
-                            synced_at="2025-06-01T09:00:00Z",
-                        ),
-                    },
+                "skill/reviewer": ItemState(
+                    synced_at="2025-06-01T10:00:00Z",
                 ),
             },
         )
@@ -356,38 +271,25 @@ class TestSyncStateRoundTrip:
 
         assert loaded.version == original.version
         assert loaded.last_sync == original.last_sync
-        assert set(loaded.platforms.keys()) == {"opencode", "claude_code"}
-        assert set(loaded.platforms["opencode"].items.keys()) == {"agent/coder", "skill/reviewer"}
-        assert set(loaded.platforms["claude_code"].items.keys()) == {"agent/architect"}
+        assert set(loaded.items.keys()) == {"agent/coder", "skill/reviewer"}
 
-        item = loaded.platforms["opencode"].items["agent/coder"]
+        item = loaded.items["agent/coder"]
         assert item.synced_at == "2025-06-01T11:00:00Z"
 
-    def test_round_trip_preserves_multiple_platforms(self, tmp_path: Path) -> None:
-        """Round-trip preserves all platforms with their items."""
+    def test_round_trip_preserves_multiple_items(self, tmp_path: Path) -> None:
+        """Round-trip preserves all items with their timestamps."""
         original = SyncState(
             version="1.0",
             last_sync="2025-09-01T08:00:00Z",
-            platforms={
-                "opencode": PlatformState(
-                    path="/home/user/.config/opencode",
-                    items={
-                        "agent/coder": ItemState(
-                            synced_at="2025-09-01T08:00:00Z",
-                        ),
-                    },
+            items={
+                "agent/coder": ItemState(
+                    synced_at="2025-09-01T08:00:00Z",
                 ),
-                "claude_code": PlatformState(
-                    path="/home/user/.claude",
-                    items={
-                        "skill/reviewer": ItemState(
-                            synced_at="2025-09-01T07:00:00Z",
-                        ),
-                    },
+                "skill/reviewer": ItemState(
+                    synced_at="2025-09-01T07:00:00Z",
                 ),
-                "windsurf": PlatformState(
-                    path="/home/user/.windsurf",
-                    items={},
+                "command/build": ItemState(
+                    synced_at="2025-09-01T06:00:00Z",
                 ),
             },
         )
@@ -396,20 +298,13 @@ class TestSyncStateRoundTrip:
 
         assert loaded == original
 
-    def test_round_trip_with_empty_platform_items(self, tmp_path: Path) -> None:
-        """Round-trip preserves platforms with empty items dicts."""
-        original = SyncState(
-            platforms={
-                "opencode": PlatformState(path="/test", items={}),
-                "cursor": PlatformState(path="/cursor/path", items={}),
-            },
-        )
+    def test_round_trip_with_empty_items(self, tmp_path: Path) -> None:
+        """Round-trip preserves state with empty items dict."""
+        original = SyncState(items={})
         save_sync_state(tmp_path, original)
         loaded = load_sync_state(tmp_path)
 
-        assert loaded.platforms.keys() == original.platforms.keys()
-        for name in original.platforms:
-            assert loaded.platforms[name].items == {}
+        assert loaded.items == {}
 
 
 # ---------------------------------------------------------------------------
@@ -424,55 +319,30 @@ class TestSyncStateRoundTripEdgeCases:
         """Long synced_at values survive save/load roundtrip."""
         long_ts = "2025-12-31T23:59:59.123456Z"
         original = SyncState(
-            platforms={
-                "opencode": PlatformState(
-                    path="/test",
-                    items={
-                        "agent/special": ItemState(
-                            synced_at=long_ts,
-                        ),
-                    },
+            items={
+                "agent/special": ItemState(
+                    synced_at=long_ts,
                 ),
             },
         )
         save_sync_state(tmp_path, original)
         loaded = load_sync_state(tmp_path)
 
-        assert loaded.platforms["opencode"].items["agent/special"].synced_at == long_ts
-
-    def test_roundtrip_with_unicode_paths(self, tmp_path: Path) -> None:
-        """Unicode characters in paths survive save/load roundtrip."""
-        original = SyncState(
-            platforms={
-                "opencode": PlatformState(
-                    path="/home/user/файлы/.config",
-                    items={},
-                ),
-            },
-        )
-        save_sync_state(tmp_path, original)
-        loaded = load_sync_state(tmp_path)
-
-        assert loaded.platforms["opencode"].path == "/home/user/файлы/.config"
+        assert loaded.items["agent/special"].synced_at == long_ts
 
     def test_roundtrip_with_slash_in_item_key(self, tmp_path: Path) -> None:
         """Item keys containing slashes survive roundtrip."""
         original = SyncState(
-            platforms={
-                "opencode": PlatformState(
-                    path="/test",
-                    items={
-                        "agent/coder": ItemState(synced_at="2025-01-01T00:00:00Z"),
-                        "skill/python-reviewer": ItemState(synced_at="2025-01-02T00:00:00Z"),
-                        "command/build": ItemState(synced_at="2025-01-03T00:00:00Z"),
-                    },
-                ),
+            items={
+                "agent/coder": ItemState(synced_at="2025-01-01T00:00:00Z"),
+                "skill/python-reviewer": ItemState(synced_at="2025-01-02T00:00:00Z"),
+                "command/build": ItemState(synced_at="2025-01-03T00:00:00Z"),
             },
         )
         save_sync_state(tmp_path, original)
         loaded = load_sync_state(tmp_path)
 
-        assert set(loaded.platforms["opencode"].items.keys()) == {
+        assert set(loaded.items.keys()) == {
             "agent/coder",
             "skill/python-reviewer",
             "command/build",
@@ -487,30 +357,20 @@ class TestSyncStateRoundTripEdgeCases:
         # Save updated state
         updated = SyncState(
             last_sync="2025-06-15T12:00:00Z",
-            platforms={
-                "opencode": PlatformState(
-                    path="/test",
-                    items={"agent/coder": ItemState(synced_at="2025-06-15T12:00:00Z")},
-                ),
-            },
+            items={"agent/coder": ItemState(synced_at="2025-06-15T12:00:00Z")},
         )
         save_sync_state(tmp_path, updated)
 
         loaded = load_sync_state(tmp_path)
         assert loaded.last_sync == "2025-06-15T12:00:00Z"
-        assert loaded.platforms["opencode"].items["agent/coder"].synced_at == "2025-06-15T12:00:00Z"
+        assert loaded.items["agent/coder"].synced_at == "2025-06-15T12:00:00Z"
 
     def test_state_file_is_valid_yaml(self, tmp_path: Path) -> None:
         """The saved state file is valid YAML that can be parsed externally."""
         original = SyncState(
             version="1.0",
             last_sync="2025-07-01T00:00:00Z",
-            platforms={
-                "opencode": PlatformState(
-                    path="/test",
-                    items={"agent/coder": ItemState(synced_at="2025-07-01T00:00:00Z")},
-                ),
-            },
+            items={"agent/coder": ItemState(synced_at="2025-07-01T00:00:00Z")},
         )
         save_sync_state(tmp_path, original)
 
@@ -561,13 +421,8 @@ class TestSyncStateRecoveryEdgeCases:
     def test_load_state_with_unexpected_yaml_structure(self, tmp_path: Path) -> None:
         """A state file with unexpected but valid YAML returns empty state."""
         state_data = {
-            "platforms": {
-                "opencode": {
-                    "path": "/test",
-                    "items": {
-                        "agent/bad": ["not", "a", "dict"],
-                    },
-                },
+            "items": {
+                "agent/bad": ["not", "a", "dict"],
             },
         }
         state_file = tmp_path / ".agentfiles.state.yaml"
@@ -575,27 +430,13 @@ class TestSyncStateRecoveryEdgeCases:
 
         state = load_sync_state(tmp_path)
         # Non-dict item data is skipped
-        assert state.platforms["opencode"].items == {}
-
-    def test_load_state_with_null_platforms(self, tmp_path: Path) -> None:
-        """A state file with null platforms returns empty platforms dict."""
-        state_data = {"version": "1.0", "platforms": None}
-        state_file = tmp_path / ".agentfiles.state.yaml"
-        state_file.write_text(yaml.dump(state_data), encoding="utf-8")
-
-        state = load_sync_state(tmp_path)
-        assert state.platforms == {}
+        assert "agent/bad" not in state.items
 
     def test_load_state_with_null_items(self, tmp_path: Path) -> None:
-        """A state file with null items for a platform returns empty items."""
-        state_data = {
-            "platforms": {
-                "opencode": {"path": "/test", "items": None},
-            },
-        }
+        """A state file with null items returns empty items dict."""
+        state_data = {"version": "1.0", "items": None}
         state_file = tmp_path / ".agentfiles.state.yaml"
         state_file.write_text(yaml.dump(state_data), encoding="utf-8")
 
         state = load_sync_state(tmp_path)
-        assert "opencode" in state.platforms
-        assert state.platforms["opencode"].items == {}
+        assert state.items == {}

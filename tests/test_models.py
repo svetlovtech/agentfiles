@@ -24,7 +24,6 @@ from agentfiles.models import (
     ItemState,
     ItemType,
     Platform,
-    PlatformState,
     SourceError,
     SourceInfo,
     SourceType,
@@ -137,14 +136,12 @@ class TestPlatform:
 
     def test_values(self) -> None:
         assert Platform.OPENCODE.value == "opencode"
-        assert Platform.CLAUDE_CODE.value == "claude_code"
 
     def test_display_name_property(self) -> None:
         assert Platform.OPENCODE.display_name == "OpenCode"
-        assert Platform.CLAUDE_CODE.display_name == "Claude Code"
 
     def test_member_count(self) -> None:
-        assert len(Platform) == 7
+        assert len(Platform) == 1
 
 
 class TestPlatformRegistry:
@@ -155,9 +152,6 @@ class TestPlatformRegistry:
 
     def test_platform_names_contains_canonical_names(self) -> None:
         assert "opencode" in PLATFORM_NAMES
-        assert "claude_code" in PLATFORM_NAMES
-        assert "windsurf" in PLATFORM_NAMES
-        assert "cursor" in PLATFORM_NAMES
 
     def test_all_canonical_names_are_in_aliases(self) -> None:
         for name in PLATFORM_NAMES:
@@ -172,25 +166,18 @@ class TestPlatformRegistry:
 
     def test_resolve_canonical_names(self) -> None:
         assert resolve_platform("opencode") == "opencode"
-        assert resolve_platform("claude_code") == "claude_code"
-        assert resolve_platform("windsurf") == "windsurf"
-        assert resolve_platform("cursor") == "cursor"
 
     def test_resolve_short_aliases(self) -> None:
         assert resolve_platform("oc") == "opencode"
-        assert resolve_platform("cc") == "claude_code"
-        assert resolve_platform("ws") == "windsurf"
-        assert resolve_platform("cr") == "cursor"
 
     def test_resolve_descriptive_aliases(self) -> None:
-        assert resolve_platform("claude") == "claude_code"
-        assert resolve_platform("claudecode") == "claude_code"
+        assert resolve_platform("open-code") == "opencode"
+        assert resolve_platform("open_code") == "opencode"
 
     def test_resolve_is_case_insensitive(self) -> None:
         assert resolve_platform("OpenCode") == "opencode"
-        assert resolve_platform("CLAUDE_CODE") == "claude_code"
+        assert resolve_platform("OPENCODE") == "opencode"
         assert resolve_platform("OC") == "opencode"
-        assert resolve_platform("Cursor") == "cursor"
 
     def test_resolve_strips_whitespace(self) -> None:
         assert resolve_platform("  opencode  ") == "opencode"
@@ -318,7 +305,7 @@ class TestItem:
         assert item.meta is None
         assert item.version == "1.0.0"
         assert item.files == ()
-        assert item.supported_platforms == (Platform.OPENCODE, Platform.CLAUDE_CODE)
+        assert item.supported_platforms == (Platform.OPENCODE,)
 
     def test_full_creation(self) -> None:
         meta = ItemMeta(name="full", version="3.0.0")
@@ -357,24 +344,6 @@ class TestItem:
         items.sort(key=lambda i: i.sort_key)
         assert items[0].item_type == ItemType.AGENT  # "agent" < "skill"
         assert items[1].item_type == ItemType.SKILL
-
-    def test_platform_values_property(self) -> None:
-        item = Item(
-            item_type=ItemType.AGENT,
-            name="test",
-            source_path=Path("/a"),
-            supported_platforms=(Platform.OPENCODE, Platform.CLAUDE_CODE),
-        )
-        assert item.platform_values == ["opencode", "claude_code"]
-
-    def test_platform_values_single(self) -> None:
-        item = Item(
-            item_type=ItemType.COMMAND,
-            name="deploy",
-            source_path=Path("/c"),
-            supported_platforms=(Platform.OPENCODE,),
-        )
-        assert item.platform_values == ["opencode"]
 
 
 class TestTargetPaths:
@@ -1203,43 +1172,12 @@ class TestPlatformResolutionEdgeCases:
         with pytest.raises(ValueError, match="unknown platform"):
             resolve_platform(input_val)
 
-    @pytest.mark.parametrize(
-        "alias,expected",
-        [
-            ("ws", "windsurf"),
-            ("windsurf", "windsurf"),
-            ("Windsurf", "windsurf"),
-            ("WINDSURF", "windsurf"),
-            ("cr", "cursor"),
-            ("cursor", "cursor"),
-            ("Cursor", "cursor"),
-            ("CURSOR", "cursor"),
-        ],
-    )
-    def test_windsurf_and_cursor_aliases(self, alias: str, expected: str) -> None:
-        """All windsurf and cursor aliases resolve correctly."""
-        assert resolve_platform(alias) == expected
-
-
-# ---------------------------------------------------------------------------
-# Platform display names (all values)
-# ---------------------------------------------------------------------------
-
 
 class TestPlatformDisplayNames:
-    """Tests for all Platform.display_name values."""
+    """Tests for Platform.display_name values."""
 
-    @pytest.mark.parametrize(
-        "platform,display_name",
-        [
-            (Platform.OPENCODE, "OpenCode"),
-            (Platform.CLAUDE_CODE, "Claude Code"),
-            (Platform.WINDSURF, "Windsurf"),
-            (Platform.CURSOR, "Cursor"),
-        ],
-    )
-    def test_display_name(self, platform: Platform, display_name: str) -> None:
-        assert platform.display_name == display_name
+    def test_display_name(self) -> None:
+        assert Platform.OPENCODE.display_name == "OpenCode"
 
 
 # ---------------------------------------------------------------------------
@@ -1418,30 +1356,6 @@ class TestItemState:
             state.synced_at = "changed"  # type: ignore[misc]
 
 
-class TestPlatformState:
-    """Tests for PlatformState frozen data class."""
-
-    def test_defaults(self) -> None:
-        ps = PlatformState()
-        assert ps.path == ""
-        assert ps.items == {}
-
-    def test_custom_values(self) -> None:
-        item_state = ItemState(synced_at="2025-01-01T00:00:00Z")
-        ps = PlatformState(
-            path="/home/user/.config/opencode",
-            items={"agent/coder": item_state},
-        )
-        assert ps.path == "/home/user/.config/opencode"
-        assert "agent/coder" in ps.items
-        assert ps.items["agent/coder"].synced_at == "2025-01-01T00:00:00Z"
-
-    def test_frozen_immutability(self) -> None:
-        ps = PlatformState()
-        with pytest.raises(AttributeError):
-            ps.path = "changed"  # type: ignore[misc]
-
-
 class TestSyncState:
     """Tests for SyncState mutable data class."""
 
@@ -1449,16 +1363,16 @@ class TestSyncState:
         state = SyncState()
         assert state.version == "1.0"
         assert state.last_sync == ""
-        assert state.platforms == {}
+        assert state.items == {}
 
     def test_mutable_fields(self) -> None:
         state = SyncState()
         state.version = "2.0"
         state.last_sync = "2025-06-01T00:00:00Z"
-        state.platforms["opencode"] = PlatformState(path="/cfg")
+        state.items["agent/coder"] = ItemState(synced_at="2025-01-01T00:00:00Z")
         assert state.version == "2.0"
         assert state.last_sync == "2025-06-01T00:00:00Z"
-        assert "opencode" in state.platforms
+        assert "agent/coder" in state.items
 
     def test_not_frozen(self) -> None:
         """SyncState is mutable (not frozen)."""

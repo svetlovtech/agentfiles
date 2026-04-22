@@ -19,7 +19,6 @@ from agentfiles.models import (
     ItemState,
     ItemType,
     Platform,
-    PlatformState,
     SyncState,
 )
 
@@ -78,13 +77,8 @@ def _setup_push_scenario(
     if synced_at is not None:
         state = SyncState(
             last_sync=synced_at,
-            platforms={
-                "opencode": PlatformState(
-                    path=str(target_dir),
-                    items={
-                        "agent/coder": ItemState(synced_at=synced_at),
-                    },
-                ),
+            items={
+                "agent/coder": ItemState(synced_at=synced_at),
             },
         )
         save_sync_state(source_dir, state)
@@ -114,7 +108,6 @@ class TestDetectPushConflicts:
 
         result = detect_push_conflicts(
             [item],
-            (Platform.OPENCODE,),
             source_dir,
             mgr,
         )
@@ -134,7 +127,6 @@ class TestDetectPushConflicts:
 
         result = detect_push_conflicts(
             [item],
-            (Platform.OPENCODE,),
             source_dir,
             mgr,
         )
@@ -152,7 +144,6 @@ class TestDetectPushConflicts:
 
         result = detect_push_conflicts(
             items,
-            (Platform.OPENCODE,),
             source_dir,
             mgr,
         )
@@ -171,7 +162,6 @@ class TestDetectPushConflicts:
 
         result = detect_push_conflicts(
             items,
-            (Platform.OPENCODE,),
             source_dir,
             mgr,
         )
@@ -190,14 +180,12 @@ class TestDetectPushConflicts:
 
         result = detect_push_conflicts(
             items,
-            (Platform.OPENCODE,),
             source_dir,
             mgr,
         )
         assert len(result) == 1
         assert isinstance(result[0], PushConflict)
         assert result[0].item.name == "coder"
-        assert result[0].platform == Platform.OPENCODE
 
     def test_source_not_exists_no_conflict(self, tmp_path: Path) -> None:
         """When source repo file does not exist, it's new — not a conflict."""
@@ -215,18 +203,12 @@ class TestDetectPushConflicts:
 
         state = SyncState(
             last_sync="2000-01-01T00:00:00+00:00",
-            platforms={
-                "opencode": PlatformState(
-                    path=str(target_dir),
-                    items={"agent/coder": ItemState(synced_at="2000-01-01T00:00:00+00:00")},
-                ),
-            },
+            items={"agent/coder": ItemState(synced_at="2000-01-01T00:00:00+00:00")},
         )
         save_sync_state(source_dir, state)
 
         result = detect_push_conflicts(
             [item],
-            (Platform.OPENCODE,),
             source_dir,
             mgr,
         )
@@ -245,18 +227,11 @@ class TestDetectPushConflicts:
         # Create state without the item entry.
         state = SyncState(
             last_sync=past_sync,
-            platforms={
-                "opencode": PlatformState(
-                    path=str(target_dir),
-                    items={},
-                ),
-            },
         )
         save_sync_state(source_dir, state)
 
         result = detect_push_conflicts(
             items,
-            (Platform.OPENCODE,),
             source_dir,
             mgr,
         )
@@ -288,7 +263,7 @@ class TestPromptPushConflicts:
         monkeypatch.setattr("builtins.input", lambda _: next(inputs))
 
         conflicts = [
-            ("agent/coder", "agent", "OpenCode", Path("/src"), Path("/tgt")),
+            ("agent/coder", "agent", Path("/src"), Path("/tgt")),
         ]
         result = session.prompt_push_conflicts(conflicts)
         assert result == {"agent/coder": "keep-source"}
@@ -301,7 +276,7 @@ class TestPromptPushConflicts:
         monkeypatch.setattr("builtins.input", lambda _: next(inputs))
 
         conflicts = [
-            ("agent/coder", "agent", "OpenCode", Path("/src"), Path("/tgt")),
+            ("agent/coder", "agent", Path("/src"), Path("/tgt")),
         ]
         result = session.prompt_push_conflicts(conflicts)
         assert result == {"agent/coder": "keep-target"}
@@ -314,8 +289,8 @@ class TestPromptPushConflicts:
         monkeypatch.setattr("builtins.input", lambda _: next(inputs))
 
         conflicts = [
-            ("agent/coder", "agent", "OpenCode", Path("/src"), Path("/tgt")),
-            ("agent/writer", "agent", "OpenCode", Path("/src2"), Path("/tgt2")),
+            ("agent/coder", "agent", Path("/src"), Path("/tgt")),
+            ("agent/writer", "agent", Path("/src2"), Path("/tgt2")),
         ]
         result = session.prompt_push_conflicts(conflicts)
         assert result == {
@@ -342,7 +317,7 @@ class TestPromptPushConflicts:
         monkeypatch.setattr("builtins.input", lambda _: next(inputs))
 
         conflicts = [
-            ("agent/coder", "agent", "OpenCode", src, tgt),
+            ("agent/coder", "agent", src, tgt),
         ]
         result = session.prompt_push_conflicts(conflicts)
         assert result == {"agent/coder": "keep-target"}
@@ -375,7 +350,6 @@ class TestCmdPushConflictSkip:
 
         conflicts = detect_push_conflicts(
             items,
-            (Platform.OPENCODE,),
             source_dir,
             mgr,
         )

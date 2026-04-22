@@ -25,7 +25,7 @@ _agentfiles_completion() {
     # Complete flag values
     case "${prev}" in
         --target)
-            COMPREPLY=( $(compgen -W "opencode claude_code windsurf cursor all" -- "${cur}") )
+            COMPREPLY=( $(compgen -W "opencode all" -- "${cur}") )
             return
             ;;
         --type)
@@ -89,7 +89,7 @@ _agentfiles() {
         'completion:Generate shell completion scripts'
     )
 
-    local -a targets=(opencode claude_code windsurf cursor all)
+    local -a targets=(opencode all)
     local -a types=(agent skill command plugin config all)
     local -a shells=(bash zsh fish)
 
@@ -230,7 +230,7 @@ complete -c agentfiles -l color -xa 'always auto never' -d 'Color mode'
 for cmd in pull push status clean verify
     complete -c agentfiles -n "__fish_seen_subcommand_from $cmd" -l source -d 'Source repository path'
     complete -c agentfiles -n "__fish_seen_subcommand_from $cmd" -l config -s c -d 'Config file path'
-    complete -c agentfiles -n "__fish_seen_subcommand_from $cmd" -l target -xa 'opencode claude_code windsurf cursor all' -d 'Target platform'
+    complete -c agentfiles -n "__fish_seen_subcommand_from $cmd" -l target -xa 'opencode all' -d 'Target platform'
     complete -c agentfiles -n "__fish_seen_subcommand_from $cmd" -l type -xa 'agent skill command plugin config all' -d 'Item type'
     complete -c agentfiles -n "__fish_seen_subcommand_from $cmd" -l only -d 'Include only these items'
     complete -c agentfiles -n "__fish_seen_subcommand_from $cmd" -l except -d 'Exclude these items'

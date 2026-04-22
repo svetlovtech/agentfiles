@@ -15,7 +15,6 @@ from agentfiles.models import (
     Item,
     ItemType,
     Platform,
-    PlatformState,
     SyncAction,
     SyncPlan,
     SyncResult,
@@ -31,7 +30,7 @@ from agentfiles.target import TargetDiscovery, TargetManager
 
 @pytest.fixture
 def fake_home(tmp_path: Path) -> SimpleNamespace:
-    """Create a fake home with platform config directories."""
+    """Create a fake home with OpenCode config directory."""
     home = tmp_path / "home"
     home.mkdir()
 
@@ -41,16 +40,7 @@ def fake_home(tmp_path: Path) -> SimpleNamespace:
     (oc_dir / "command").mkdir(parents=True)
     (oc_dir / "plugin").mkdir(parents=True)
 
-    cc_dir = home / ".claude"
-    (cc_dir / "agents").mkdir(parents=True)
-    (cc_dir / "skills").mkdir(parents=True)
-    (cc_dir / "plugins").mkdir(parents=True)
-    (cc_dir / "commands").mkdir(parents=True)
-
-    ws_dir = home / ".codeium" / "windsurf" / "skills"
-    ws_dir.mkdir(parents=True)
-
-    return SimpleNamespace(home=home, opencode=oc_dir, claude=cc_dir, windsurf=ws_dir)
+    return SimpleNamespace(home=home, opencode=oc_dir)
 
 
 @pytest.fixture
@@ -73,7 +63,7 @@ def _make_dir_item(
     name: str,
     item_type: ItemType = ItemType.SKILL,
     source_dir: Path | None = None,
-    platforms: tuple[Platform, ...] = (Platform.OPENCODE, Platform.CLAUDE_CODE),
+    platforms: tuple[Platform, ...] = (Platform.OPENCODE,),
 ) -> Item:
     """Create a directory-based Item for testing."""
     src = source_dir or Path(f"/src/{item_type.plural}/{name}")
@@ -90,7 +80,7 @@ def _make_file_item(
     name: str,
     item_type: ItemType = ItemType.AGENT,
     source_path: Path | None = None,
-    platforms: tuple[Platform, ...] = (Platform.OPENCODE, Platform.CLAUDE_CODE),
+    platforms: tuple[Platform, ...] = (Platform.OPENCODE,),
 ) -> Item:
     """Create a file-based Item for testing."""
     src = source_path or Path(f"/src/{item_type.plural}/{name}.md")
@@ -319,7 +309,6 @@ class TestPlanSync:
 
         plans = engine.plan_sync(
             [item],
-            (Platform.OPENCODE,),
             action=SyncAction.INSTALL,
         )
 
@@ -343,7 +332,6 @@ class TestPlanSync:
 
         plans = engine.plan_sync(
             [item],
-            (Platform.OPENCODE,),
             action=SyncAction.INSTALL,
         )
 
@@ -370,7 +358,6 @@ class TestPlanSync:
 
         plans = engine.plan_sync(
             [item],
-            (Platform.OPENCODE,),
             action=SyncAction.INSTALL,
         )
 
@@ -389,7 +376,6 @@ class TestPlanSync:
 
         plans = engine.plan_sync(
             [item],
-            (Platform.OPENCODE,),
             action=SyncAction.UNINSTALL,
         )
 
@@ -402,47 +388,25 @@ class TestPlanSync:
 
         plans = engine.plan_sync(
             [item],
-            (Platform.OPENCODE,),
             action=SyncAction.UNINSTALL,
         )
 
         assert len(plans) == 1
         assert plans[0].action == SyncAction.SKIP
 
-    def test_plan_filters_by_platform(self, target_manager: TargetManager) -> None:
-        item = _make_dir_item("multi", platforms=(Platform.OPENCODE, Platform.CLAUDE_CODE))
-        engine = SyncEngine(target_manager)
-
-        plans = engine.plan_sync([item], (Platform.OPENCODE,))
-
-        assert len(plans) == 1
-        assert plans[0].target_dir is not None
-
-    def test_plan_multiple_platforms(self, target_manager: TargetManager) -> None:
-        item = _make_dir_item("multi")
-        engine = SyncEngine(target_manager)
-
-        plans = engine.plan_sync(
-            [item],
-            (Platform.OPENCODE, Platform.CLAUDE_CODE),
-        )
-
-        assert len(plans) == 2
-        actions = {p.action for p in plans}
-        assert actions == {SyncAction.INSTALL}
-
-    def test_plan_skips_missing_target_dir(self, target_manager: TargetManager) -> None:
-        """Windsurf does not support commands — plan should skip."""
+    def test_plan_creates_plan_for_valid_target_dir(self, target_manager: TargetManager) -> None:
+        """Commands on OpenCode get a valid plan (command dir exists)."""
         item = _make_file_item(
             "my-cmd",
             item_type=ItemType.COMMAND,
-            platforms=(Platform.WINDSURF,),
+            platforms=(Platform.OPENCODE,),
         )
         engine = SyncEngine(target_manager)
 
-        plans = engine.plan_sync([item], (Platform.WINDSURF,))
+        plans = engine.plan_sync([item])
 
-        assert len(plans) == 0
+        assert len(plans) == 1
+        assert plans[0].action == SyncAction.INSTALL
 
     def test_plan_multiple_items(self, target_manager: TargetManager) -> None:
         items = [
@@ -452,7 +416,7 @@ class TestPlanSync:
         ]
         engine = SyncEngine(target_manager)
 
-        plans = engine.plan_sync(items, (Platform.OPENCODE,))
+        plans = engine.plan_sync(items)
 
         assert len(plans) == 3
 
@@ -639,34 +603,6 @@ class TestExecutePlan:
         # but the batch should not abort.
         assert results[1].plan.item.name == "bad-skill"
 
-    def test_execute_update_removes_old_first(
-        self,
-        target_manager: TargetManager,
-        tmp_path: Path,
-    ) -> None:
-        target_dir = target_manager.get_target_dir(Platform.OPENCODE, ItemType.SKILL)
-        assert target_dir is not None
-        old_dest = target_dir / "update-skill"
-        old_dest.mkdir()
-        (old_dest / "old.txt").write_text("stale")
-
-        new_src = tmp_path / "new_src"
-        new_src.mkdir()
-        (new_src / "SKILL.md").write_text("fresh")
-
-        SyncPlan(
-            item=Item(
-                item_type=ItemType.SKILL,
-                name="update-skill",
-                source_path=new_src,
-                files=("SKILL.md",),
-                supported_platforms=(Platform.OPENCODE,),
-            ),
-            action=SyncAction.UPDATE,
-            target_dir=target_dir,
-            reason="content differs",
-        )
-
 
 # ---------------------------------------------------------------------------
 # SyncEngine — sync (convenience)
@@ -693,7 +629,7 @@ class TestSync:
             supported_platforms=(Platform.OPENCODE,),
         )
         engine = SyncEngine(target_manager)
-        report = engine.sync([item], (Platform.OPENCODE,))
+        report = engine.sync([item])
 
         assert report.is_success
         assert len(report.installed) >= 1
@@ -715,7 +651,7 @@ class TestSync:
             supported_platforms=(Platform.OPENCODE,),
         )
         engine = SyncEngine(target_manager, dry_run=True)
-        report = engine.sync([item], (Platform.OPENCODE,))
+        report = engine.sync([item])
 
         assert report.is_success
         # Nothing should be physically installed.
@@ -742,7 +678,7 @@ class TestUninstall:
 
         item = _make_dir_item("removable")
         engine = SyncEngine(target_manager)
-        report = engine.uninstall([item], (Platform.OPENCODE,))
+        report = engine.uninstall([item])
 
         assert report.is_success
         assert len(report.uninstalled) >= 1
@@ -754,7 +690,7 @@ class TestUninstall:
     ) -> None:
         item = _make_dir_item("ghost")
         engine = SyncEngine(target_manager)
-        report = engine.uninstall([item], (Platform.OPENCODE,))
+        report = engine.uninstall([item])
 
         assert report.is_success
         assert len(report.skipped) >= 1
@@ -794,7 +730,6 @@ class TestPush:
         engine = SyncEngine(target_manager)
         report = engine.push(
             [item],
-            [Platform.OPENCODE],
             source_dir=source_dir,
         )
 
@@ -828,7 +763,6 @@ class TestPush:
         engine = SyncEngine(target_manager)
         report = engine.push(
             [item],
-            [Platform.OPENCODE],
             source_dir=source_dir,
         )
 
@@ -864,7 +798,6 @@ class TestPush:
         engine = SyncEngine(target_manager)
         report = engine.push(
             [item],
-            [Platform.OPENCODE],
             source_dir=source_dir,
         )
 
@@ -896,7 +829,6 @@ class TestPush:
         engine = SyncEngine(target_manager, dry_run=True)
         report = engine.push(
             [item],
-            [Platform.OPENCODE],
             source_dir=source_dir,
             dry_run=True,
         )
@@ -923,7 +855,6 @@ class TestPush:
         engine = SyncEngine(target_manager)
         report = engine.push(
             [item],
-            [Platform.OPENCODE],
             source_dir=source_dir,
         )
 
@@ -1022,13 +953,12 @@ class TestComputeSyncPlan:
         engine = SyncEngine(target_manager)
         plan = engine.compute_sync_plan(
             [item],
-            [Platform.OPENCODE],
             state,
             tmp_path / "src",
         )
 
         assert len(plan) == 1
-        assert plan[0][2] == "pull"
+        assert plan[0][1] == "pull"
 
     def test_installed_item_skip(
         self,
@@ -1053,13 +983,12 @@ class TestComputeSyncPlan:
         engine = SyncEngine(target_manager)
         plan = engine.compute_sync_plan(
             [item],
-            [Platform.OPENCODE],
             state,
             tmp_path / "src",
         )
 
         assert len(plan) == 1
-        assert plan[0][2] == "skip"
+        assert plan[0][1] == "skip"
 
 
 # ---------------------------------------------------------------------------
@@ -1112,6 +1041,7 @@ class TestCopyItemPartialCleanup:
             count, err = _copy_item(src_dir, dest, use_symlinks=False)
 
         assert err is not None
+        # Verify the error propagates the PermissionError message
         assert "denied" in err
         # Partial directory must be cleaned up.
         assert not dest.exists()
@@ -1131,6 +1061,7 @@ class TestCopyItemPartialCleanup:
             count, err = _copy_item(src_dir, dest, use_symlinks=False)
 
         assert err is not None
+        # Verify the error propagates the original copy failure message
         assert "copy denied" in err
 
     def test_file_copy_failure_does_not_affect_parent(self, tmp_path: Path) -> None:
@@ -1155,6 +1086,9 @@ class TestAtomicCopyErrorHandling:
 
     def test_stale_tmp_removal_failure_returns_error(self, tmp_path: Path) -> None:
         """If stale temp file cannot be removed, return error immediately."""
+        # NOTE: This test mocks _remove_item (private function) to simulate
+        # a stale temp file removal failure. If _remove_item is renamed/removed,
+        # this test needs updating.
         source = tmp_path / "source.txt"
         source.write_text("content")
         dest = tmp_path / "dest.txt"
@@ -1182,6 +1116,8 @@ class TestAtomicCopyErrorHandling:
 
     def test_backup_move_failure_cleans_up_temp(self, tmp_path: Path) -> None:
         """If moving dest to backup fails, temp file is cleaned up."""
+        # NOTE: This test mocks Path.rename to simulate a backup (.bak) creation
+        # failure in _atomic_copy_to. Coupled to the rename-based backup protocol.
         source = tmp_path / "source.txt"
         source.write_text("new content")
         dest = tmp_path / "dest.txt"
@@ -1200,6 +1136,7 @@ class TestAtomicCopyErrorHandling:
             files_copied, err = SyncEngine._atomic_copy_to(source, dest, use_symlinks=False)
 
         assert err is not None
+        # Verify the error mentions the backup creation failure
         assert "back up" in err.lower() or "backup" in err.lower()
         tmp_dest = dest.with_suffix(dest.suffix + ".agentfiles_tmp")
         assert not os.path.lexists(tmp_dest)
@@ -1209,21 +1146,20 @@ class TestAtomicCopyErrorHandling:
 
     def test_rename_failure_restores_backup(self, tmp_path: Path) -> None:
         """If tmp -> dest rename fails, backup is restored to dest."""
+        # NOTE: This test mocks Path.rename to simulate a rename failure during
+        # the temp-to-dest swap in _atomic_copy_to. Coupled to the rename-based
+        # atomic swap protocol: dest -> .bak, tmp -> dest, .bak -> dest (restore).
         source = tmp_path / "source.txt"
         source.write_text("new content")
         dest = tmp_path / "dest.txt"
         dest.write_text("original content")
 
-        call_count = 0
         original_rename = Path.rename
 
         def selective_rename(self_path: Path, target: Path) -> Path:
-            nonlocal call_count
-            call_count += 1
-            # Allow dest -> backup rename (first call),
-            # fail tmp -> dest rename (second call),
-            # allow backup -> dest restore (third call).
-            if call_count == 2:
+            # Fail when renaming the temp file to dest (tmp -> dest).
+            # Allow dest -> .bak backup and .bak -> dest restore.
+            if ".agentfiles_tmp" in str(self_path):
                 raise OSError("rename failed")
             return original_rename(self_path, target)
 
@@ -1231,6 +1167,7 @@ class TestAtomicCopyErrorHandling:
             files_copied, err = SyncEngine._atomic_copy_to(source, dest, use_symlinks=False)
 
         assert err is not None
+        # Verify the error reports the rename step that failed
         assert "rename failed" in err.lower()
         # Backup must have been restored.
         assert dest.exists()
@@ -1241,18 +1178,21 @@ class TestAtomicCopyErrorHandling:
 
     def test_rename_and_restore_failure_logs_critical(self, tmp_path: Path) -> None:
         """If both rename and backup restore fail, log CRITICAL."""
+        # NOTE: This test mocks Path.rename to simulate both the tmp -> dest rename
+        # failure AND the subsequent backup restore failure in _atomic_copy_to.
+        # Coupled to the atomic swap protocol and the restore-on-failure logic.
         source = tmp_path / "source.txt"
         source.write_text("new content")
         dest = tmp_path / "dest.txt"
         dest.write_text("original content")
 
-        call_count = 0
         original_rename = Path.rename
 
         def selective_rename(self_path: Path, target: Path) -> Path:
-            nonlocal call_count
-            call_count += 1
-            if call_count >= 2:
+            # Allow only the dest -> .bak backup rename (target ends with .bak).
+            # Fail all subsequent renames: tmp -> dest AND .bak -> dest restore,
+            # so that both the main rename and the recovery restore fail.
+            if not str(target).endswith(".bak"):
                 raise OSError("broken")
             return original_rename(self_path, target)
 
@@ -1284,6 +1224,9 @@ class TestAtomicCopyErrorHandling:
 
     def test_orphaned_backup_warning_logged(self, tmp_path: Path) -> None:
         """If backup cleanup fails on success path, a warning is logged."""
+        # NOTE: This test mocks _remove_item (private function) to simulate
+        # a backup file removal failure on the success path. If _remove_item
+        # is renamed/removed, this test needs updating.
         source = tmp_path / "source.txt"
         source.write_text("new content")
         dest = tmp_path / "dest.txt"
@@ -1336,6 +1279,9 @@ class TestExecuteInstallErrorHandling:
 
     def test_install_fails_when_stale_removal_fails(self, tmp_path: Path) -> None:
         """If stale destination cannot be removed, install should fail."""
+        # NOTE: This test mocks _remove_item (private function) to simulate
+        # a stale file removal failure. If _remove_item is renamed/removed,
+        # this test needs updating.
         source = tmp_path / "source.txt"
         source.write_text("content")
 
@@ -1367,10 +1313,14 @@ class TestExecuteInstallErrorHandling:
             result = engine._execute_install(plan)
 
         assert not result.is_success
+        # Verify the error message mentions the stale destination cleanup failure
         assert "stale" in result.message.lower()
 
     def test_install_fails_when_target_dir_creation_fails(self, tmp_path: Path) -> None:
         """If target directory cannot be created, install should fail."""
+        # NOTE: This test mocks Path.mkdir to simulate a permission error during
+        # target directory creation in _execute_install. Coupled to the mkdir
+        # call in the install path.
         source = tmp_path / "source.txt"
         source.write_text("content")
 
@@ -1392,6 +1342,7 @@ class TestExecuteInstallErrorHandling:
             result = engine._execute_install(plan)
 
         assert not result.is_success
+        # Verify the error message mentions the permission denial from mkdir
         assert "denied" in result.message
 
 
@@ -1405,7 +1356,7 @@ class TestEmptyItemList:
 
     def test_plan_sync_empty(self, target_manager: TargetManager) -> None:
         engine = SyncEngine(target_manager)
-        plans = engine.plan_sync([], (Platform.OPENCODE,))
+        plans = engine.plan_sync([])
         assert plans == []
 
     def test_execute_plan_empty(self, target_manager: TargetManager) -> None:
@@ -1415,13 +1366,13 @@ class TestEmptyItemList:
 
     def test_sync_empty(self, target_manager: TargetManager) -> None:
         engine = SyncEngine(target_manager)
-        report = engine.sync([], (Platform.OPENCODE,))
+        report = engine.sync([])
         assert report.is_success
         assert report.summary() == "No operations performed"
 
     def test_uninstall_empty(self, target_manager: TargetManager) -> None:
         engine = SyncEngine(target_manager)
-        report = engine.uninstall([], (Platform.OPENCODE,))
+        report = engine.uninstall([])
         assert report.is_success
         assert report.summary() == "No operations performed"
 
@@ -1433,7 +1384,6 @@ class TestEmptyItemList:
         engine = SyncEngine(target_manager)
         report = engine.push(
             [],
-            [Platform.OPENCODE],
             source_dir=tmp_path,
         )
         assert report.is_success
@@ -1447,7 +1397,6 @@ class TestEmptyItemList:
         engine = SyncEngine(target_manager)
         plan = engine.compute_sync_plan(
             [],
-            [Platform.OPENCODE],
             SyncState(),
             tmp_path,
         )
@@ -1661,6 +1610,9 @@ class TestExecuteUninstallFailure:
         target_manager: TargetManager,
         tmp_path: Path,
     ) -> None:
+        # NOTE: This test mocks _remove_item (private function) to simulate
+        # a permission error during uninstall. If _remove_item is renamed/removed,
+        # this test needs updating.
         target_dir = tmp_path / "target"
         target_dir.mkdir()
         item = Item(
@@ -1683,6 +1635,7 @@ class TestExecuteUninstallFailure:
             result = engine._execute_uninstall(plan)
 
         assert not result.is_success
+        # Verify the error propagates the _remove_item failure reason
         assert "permission denied" in result.message
 
 
@@ -1700,7 +1653,6 @@ class TestPlanSyncUpdateAction:
         engine = SyncEngine(target_manager)
         plans = engine.plan_sync(
             [item],
-            (Platform.OPENCODE,),
             action=SyncAction.UPDATE,
         )
         assert len(plans) == 1
@@ -1720,7 +1672,6 @@ class TestPlanSyncUpdateAction:
         engine = SyncEngine(target_manager)
         plans = engine.plan_sync(
             [item],
-            (Platform.OPENCODE,),
             action=SyncAction.UPDATE,
         )
 
@@ -1741,7 +1692,6 @@ class TestPlanSyncUpdateAction:
         engine = SyncEngine(target_manager)
         plans = engine.plan_sync(
             [item],
-            (Platform.OPENCODE,),
             action=SyncAction.UPDATE,
         )
 
@@ -1903,7 +1853,6 @@ class TestPushEdgeCases:
         engine = SyncEngine(target_manager)
         report = engine.push(
             [item_a, item_b],
-            [Platform.OPENCODE],
             source_dir=source_dir,
         )
 
@@ -1912,53 +1861,26 @@ class TestPushEdgeCases:
         assert (source_dir / "agents" / "agent-a" / "agent-a.md").exists()
         assert (source_dir / "agents" / "agent-b" / "agent-b.md").exists()
 
-    def test_push_unsupported_platform_is_skipped(
+    def test_push_skips_when_target_dir_is_none(
         self,
-        target_manager: TargetManager,
         tmp_path: Path,
     ) -> None:
-        """Push skips items whose supported_platforms don't match the request."""
+        """Push with a mock target manager returning None skips items gracefully."""
+        mock_target = mock.Mock(spec=SyncTarget)
+        mock_target.get_target_dir.return_value = None
         item = Item(
-            item_type=ItemType.AGENT,
-            name="coder",
-            source_path=Path("/src/coder.md"),
+            item_type=ItemType.COMMAND,
+            name="my-cmd",
+            source_path=Path("/src/my-cmd.md"),
             supported_platforms=(Platform.OPENCODE,),
         )
 
         source_dir = tmp_path / "source"
         source_dir.mkdir()
 
-        engine = SyncEngine(target_manager)
+        engine = SyncEngine(mock_target)
         report = engine.push(
             [item],
-            [Platform.CLAUDE_CODE],  # item only supports OPENCODE
-            source_dir=source_dir,
-        )
-
-        assert report.is_success
-        assert report.summary() == "No operations performed"
-
-    def test_push_skips_when_target_dir_is_none(
-        self,
-        target_manager: TargetManager,
-        tmp_path: Path,
-    ) -> None:
-        """Push skips when get_target_dir returns None for a platform/type pair."""
-        # COMMAND is not supported by Windsurf (skills-only) — target_dir will be None.
-        item = Item(
-            item_type=ItemType.COMMAND,
-            name="my-cmd",
-            source_path=Path("/src/my-cmd.md"),
-            supported_platforms=(Platform.WINDSURF,),
-        )
-
-        source_dir = tmp_path / "source"
-        source_dir.mkdir()
-
-        engine = SyncEngine(target_manager)
-        report = engine.push(
-            [item],
-            [Platform.WINDSURF],
             source_dir=source_dir,
         )
 
@@ -1984,7 +1906,6 @@ class TestPushEdgeCases:
         with mock.patch("agentfiles.engine.logger") as mock_logger:
             report = engine.push(
                 [item],
-                [Platform.OPENCODE],
                 source_dir=tmp_path,
             )
 
@@ -2030,7 +1951,7 @@ class TestParametrizedItemTypes:
             )
 
         engine = SyncEngine(target_manager)
-        plans = engine.plan_sync([item], (Platform.OPENCODE,))
+        plans = engine.plan_sync([item])
 
         # All types have a valid target dir on OpenCode.
         assert len(plans) == 1
@@ -2150,13 +2071,12 @@ class TestComputeSyncPlanEdgeCases:
         engine = SyncEngine(target_manager)
         plan = engine.compute_sync_plan(
             [item],
-            [Platform.OPENCODE],
             state,
             tmp_path,
         )
 
         assert len(plan) == 1
-        assert plan[0][2] == "pull"
+        assert plan[0][1] == "pull"
 
     def test_item_not_in_platform_state(
         self,
@@ -2170,59 +2090,29 @@ class TestComputeSyncPlanEdgeCases:
             source_path=Path("/src/missing-agent.md"),
             supported_platforms=(Platform.OPENCODE,),
         )
-        # Platform exists in state but item does not.
-        state = SyncState(
-            platforms={
-                Platform.OPENCODE.value: PlatformState(path="/tmp"),
-            },
-        )
-
-        engine = SyncEngine(target_manager)
-        plan = engine.compute_sync_plan(
-            [item],
-            [Platform.OPENCODE],
-            state,
-            tmp_path,
-        )
-
-        assert len(plan) == 1
-        assert plan[0][2] == "pull"
-
-    def test_no_target_dir_skips_item(
-        self,
-        target_manager: TargetManager,
-        tmp_path: Path,
-    ) -> None:
-        """Item whose type has no target dir on a platform is skipped."""
-        item = Item(
-            item_type=ItemType.COMMAND,
-            name="my-cmd",
-            source_path=Path("/src/my-cmd.md"),
-            supported_platforms=(Platform.WINDSURF,),
-        )
+        # State exists but item does not.
         state = SyncState()
 
         engine = SyncEngine(target_manager)
         plan = engine.compute_sync_plan(
             [item],
-            [Platform.WINDSURF],
             state,
             tmp_path,
         )
 
         assert len(plan) == 1
-        assert plan[0][2] == "skip"
+        assert plan[0][1] == "pull"
 
-    def test_unsupported_platform_filtered_out(
+    def test_existing_target_dir_produces_pull(
         self,
         target_manager: TargetManager,
         tmp_path: Path,
     ) -> None:
-        """Items not supporting the requested platform are excluded."""
+        """Item whose type has a target dir on the platform produces a pull plan."""
         item = Item(
-            item_type=ItemType.AGENT,
-            name="oc-only",
-            source_path=Path("/src/oc-only.md"),
+            item_type=ItemType.COMMAND,
+            name="my-cmd",
+            source_path=Path("/src/my-cmd.md"),
             supported_platforms=(Platform.OPENCODE,),
         )
         state = SyncState()
@@ -2230,12 +2120,12 @@ class TestComputeSyncPlanEdgeCases:
         engine = SyncEngine(target_manager)
         plan = engine.compute_sync_plan(
             [item],
-            [Platform.CLAUDE_CODE],  # item doesn't support Claude Code
             state,
             tmp_path,
         )
 
-        assert len(plan) == 0
+        assert len(plan) == 1
+        assert plan[0][1] == "pull"
 
 
 # ---------------------------------------------------------------------------
@@ -2272,7 +2162,6 @@ class TestUpdateSyncState:
         engine = SyncEngine(target_manager)
         report = engine.sync(
             [item],
-            (Platform.OPENCODE,),
             source_dir=source_dir,
         )
 
@@ -2283,10 +2172,7 @@ class TestUpdateSyncState:
         state = load_sync_state(source_dir)
         assert state.last_sync != ""
 
-        oc_state = state.platforms.get(Platform.OPENCODE.value)
-        assert oc_state is not None
-
-        item_state = oc_state.items.get("skill/my-skill")
+        item_state = state.items.get("skill/my-skill")
         assert item_state is not None
         assert item_state.synced_at != ""
 
@@ -2311,7 +2197,7 @@ class TestUpdateSyncState:
         )
 
         engine = SyncEngine(target_manager)
-        report = engine.sync([item], (Platform.OPENCODE,))
+        report = engine.sync([item])
 
         assert report.is_success
         # No state file should be created when source_dir is not provided.
@@ -2343,7 +2229,6 @@ class TestUpdateSyncState:
         engine = SyncEngine(target_manager, dry_run=True)
         report = engine.sync(
             [item],
-            (Platform.OPENCODE,),
             source_dir=source_dir,
         )
 
@@ -2377,7 +2262,6 @@ class TestUpdateSyncState:
         with mock.patch("agentfiles.engine.save_sync_state", side_effect=OSError("disk full")):
             report = engine.sync(
                 [item],
-                (Platform.OPENCODE,),
                 source_dir=source_dir,
             )
 
@@ -2385,12 +2269,12 @@ class TestUpdateSyncState:
         assert report.is_success
         assert len(report.installed) >= 1
 
-    def test_sync_state_includes_multiple_platforms(
+    def test_sync_state_records_platform(
         self,
         target_manager: TargetManager,
         tmp_path: Path,
     ) -> None:
-        """Syncing to multiple platforms records state for each."""
+        """Syncing records state for the platform."""
         from agentfiles.config import load_sync_state
 
         src_dir = tmp_path / "skill_src"
@@ -2402,7 +2286,7 @@ class TestUpdateSyncState:
             name="multi-skill",
             source_path=src_dir,
             files=("SKILL.md",),
-            supported_platforms=(Platform.OPENCODE, Platform.CLAUDE_CODE),
+            supported_platforms=(Platform.OPENCODE,),
         )
 
         source_dir = tmp_path / "source"
@@ -2411,19 +2295,13 @@ class TestUpdateSyncState:
         engine = SyncEngine(target_manager)
         report = engine.sync(
             [item],
-            (Platform.OPENCODE, Platform.CLAUDE_CODE),
             source_dir=source_dir,
         )
 
         assert report.is_success
 
         state = load_sync_state(source_dir)
-        oc_state = state.platforms.get(Platform.OPENCODE.value)
-        cc_state = state.platforms.get(Platform.CLAUDE_CODE.value)
-        assert oc_state is not None
-        assert cc_state is not None
-        assert "skill/multi-skill" in oc_state.items
-        assert "skill/multi-skill" in cc_state.items
+        assert "skill/multi-skill" in state.items
 
     def test_sync_state_skipped_items_still_recorded(
         self,
@@ -2452,7 +2330,6 @@ class TestUpdateSyncState:
         engine = SyncEngine(target_manager)
         report = engine.sync(
             [item],
-            (Platform.OPENCODE,),
             source_dir=source_dir,
         )
 
@@ -2461,9 +2338,7 @@ class TestUpdateSyncState:
 
         # Even skipped items should be recorded in state.
         state = load_sync_state(source_dir)
-        oc_state = state.platforms.get(Platform.OPENCODE.value)
-        assert oc_state is not None
-        assert "skill/existing" in oc_state.items
+        assert "skill/existing" in state.items
 
     def test_sync_state_load_failure_graceful(
         self,
@@ -2496,7 +2371,6 @@ class TestUpdateSyncState:
         with mock.patch("agentfiles.engine.logger"):
             report = engine.sync(
                 [item],
-                (Platform.OPENCODE,),
                 source_dir=source_dir,
             )
 
@@ -2536,11 +2410,15 @@ class TestExecutePlanErrorIsolation:
 
         engine = SyncEngine(target_manager)
 
+        # NOTE: This test mocks _execute_single (private method) to simulate
+        # an unhandled exception. If _execute_single is renamed/removed,
+        # this test needs updating.
         with mock.patch.object(engine, "_execute_single", side_effect=RuntimeError("boom")):
             results = engine.execute_plan([plan])
 
         assert len(results) == 1
         assert not results[0].is_success
+        # Verify the error message contains the original exception text
         assert "boom" in results[0].message
 
     def test_one_failure_does_not_abort_batch(
@@ -2575,13 +2453,14 @@ class TestExecutePlanErrorIsolation:
 
         engine = SyncEngine(target_manager)
 
-        call_count = 0
+        # NOTE: This test mocks _execute_single (private method) to selectively
+        # crash on one plan. If _execute_single is renamed/removed, this test
+        # needs updating.
         original_execute = engine._execute_single
 
         def selective_crash(plan: SyncPlan) -> SyncResult:
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
+            # Crash only on bad_plan (identified by reference), let good_plan through
+            if plan is bad_plan:
                 raise RuntimeError("crash")
             return original_execute(plan)
 
@@ -2590,5 +2469,6 @@ class TestExecutePlanErrorIsolation:
 
         assert len(results) == 2
         assert not results[0].is_success
+        # Verify the error message contains the original exception text
         assert "crash" in results[0].message
         assert results[1].is_success

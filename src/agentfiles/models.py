@@ -1,8 +1,8 @@
 """Data models and helper utilities for the agentfiles CLI tool.
 
 agentfiles manages AI tool configurations (agents, skills, commands, plugins)
-by parsing YAML frontmatter and tracking sync operations across platforms
-(OpenCode, Claude Code, Windsurf, Cursor).
+by parsing YAML frontmatter and tracking sync operations for the OpenCode
+platform.
 
 Models are built with ``dataclasses`` from the standard library.  The only
 external dependency is ``pyyaml`` for YAML frontmatter parsing.
@@ -26,11 +26,10 @@ into installation plans::
         ▼
     SyncResult          Outcome of executing a plan.
 
-State tracking uses a three-level structure persisted as YAML::
+State tracking uses a two-level structure persisted as YAML::
 
     SyncState           Per-repository state file (``.agentfiles.state.yaml``).
-    └── PlatformState   Per-platform section.
-        └── ItemState   Per-item timestamps.
+    └── ItemState       Per-item timestamps.
 
 Diffing (comparing source to target) produces::
 
@@ -80,7 +79,6 @@ __all__ = [
     "Item",
     "ItemMeta",
     "ItemState",
-    "PlatformState",
     "SourceInfo",
     "SyncPlan",
     "SyncResult",
@@ -159,7 +157,7 @@ class ItemType(Enum):
        and call ``_register_scanner(ItemType.WORKFLOW, _scan_workflows_dir, ...)``.
 
     3. **target.py**: If the new type uses a non-standard subdirectory layout,
-       update the per-platform subdir resolvers (e.g. ``_opencode_subdirs``).
+       update the subdir resolvers.
 
     No other files need modification — the ``_PLURAL_TO_ITEM_TYPE`` reverse
     lookup in ``target.py``, the ``resolve_target_name`` function, and the
@@ -200,53 +198,15 @@ class ItemType(Enum):
 class Platform(Enum):
     """Target platform for installation.
 
-    EXTENSION POINT — Adding a new Platform
-    ========================================
-    To add a new platform (e.g. ``COPILOT``):
-
-    1. **Here (models.py)**:
-       - Add the enum member: ``COPILOT = "copilot"``.
-       - Add the display name in the ``display_name`` property dict.
-       - Add CLI aliases to ``PLATFORM_ALIASES`` (e.g. ``"cp": "copilot"``).
-
-    2. **target.py**:
-       - Write a candidate resolver (e.g. ``_copilot_candidates``) that
-         returns config directory paths in priority order.
-       - Write a subdir resolver (e.g. ``_copilot_subdirs``) or reuse an
-         existing one like ``_skills_only_subdirs``.
-       - Register both in the dispatch tables:
-         ``_PLATFORM_CANDIDATE_RESOLVERS`` and ``_PLATFORM_SUBDIR_RESOLVERS``.
-
-    3. **scanner.py**: Update the ``_register_scanner()`` calls at module
-       bottom to include the new platform in the ``platforms`` tuple for
-       each ``ItemType`` that the new platform supports.
-
-    4. **engine.py**: If the platform should be in the default sync set,
-       add it to the default ``platforms`` tuples in ``sync()`` and
-       ``uninstall()``.
+    Currently only OpenCode is supported.
     """
 
     OPENCODE = "opencode"
-    CLAUDE_CODE = "claude_code"
-    WINDSURF = "windsurf"
-    CURSOR = "cursor"
-    COPILOT = "copilot"
-    AIDER = "aider"
-    CONTINUE = "continue"
 
     @property
     def display_name(self) -> str:
         """Human-readable platform name for UI output."""
-        _names: dict[Platform, str] = {
-            Platform.OPENCODE: "OpenCode",
-            Platform.CLAUDE_CODE: "Claude Code",
-            Platform.WINDSURF: "Windsurf",
-            Platform.CURSOR: "Cursor",
-            Platform.COPILOT: "GitHub Copilot",
-            Platform.AIDER: "Aider",
-            Platform.CONTINUE: "Continue.dev",
-        }
-        return _names[self]
+        return "OpenCode"
 
 
 # ---------------------------------------------------------------------------
@@ -254,30 +214,10 @@ class Platform(Enum):
 # ---------------------------------------------------------------------------
 
 PLATFORM_ALIASES: dict[str, str] = {
-    # OpenCode
     "oc": "opencode",
     "opencode": "opencode",
-    # Claude Code
-    "cc": "claude_code",
-    "claude": "claude_code",
-    "claude_code": "claude_code",
-    "claudecode": "claude_code",
-    # Windsurf
-    "ws": "windsurf",
-    "windsurf": "windsurf",
-    # Cursor
-    "cr": "cursor",
-    "cursor": "cursor",
-    # GitHub Copilot
-    "copilot": "copilot",
-    "cp": "copilot",
-    "github-copilot": "copilot",
-    # Aider
-    "aider": "aider",
-    # Continue.dev
-    "continue": "continue",
-    "cont": "continue",
-    "continue.dev": "continue",
+    "open-code": "opencode",
+    "open_code": "opencode",
 }
 
 PLATFORM_NAMES: frozenset[str] = frozenset(p.value for p in Platform)
@@ -293,7 +233,7 @@ def resolve_platform(name: str) -> str:
         name: Platform name or alias (case-insensitive).
 
     Returns:
-        Canonical platform value string (e.g. ``"opencode"``).
+        Canonical platform value string (always ``"opencode"``).
 
     Raises:
         ValueError: When *name* is not a recognized platform or alias.
@@ -303,11 +243,7 @@ def resolve_platform(name: str) -> str:
     canonical = PLATFORM_ALIASES.get(key)
     if canonical is None:
         valid = ", ".join(sorted(PLATFORM_ALIASES.keys()))
-        raise ValueError(
-            f"unknown platform: {name!r}. "
-            f"Valid names and aliases: {valid}. "
-            f"Use '--target all' to target all installed platforms"
-        )
+        raise ValueError(f"unknown platform: {name!r}. Valid names and aliases: {valid}")
     return canonical
 
 
@@ -322,7 +258,7 @@ class SyncAction(Enum):
 
     2. **engine.py**:
        - Write a plan handler method (e.g. ``_plan_backup``) with signature
-         ``(item, platform, target_dir, requested_action) -> SyncPlan | None``.
+         ``(item, target_dir, requested_action) -> SyncPlan | None``.
        - Write an execute handler method (e.g. ``_execute_backup``) with
          signature ``(plan) -> SyncResult``.
        - Register both in ``__init__``: add to ``_plan_handlers`` and
@@ -373,9 +309,9 @@ class Scope(Enum):
     Determines where items are installed on target platforms:
 
     - GLOBAL: User-level configs shared across all projects
-      (e.g. ~/.config/opencode/, ~/.claude/)
+      (e.g. ~/.config/opencode/)
     - PROJECT: Project-specific configs committed to VCS
-      (e.g. .opencode/, .claude/ in project root)
+      (e.g. .opencode/ in project root)
     - LOCAL: Personal project configs, git-ignored
       (e.g. .opencode/ with .gitignore entries)
 
@@ -501,7 +437,7 @@ class Item:
     meta: ItemMeta | None = None
     version: str = _DEFAULT_VERSION
     files: tuple[str, ...] = ()
-    supported_platforms: tuple[Platform, ...] = (Platform.OPENCODE, Platform.CLAUDE_CODE)
+    supported_platforms: tuple[Platform, ...] = (Platform.OPENCODE,)
     scope: Scope = Scope.GLOBAL
 
     # -- derived keys / sorting ---------------------------------------------
@@ -524,16 +460,6 @@ class Item:
             items.sort(key=lambda i: i.sort_key)
         """
         return (self.item_type.value, self.name)
-
-    @property
-    def platform_values(self) -> list[str]:
-        """Platform value strings for JSON serialization.
-
-        Returns:
-            List of platform value strings (e.g. ``["opencode", "claude_code"]``).
-
-        """
-        return [p.value for p in self.supported_platforms]
 
 
 @dataclass(frozen=True)
@@ -673,7 +599,7 @@ class TokenEstimate:
 
 @dataclass(frozen=True)
 class ItemState:
-    """Sync state for a single item on a single platform.
+    """Sync state for a single item.
 
     Attributes:
         synced_at: ISO 8601 timestamp of the last successful sync.
@@ -683,23 +609,9 @@ class ItemState:
     synced_at: str = ""
 
 
-@dataclass(frozen=True)
-class PlatformState:
-    """Sync state for all items on a single platform.
-
-    Attributes:
-        path: Absolute path to the platform config directory.
-        items: Mapping of item key (e.g. ``"agent/coder"``) to ItemState.
-
-    """
-
-    path: str = ""
-    items: dict[str, ItemState] = field(default_factory=dict)
-
-
 # NOTE: SyncState intentionally remains mutable (no ``frozen=True``) because
 # engine.py and cli.py reassign ``state.last_sync`` after each sync operation,
-# and mutate ``state.platforms[...]`` in-place.  Freezing would require all
+# and mutate ``state.items`` in-place.  Freezing would require all
 # callers to switch to ``dataclasses.replace()`` — a change that is out of
 # scope for this module alone.
 @dataclass
@@ -711,13 +623,13 @@ class SyncState:
     Attributes:
         version: State file format version.
         last_sync: ISO 8601 timestamp of the last full sync.
-        platforms: Mapping of platform name to PlatformState.
+        items: Mapping of item key (e.g. ``"agent/coder"``) to ItemState.
 
     """
 
     version: str = "1.0"
     last_sync: str = ""
-    platforms: dict[str, PlatformState] = field(default_factory=dict)
+    items: dict[str, ItemState] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -725,20 +637,28 @@ class SyncState:
 # ---------------------------------------------------------------------------
 
 
-_CONFIG_TARGET_NAMES: dict[str, str] = {
-    "claude_code.json": "settings.json",
-}
+def resolve_source_name_for_config(target_filename: str) -> str:
+    """Return the source filename for a config target filename.
 
-_CONFIG_SOURCE_NAMES: dict[str, str] = {v: k for k, v in _CONFIG_TARGET_NAMES.items()}
+    With only OpenCode supported, config filenames are not renamed
+    during installation, so this returns *target_filename* unchanged.
+
+    Args:
+        target_filename: The filename as it appears on the target platform.
+
+    Returns:
+        The corresponding source repository filename.
+
+    """
+    return target_filename
 
 
 def resolve_target_name(item: Item) -> str:
     """Return the on-disk destination name for *item*.
 
-    File-based items (agents, commands) are installed as flat files whose
-    name includes the source extension (e.g. ``"api-architect.md"``).
-    Config items may be renamed via :data:`_CONFIG_TARGET_NAMES`.
-    Directory-based items (skills, plugins) use their directory name.
+    File-based items (agents, commands, configs) are installed as flat files
+    whose name includes the source extension (e.g. ``"api-architect.md"``).
+    Directory-based items (skills, workflows) use their directory name.
 
     This function must be used everywhere the code resolves the expected
     name of an item at a target location — both during sync (install) and
@@ -751,29 +671,9 @@ def resolve_target_name(item: Item) -> str:
         The name that the item should have on disk at the target.
 
     """
-    if item.item_type == ItemType.CONFIG:
-        source_name = item.source_path.name
-        return _CONFIG_TARGET_NAMES.get(source_name, source_name)
     if item.item_type.is_file_based:
         return item.source_path.name
     return item.name
-
-
-def resolve_source_name_for_config(target_filename: str) -> str:
-    """Return the source filename for a config target filename.
-
-    Reverse mapping of :data:`_CONFIG_TARGET_NAMES`.  For example,
-    ``"settings.json"`` on disk maps back to ``"claude_code.json"`` in
-    the source repository.
-
-    Args:
-        target_filename: The filename as it appears on the target platform.
-
-    Returns:
-        The corresponding source repository filename.
-
-    """
-    return _CONFIG_SOURCE_NAMES.get(target_filename, target_filename)
 
 
 def item_from_directory(

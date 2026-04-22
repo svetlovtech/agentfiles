@@ -228,13 +228,13 @@ class TestCheckPlatformTools:
 
     def test_some_found(self) -> None:
         def mock_which(name: str) -> str | None:
-            return "/usr/bin/claude" if name == "claude" else None
+            return "/usr/bin/opencode" if name == "opencode" else None
 
         with mock.patch("shutil.which", side_effect=mock_which):
             results = _check_platform_tools()
         ok_results = [r for r in results if r.status == CheckStatus.OK]
         assert len(ok_results) == 1
-        assert "Claude Code" in ok_results[0].label
+        assert "OpenCode" in ok_results[0].label
 
 
 # ---------------------------------------------------------------------------

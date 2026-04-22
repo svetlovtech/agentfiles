@@ -11,14 +11,13 @@ This module provides the presentation layer for CLI output.  It handles:
   terminal-capability heuristic.
 * **Convenience print helpers** — :func:`success`, :func:`error`,
   :func:`warning`, :func:`info`, :func:`bold`, :func:`dim`,
-  :func:`print_section`, and :func:`print_item_status` provide one-call
-  coloured output routed through the resilient :func:`_safe_write` I/O
-  layer.
+  and :func:`print_section` provide one-call coloured output routed
+  through the resilient :func:`_safe_write` I/O layer.
 * **Table and banner formatting** — :func:`print_table` renders aligned
   columnar output with automatic terminal-width detection and column
   truncation; :func:`print_banner` draws a Unicode box-drawing frame.
 * **Diff display** — :func:`format_diff` and :func:`format_diff_json`
-  convert :class:`~agentfiles.models.DiffEntry` mappings into human-readable
+  convert :class:`~agentfiles.models.DiffEntry` lists into human-readable
   or machine-consumable text.
 * **Text utilities** — :func:`format_item_count` produces correct
   singular/plural forms for count display.
@@ -43,7 +42,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, TextIO
 
-from agentfiles.models import DiffEntry, DiffStatus, ItemType, Platform
+from agentfiles.models import DiffEntry, DiffStatus, ItemType
 
 # ---------------------------------------------------------------------------
 # ANSI colour constants
@@ -560,34 +559,6 @@ def print_section(title: str) -> None:
     dim(f"{content}{box_char * padding}")
 
 
-def print_item_status(
-    key: str,
-    status: str,
-    platforms: list[str],
-    *,
-    detail: str = "",
-) -> None:
-    """Print a single item status line.
-
-    Example output::
-
-        ✅ agent/coder [opencode, claude_code] — up to date
-
-    Args:
-        key: Item identifier (e.g. ``"agent/coder"``).
-        status: Status indicator string (e.g. ``"✅"``, ``"⚠️"``, ``"❌"``).
-        platforms: List of platform names where the item is installed.
-        detail: Optional detail text appended after an em-dash.
-
-    """
-    parts: list[str] = [f"  {status} {key}"]
-    if platforms:
-        parts.append(f"[{', '.join(platforms)}]")
-    if detail:
-        parts.append(f"\u2014 {detail}")
-    _safe_write(" ".join(parts) + "\n")
-
-
 # ---------------------------------------------------------------------------
 # Banner / box drawing
 # ---------------------------------------------------------------------------
@@ -658,31 +629,29 @@ def _diff_status_symbol(status: DiffStatus, *, use_colors: bool) -> str:
 
 
 def format_diff(
-    diff_results: dict[Platform, list[DiffEntry]],
+    diff_results: list[DiffEntry],
     *,
     use_colors: bool = True,
     verbose: bool = False,
-    content_diffs: dict[tuple[str, str], list[str]] | None = None,
+    content_diffs: dict[str, list[str]] | None = None,
 ) -> str:
     """Format diff results as human-readable coloured text.
 
-    Groups entries by platform, then by item type, and finally by status.
-    Each platform section shows a summary line followed by individual
-    entries prefixed with status symbols.
+    Groups entries by item type, then by status.  Shows a summary line
+    followed by individual entries prefixed with status symbols.
 
     When *verbose* is ``True`` and *content_diffs* is provided, entries
     with ``UPDATED`` status include a unified diff showing the actual
     content changes between source and target.
 
     Args:
-        diff_results: Mapping of platform to diff entries.
+        diff_results: Flat list of diff entries.
         use_colors: Whether to include ANSI escape codes.  Automatically
             disabled when the ``NO_COLOR`` environment variable is set.
         verbose: When ``True``, include content-level unified diff for
             ``UPDATED`` entries.
-        content_diffs: Mapping of ``(item_key, platform_value)`` to a
-            list of unified diff lines.  Only consulted when *verbose*
-            is ``True``.
+        content_diffs: Mapping of ``item_key`` to a list of unified diff
+            lines.  Only consulted when *verbose* is ``True``.
 
     Returns:
         Multi-line formatted string.
@@ -694,58 +663,46 @@ def format_diff(
 
     sections: list[str] = []
 
-    for platform in sorted(diff_results, key=lambda p: p.display_name):
-        entries = diff_results[platform]
+    # Group by item type for the summary line.
+    type_groups: dict[ItemType, list[DiffEntry]] = {}
+    for entry in diff_results:
+        type_groups.setdefault(entry.item.item_type, []).append(entry)
 
-        # Group by item type for the summary line.
-        type_groups: dict[ItemType, list[DiffEntry]] = {}
-        for entry in entries:
-            type_groups.setdefault(entry.item.item_type, []).append(entry)
+    # Build summary line.
+    summary_parts: list[str] = []
+    for item_type in sorted(type_groups, key=lambda t: t.plural):
+        group = type_groups[item_type]
+        counts = Counter(e.status for e in group)
+        parts: list[str] = [
+            f"{counts[status]} {status.value}" for status in _SUMMARY_STATUSES if counts[status]
+        ]
+        if parts:
+            summary_parts.append(f"{item_type.plural}: {', '.join(parts)}")
 
-        # Build summary line.
-        summary_parts: list[str] = []
-        for item_type in sorted(type_groups, key=lambda t: t.plural):
-            group = type_groups[item_type]
-            counts = Counter(e.status for e in group)
-            parts: list[str] = [
-                f"{counts[status]} {status.value}" for status in _SUMMARY_STATUSES if counts[status]
-            ]
-            if parts:
-                summary_parts.append(f"{item_type.plural}: {', '.join(parts)}")
+    section_lines: list[str] = []
 
-        platform_header = (
-            colorize(
-                f"{platform.display_name} (~/{platform.value}):",
-                Colors.BOLD,
-            )
-            if use_colors
-            else f"{platform.display_name} (~/{platform.value}):"
+    if summary_parts:
+        section_lines.append(f"  {'; '.join(summary_parts)}")
+
+    sorted_entries = sorted(
+        diff_results,
+        key=lambda e: (DIFF_STATUS_ORDER.get(e.status, 99), e.item.name),
+    )
+
+    for e in sorted_entries:
+        status_line = (
+            f"  {_diff_status_symbol(e.status, use_colors=use_colors)} "
+            f"{e.item.name} ({DIFF_STATUS_DETAILS.get(e.status, e.status.value)})"
         )
-        section_lines: list[str] = [platform_header]
+        section_lines.append(status_line)
 
-        if summary_parts:
-            section_lines.append(f"  {'; '.join(summary_parts)}")
+        # Append content diff for UPDATED entries when verbose mode is on.
+        if verbose and e.status == DiffStatus.UPDATED and content_diffs is not None:
+            diff_lines = content_diffs.get(e.item.item_key)
+            if diff_lines:
+                section_lines.extend(_format_content_diff_lines(diff_lines, use_colors))
 
-        sorted_entries = sorted(
-            entries,
-            key=lambda e: (DIFF_STATUS_ORDER.get(e.status, 99), e.item.name),
-        )
-
-        for e in sorted_entries:
-            status_line = (
-                f"  {_diff_status_symbol(e.status, use_colors=use_colors)} "
-                f"{e.item.name} ({DIFF_STATUS_DETAILS.get(e.status, e.status.value)})"
-            )
-            section_lines.append(status_line)
-
-            # Append content diff for UPDATED entries when verbose mode is on.
-            if verbose and e.status == DiffStatus.UPDATED and content_diffs is not None:
-                diff_key = (e.item.item_key, platform.value)
-                diff_lines = content_diffs.get(diff_key)
-                if diff_lines:
-                    section_lines.extend(_format_content_diff_lines(diff_lines, use_colors))
-
-        sections.append("\n".join(section_lines))
+    sections.append("\n".join(section_lines))
 
     return "\n\n".join(sections)
 
@@ -790,37 +747,30 @@ def _format_content_diff_lines(
     return formatted
 
 
-def format_diff_json(diff_results: dict[Platform, list[DiffEntry]]) -> str:
+def format_diff_json(diff_results: list[DiffEntry]) -> str:
     """Format diff results as JSON for machine consumption.
 
     Args:
-        diff_results: Mapping of platform to diff entries.
+        diff_results: Flat list of diff entries.
 
     Returns:
         JSON string with the structure::
 
             {
-              "platforms": {
-                "opencode": {
-                  "items": [
-                    {"name": "...", "type": "...", "status": "..."}
-                  ]
-                }
-              }
+              "items": [
+                {"name": "...", "type": "...", "status": "..."}
+              ]
             }
 
     """
-    output: dict[str, Any] = {"platforms": {}}
-
-    for platform, entries in diff_results.items():
-        items = [
-            {
-                "name": entry.item.name,
-                "type": entry.item.item_type.value,
-                "status": entry.status.value,
-            }
-            for entry in entries
-        ]
-        output["platforms"][platform.value] = {"items": items}
+    items = [
+        {
+            "name": entry.item.name,
+            "type": entry.item.item_type.value,
+            "status": entry.status.value,
+        }
+        for entry in diff_results
+    ]
+    output: dict[str, Any] = {"items": items}
 
     return json.dumps(output, indent=2)

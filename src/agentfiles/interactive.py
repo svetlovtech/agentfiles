@@ -27,7 +27,6 @@ from pathlib import Path
 from typing import Any
 
 from agentfiles.models import (
-    DiffEntry,
     DiffStatus,
     Item,
     ItemType,
@@ -130,23 +129,6 @@ def _parse_ranges(input_str: str, max_value: int) -> list[int]:
     return sorted(i for i in result if 1 <= i <= max_value)
 
 
-def _guess_platform(target_dir: Path) -> Platform:
-    """Heuristic: pick Platform based on directory path content."""
-    path_str = str(target_dir).lower()
-    if "opencode" in path_str:
-        return Platform.OPENCODE
-    if "windsurf" in path_str or "codeium" in path_str:
-        return Platform.WINDSURF
-    if "cursor" in path_str:
-        return Platform.CURSOR
-    return Platform.CLAUDE_CODE
-
-
-def _item_key(item: Item) -> str:
-    """Compute a unique key for an item — delegates to :attr:`Item.item_key`."""
-    return item.item_key
-
-
 # ---------------------------------------------------------------------------
 # MenuRenderer — display formatting and visual output
 # ---------------------------------------------------------------------------
@@ -179,7 +161,7 @@ class MenuRenderer:
 
         lines = [
             colorize("agentfiles", Colors.BOLD) + f" v{__version__}",
-            "Load AI tool configurations across platforms",
+            "Manage AI tool configurations for OpenCode",
         ]
         print_banner(lines)
         print()
@@ -192,12 +174,6 @@ class MenuRenderer:
         )
 
     # -- selection lists ---------------------------------------------------
-
-    def show_platforms(self, available: list[Platform]) -> None:
-        """Display a numbered list of available platforms."""
-        lines = [f"\n{self._c('Available platforms:', Colors.BOLD)}"]
-        lines.extend(f"  {idx}) {p.display_name}" for idx, p in enumerate(available, start=1))
-        sys.stdout.write("\n".join(lines) + "\n")
 
     def show_item_types(self, types: list[ItemType]) -> None:
         """Display a numbered list of item types."""
@@ -312,46 +288,31 @@ class MenuRenderer:
     def show_plan_summary(self, plans: list[SyncPlan]) -> None:
         """Display a human-readable summary of sync plans.
 
-        The summary groups items by action type, then by platform.
+        The summary groups items by action type.
         """
-        by_platform_action: dict[tuple[Platform, SyncAction], list[SyncPlan]] = defaultdict(list)
-        action_counts: dict[SyncAction, int] = defaultdict(int)
-
-        # Cache platform guesses to avoid redundant string conversions
-        # for plans targeting the same directory.
-        _platform_cache: dict[str, Platform] = {}
+        by_action: dict[SyncAction, list[SyncPlan]] = defaultdict(list)
 
         for plan in plans:
-            target_key = str(plan.target_dir)
-            if target_key not in _platform_cache:
-                _platform_cache[target_key] = _guess_platform(plan.target_dir)
-            platform = _platform_cache[target_key]
-
-            key = (platform, plan.action)
-            by_platform_action[key].append(plan)
-            action_counts[plan.action] += 1
+            by_action[plan.action].append(plan)
 
         buf: list[str] = ["", self._c("Load plan:", Colors.BOLD)]
 
         for action in SyncAction:
-            count = action_counts.get(action, 0)
-            if not count:
+            action_plans = by_action.get(action, [])
+            if not action_plans:
                 continue
             symbol, colour = _ACTION_SYMBOLS[action]
             label = self._c(f"{symbol} {action.value.title()}", colour)
-            buf.append(f"  {label}: {count} items")
+            buf.append(f"  {label}: {len(action_plans)} items")
 
         buf.append("")
 
-        for (platform, action), action_plans in sorted(
-            by_platform_action.items(),
-            key=lambda kv: (kv[0][0].value, kv[0][1].value),
-        ):
+        for action in SyncAction:
+            action_plans = by_action.get(action, [])
+            if not action_plans:
+                continue
             symbol, colour = _ACTION_SYMBOLS[action]
-            header = self._c(
-                f"  {symbol} {action.value.title()} to {platform.display_name}:",
-                colour,
-            )
+            header = self._c(f"  {symbol} {action.value.title()}:", colour)
             buf.append(header)
             for plan in action_plans:
                 detail = f"    {symbol} {plan.item.name} ({plan.item.item_type.value})"
@@ -420,33 +381,6 @@ class InputParser:
         return raw.lower().startswith("y")
 
     # -- selection parsers -------------------------------------------------
-
-    def parse_platforms(
-        self,
-        raw: str,
-        available: list[Platform],
-    ) -> list[Platform]:
-        """Parse a raw input string into a list of selected platforms.
-
-        Accepts numeric indices and platform enum values.
-        """
-        tokens = _parse_comma_list(raw)
-        selected: dict[Platform, None] = {}
-
-        for token in tokens:
-            try:
-                idx = int(token)
-                if 1 <= idx <= len(available):
-                    selected[available[idx - 1]] = None
-                continue
-            except ValueError:
-                pass
-
-            for platform in available:
-                if platform.value == token:
-                    selected[platform] = None
-
-        return list(selected)
 
     def parse_item_type_selection(
         self,
@@ -544,9 +478,9 @@ class InteractiveSession:
 
     **Selection prompts** — used by pull/push commands::
 
-        choose_sync_mode()      → str          # cmd_pull
-        select_platforms(...)   → list[Platform]  # cmd_pull
-        select_item_types()     → list[ItemType]  # cmd_pull
+        choose_sync_mode()      → str              # cmd_pull
+        select_platforms(...)   → list[Platform]   # cmd_pull (no-op)
+        select_item_types()     → list[ItemType]   # cmd_pull
         select_items(...)       → list[Item]       # cmd_pull, cmd_push
 
     **Confirmation prompts** — used by most commands that modify state::
@@ -561,12 +495,9 @@ class InteractiveSession:
         welcome()       → None   # banner display
         main_menu()     → str    # menu choice dispatch
 
-    **Diff / conflict resolution** — reserved for interactive sync
-    workflows (currently exercised by tests only)::
+    **Conflict resolution** — used by push workflows::
 
-        select_diff_action(...)          → dict[str, SyncAction]
-        choose_push_items(...)           → list[tuple[Item, Platform]]
-        resolve_sync_conflicts(...)      → dict[str, str]
+        prompt_push_conflicts(...)       → dict[str, str]
 
     Args:
         use_colors: When ``None`` (default), colour output is
@@ -628,37 +559,11 @@ class InteractiveSession:
     # -- public API: selection prompts -------------------------------------
 
     def select_platforms(self, available: list[Platform]) -> list[Platform]:
-        """Let the user pick one or more platforms from *available*.
+        """Return all available platforms unchanged.
 
-        Accepts: ``all``, numbers (``1``), comma-separated (``1,2``),
-        space-separated (``1 2``), or platform enum values
-        (``opencode``, ``claude_code``).
-
-        Re-prompts up to :data:`_MAX_INPUT_RETRIES` times when the
-        user enters non-empty input that resolves to no valid platform.
-
-        Returns:
-            List of selected :class:`Platform` values.
-            Returns all platforms on cancellation (Ctrl+C), EOF, or
-            after exhausting retries.
-
+        Since only OpenCode is supported, platform selection is a no-op.
         """
-        if not available:
-            return []
-
-        prompt_msg = "Select platforms to load (comma-separated, or 'all'): "
-        self._renderer.show_platforms(available)
-        raw = self._parser.prompt(prompt_msg)
-
-        if not raw or raw.lower() == "all":
-            return list(available)
-
-        return self._retry_selection(
-            raw=raw,
-            parse_fn=lambda r: self._parser.parse_platforms(r, available),
-            prompt_msg=prompt_msg,
-            fallback=list(available),
-        )
+        return list(available)
 
     def select_item_types(self) -> list[ItemType]:
         """Let the user pick one or more item types to sync.
@@ -747,7 +652,7 @@ class InteractiveSession:
     def confirm_plans(self, plans: list[SyncPlan]) -> bool:
         """Display a human-readable summary of sync plans and ask to proceed.
 
-        The summary groups items by action type, then by platform.
+        The summary groups items by action type.
 
         Returns:
             ``True`` if the user confirms, ``False`` otherwise.
@@ -802,51 +707,6 @@ class InteractiveSession:
         info(_ABORTED_MESSAGE)
         return False
 
-    def select_diff_action(
-        self,
-        diff_entries: list[tuple[DiffEntry, Platform]],
-    ) -> dict[str, SyncAction]:
-        """Interactively resolve diffs by choosing an action per item.
-
-        The user is prompted for each entry unless they pick ``all``
-        (apply current choice to remaining items) or ``quit``.
-
-        Returns:
-            Mapping of ``"{item_type}:{item_name}"`` to the chosen
-            :class:`SyncAction`.
-
-        """
-        if not diff_entries:
-            return {}
-
-        self._renderer.show_diff_header()
-        result: dict[str, SyncAction] = {}
-        batch_action: SyncAction | None = None
-
-        for entry, platform in diff_entries:
-            if batch_action is not None:
-                result[_item_key(entry.item)] = batch_action
-                continue
-
-            status_label = self._renderer.format_diff_status(entry.status)
-            prompt_msg = (
-                f"  {entry.item.name} ({entry.item.item_type.value}) "
-                f"[{platform.display_name}] {status_label}: "
-            )
-            raw = self._parser.prompt(prompt_msg)
-
-            action = self._parser.resolve_diff_choice(raw)
-            if action is None:
-                break
-
-            # "a"/"all" means apply this action to all remaining entries
-            if raw.strip().lower() in ("a", "all"):
-                batch_action = action
-
-            result[_item_key(entry.item)] = action
-
-        return result
-
     def choose_sync_mode(self) -> str:
         """Let the user pick a sync mode.
 
@@ -876,50 +736,7 @@ class InteractiveSession:
         raw = self._parser.prompt("Choose [1]: ")
         return self._parser.parse_main_menu_choice(raw)
 
-    # -- public API: diff / conflict resolution (reserved for sync) -------
-
-    def choose_push_items(
-        self,
-        items: list[Item],
-        platforms: list[Platform],
-    ) -> list[tuple[Item, Platform]]:
-        """Let user select which locally-modified items to push back to repo.
-
-        Shows items grouped by type with their current status.
-        Returns list of (item, platform) tuples to push.
-        """
-        if not items:
-            info("No locally-modified items to push.")
-            return []
-
-        index_map = self._renderer.show_items_grouped(items)
-        self._renderer.show_platforms(platforms)
-
-        raw_platforms = self._parser.prompt(
-            "Select target platforms (comma-separated, or 'all'): ",
-        )
-        if not raw_platforms or raw_platforms.lower() == "all":
-            selected_platforms = list(platforms)
-        else:
-            selected_platforms = self._parser.parse_platforms(
-                raw_platforms,
-                platforms,
-            )
-
-        if not selected_platforms:
-            return []
-
-        total = len(items)
-        raw_items = self._parser.prompt(
-            f"Select items to push (ranges ok: 1,3,5-10,{total}): ",
-        )
-        if not raw_items or raw_items.lower() == "all":
-            selected_items = list(items)
-        else:
-            indices = self._parser.parse_ranges(raw_items, total)
-            selected_items = [index_map[i] for i in indices]
-
-        return [(item, platform) for item in selected_items for platform in selected_platforms]
+    # -- public API: conflict resolution (push) ---------------------------
 
     _PUSH_CONFLICT_MAP: dict[str, str] = {
         "t": "keep-target",
@@ -932,7 +749,7 @@ class InteractiveSession:
 
     def prompt_push_conflicts(
         self,
-        conflicts: list[tuple[str, str, str, Path, Path]],
+        conflicts: list[tuple[str, str, Path, Path]],
     ) -> dict[str, str]:
         """Let the user resolve push conflicts interactively.
 
@@ -944,7 +761,7 @@ class InteractiveSession:
         - **show-diff** (``d``) — display a unified diff, then re-prompt.
 
         Args:
-            conflicts: List of ``(item_key, item_type, platform_name,
+            conflicts: List of ``(item_key, item_type,
                 source_path, target_path)`` tuples.
 
         Returns:
@@ -961,16 +778,14 @@ class InteractiveSession:
         result: dict[str, str] = {}
         apply_to_all: str | None = None
 
-        for item_key, _item_type, platform_name, source_path, target_path in conflicts:
+        for item_key, _item_type, source_path, target_path in conflicts:
             if apply_to_all is not None:
                 result[item_key] = apply_to_all
                 continue
 
             resolved = False
             while not resolved:
-                print(
-                    f"  {self._renderer._c('CONFLICT', Colors.RED)}: {item_key} on {platform_name}"
-                )
+                print(f"  {self._renderer._c('CONFLICT', Colors.RED)}: {item_key}")
                 print("  [t] Keep target (overwrite source — push)")
                 print("  [s] Keep source (skip this item)")
                 print("  [d] Show diff")
@@ -1044,73 +859,6 @@ class InteractiveSession:
                 print(f"  {self._renderer._c(line, Colors.RED)}")
             else:
                 print(f"  {line}")
-
-    _CONFLICT_ACTION_MAP: dict[str, str] = {
-        "p": "pull",
-        "pull": "pull",
-        "u": "push",
-        "push": "push",
-        "s": "skip",
-        "skip": "skip",
-    }
-
-    def resolve_sync_conflicts(
-        self,
-        conflicts: list[tuple[str, str, str]],
-    ) -> dict[str, str]:
-        """Let user resolve sync conflicts one by one.
-
-        Args:
-            conflicts: List of (item_name, item_type, platform) tuples.
-
-        Returns:
-            Dict mapping ``"item_name/platform"`` to ``"pull" | "push" | "skip"``.
-
-        """
-        if not conflicts:
-            return {}
-
-        print()
-        print(self._renderer._c("Resolve sync conflicts:", Colors.BOLD))
-        print()
-
-        result: dict[str, str] = {}
-        apply_to_all: str | None = None
-
-        for item_name, item_type, platform in conflicts:
-            conflict_key = f"{item_name}/{platform}"
-
-            if apply_to_all is not None:
-                result[conflict_key] = apply_to_all
-                continue
-
-            print(
-                f"  "
-                f"{self._renderer._c('CONFLICT', Colors.RED)}: "
-                f"{item_type}/{item_name} on {platform}"
-            )
-            print("  Both repo and local have changes.")
-            print("  [p] Pull (take repo version)")
-            print("  [u] Push (take local version)")
-            print("  [s] Skip")
-            print("  [a] Apply to all remaining")
-
-            raw = self._parser.prompt("  Choice [s]: ")
-            key = raw.strip().lower() if raw else "s"
-
-            if key in ("a", "all"):
-                raw_all = self._parser.prompt(
-                    "  Apply which to all? [p]ull/[u]push/[s]kip: ",
-                )
-                all_key = raw_all.strip().lower() if raw_all else "s"
-                apply_to_all = self._CONFLICT_ACTION_MAP.get(all_key, "skip")
-                result[conflict_key] = apply_to_all
-            else:
-                result[conflict_key] = self._CONFLICT_ACTION_MAP.get(key, "skip")
-
-            print()
-
-        return result
 
 
 # ---------------------------------------------------------------------------

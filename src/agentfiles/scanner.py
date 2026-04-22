@@ -29,29 +29,21 @@ over items from explicit scope subdirectories when both share the same
 ``(name, scope)`` key.
 
 Scanner registry
-~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~
 Each :class:`~agentfiles.models.ItemType` maps 1-to-1 to a scanner
-function and its supported :class:`~agentfiles.models.Platform` values
-via the module-level ``_SCANNER_REGISTRY`` dict.  This registry is
-populated once at import time through :func:`_register_scanner`.
+function via the module-level ``_SCANNER_REGISTRY`` dict.  This
+registry is populated once at import time through
+:func:`_register_scanner`.
 
 Adding a new item type requires only:
 
 1. Define a scanner function with signature ``(dir_path, *, gitignore) -> list[Item]``.
-2. Call ``_register_scanner(NewType, _scan_new_type_dir, (Platform.A, …))``.
+2. Call ``_register_scanner(NewType, _scan_new_type_dir)``.
 
 No existing scanner code needs modification (Open/Closed Principle).
 
-Platform assignment
-~~~~~~~~~~~~~~~~~~~
-Every discovered :class:`~agentfiles.models.Item` starts with empty
-``supported_platforms``.  The registry lookup in :func:`_apply_platforms`
-replaces that field with the platforms declared at registration time.
-An optional per-``SourceScanner`` platform filter then excludes items
-whose platforms don't intersect with the requested set.
-
 Error resilience
-~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~
 Individual file/directory parse errors are caught and logged per-item
 so that one malformed definition never prevents the remaining items
 from being discovered.  Top-level :meth:`SourceScanner.scan` also
@@ -76,7 +68,6 @@ from collections import Counter
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import NamedTuple
 
 from agentfiles.models import (
     SKILL_MAIN_FILE,
@@ -232,7 +223,7 @@ _SKIP_NAMES = frozenset({"__pycache__", "__init__.py"})
 _SCOPE_DIR_NAMES: frozenset[str] = frozenset(s.value for s in Scope)
 
 # File extensions recognised for single-file plugin items.
-_PLUGIN_EXTENSIONS = frozenset({".ts", ".yaml", ".py"})
+_PLUGIN_EXTENSIONS = frozenset({".ts", ".yaml", ".yml", ".py", ".js"})
 
 # Maximum directory nesting depth for _has_plugin_file recursion.
 _PLUGIN_SCAN_MAX_DEPTH = 10
@@ -242,10 +233,8 @@ _PLUGIN_SCAN_MAX_DEPTH = 10
 # Scanner registry (Open/Closed Principle)
 # ---------------------------------------------------------------------------
 #
-# The registry is the single source of truth that maps each ItemType to:
-#
-#   1. A scanner function — responsible for discovering items in a directory.
-#   2. A platform tuple — the platforms that the item type supports.
+# The registry is the single source of truth that maps each ItemType to
+# a scanner function responsible for discovering items in a directory.
 #
 # EXTENSION POINT — Adding a new ItemType
 # ========================================
@@ -255,39 +244,30 @@ _PLUGIN_SCAN_MAX_DEPTH = 10
 #      ``(dir_path: Path, *, gitignore: GitIgnoreMatcher | None) -> list[Item]``
 #      signature.
 #
-#   2. Call ``_register_scanner(NewType, scanner_fn, (Platform.A, ...))``
-#      in the registration block below.
+#   2. Call ``_register_scanner(NewType, scanner_fn)`` in the
+#      registration block below.
 #
-# No other code in this module needs to change — ``_apply_platforms`` and
-# ``SourceScanner.scan_type`` look up the dispatch table automatically
-# with safe defaults for unregistered types.
+# No other code in this module needs to change —
+# ``SourceScanner.scan_type`` looks up the dispatch table
+# automatically with safe defaults for unregistered types.
 
-
-class _ScannerEntry(NamedTuple):
-    """Bundles a scanner function with its supported platforms."""
-
-    scanner: Callable[..., list[Item]]
-    platforms: tuple[Platform, ...]
-
-
-# Single source of truth: each ItemType maps to its scanner + platforms.
+# Single source of truth: each ItemType maps to its scanner function.
 # New types only require a ``_register_scanner()`` call — no other code
 # in this module needs modification.
-_SCANNER_REGISTRY: dict[ItemType, _ScannerEntry] = {}
+_SCANNER_REGISTRY: dict[ItemType, Callable[..., list[Item]]] = {}
 
 
 def _register_scanner(
     item_type: ItemType,
     scanner: Callable[..., list[Item]],
-    platforms: tuple[Platform, ...],
 ) -> None:
-    """Register a scanner function and its supported platforms for *item_type*.
+    """Register a scanner function for *item_type*.
 
     This is the **only** place to touch when adding a new ``ItemType``,
     satisfying the Open/Closed Principle: the module is open for extension
     (new types) but closed for modification (no existing code changes).
     """
-    _SCANNER_REGISTRY[item_type] = _ScannerEntry(scanner=scanner, platforms=platforms)
+    _SCANNER_REGISTRY[item_type] = scanner
 
 
 # ---------------------------------------------------------------------------
@@ -298,47 +278,6 @@ def _register_scanner(
 def _should_skip(name: str) -> bool:
     """Return ``True`` when *name* is hidden or an internal file/dir."""
     return name.startswith(".") or name in _SKIP_NAMES
-
-
-def _apply_platforms(item: Item) -> Item:
-    """Replace ``supported_platforms`` on *item* based on its ``item_type``.
-
-    For ``CONFIG`` items, the file name is used to narrow platforms:
-    a config named ``opencode.json`` is only relevant to OpenCode,
-    ``claude.json`` to Claude Code, etc.  When the name does not match
-    any known platform prefix, all registered platforms are kept.
-
-    Returns the item unchanged (empty platforms) when the item type is
-    not registered, preventing a ``KeyError`` from propagating to callers.
-    """
-    from agentfiles.models import ItemType, Platform
-
-    entry = _SCANNER_REGISTRY.get(item.item_type)
-    if entry is None:
-        logger.warning(
-            "No scanner registered for %s — leaving platforms empty", item.item_type.value
-        )
-        return item
-
-    platforms = entry.platforms
-
-    # For config files, restrict platforms by filename prefix so that
-    # opencode.json is not copied to Claude Code, etc.
-    if item.item_type == ItemType.CONFIG:
-        stem = item.source_path.stem.lower()
-        _CONFIG_PLATFORM_MAP: dict[str, tuple[Platform, ...]] = {  # noqa: N806
-            "opencode": (Platform.OPENCODE,),
-            "claude": (Platform.CLAUDE_CODE,),
-            "copilot": (Platform.COPILOT,),
-            "aider": (Platform.AIDER,),
-            "continue": (Platform.CONTINUE,),
-        }
-        for prefix, mapped in _CONFIG_PLATFORM_MAP.items():
-            if stem.startswith(prefix):
-                platforms = tuple(p for p in platforms if p in mapped)
-                break
-
-    return replace(item, supported_platforms=platforms)
 
 
 def _scandir_sorted(dir_path: Path) -> list[os.DirEntry[str]]:
@@ -502,7 +441,7 @@ def _scan_with_subdirs(
             continue
         try:
             item = item_from_file(child, item_type)
-            items.append(_apply_platforms(item))
+            items.append(item)
             seen_stems.add(child.stem)
         except (AgentfilesError, OSError) as exc:
             logger.warning("Skipping %s file %s: %s", item_type.value, child, exc, exc_info=True)
@@ -531,7 +470,7 @@ def _scan_with_subdirs(
                 continue
 
             item = item_from_directory(child, item_type)
-            items.append(_apply_platforms(item))
+            items.append(item)
         except (AgentfilesError, OSError) as exc:
             logger.warning(
                 "Skipping %s directory %s: %s", item_type.value, child.name, exc, exc_info=True
@@ -547,7 +486,6 @@ def _scan_agents_dir(
     """Scan *dir_path* for agent definitions.
 
     **Item type**: :attr:`~agentfiles.models.ItemType.AGENT`
-    **Registry platforms**: ``(OPENCODE, CLAUDE_CODE)``
 
     Discovers both flat ``.md`` files and subdirectories containing
     ``<dirname>.md`` (e.g. ``agents/coder/coder.md``) by delegating
@@ -566,7 +504,6 @@ def _scan_skills_dir(
     """Scan *dir_path* for skill subdirectories.
 
     **Item type**: :attr:`~agentfiles.models.ItemType.SKILL`
-    **Registry platforms**: ``(OPENCODE, CLAUDE_CODE, WINDSURF, CURSOR)``
 
     Unlike agents and commands, skills are **directory-only**: each
     subdirectory must contain :data:`~agentfiles.models.SKILL_MAIN_FILE`
@@ -594,7 +531,7 @@ def _scan_skills_dir(
                 logger.debug("Skipping %s — no %s found", child.name, SKILL_MAIN_FILE)
                 continue
             item = item_from_directory(child, ItemType.SKILL)
-            items.append(_apply_platforms(item))
+            items.append(item)
         except (AgentfilesError, OSError) as exc:
             logger.warning("Skipping skill directory %s: %s", child.name, exc, exc_info=True)
 
@@ -608,7 +545,6 @@ def _scan_commands_dir(
     """Scan *dir_path* for command definitions.
 
     **Item type**: :attr:`~agentfiles.models.ItemType.COMMAND`
-    **Registry platforms**: ``(OPENCODE,)``
 
     Discovers both flat ``.md`` files and subdirectories containing
     ``<dirname>.md`` (e.g. ``commands/deploy/deploy.md``) by delegating
@@ -626,7 +562,7 @@ def _has_plugin_file(directory: Path, *, _depth: int = 0) -> bool:
     Called by :func:`_scan_plugins_dir` to decide whether a subdirectory
     qualifies as a plugin item.  A "plugin file" is any non-hidden file
     whose extension is in :data:`_PLUGIN_EXTENSIONS` (``.ts``, ``.yaml``,
-    ``.py``).
+    ``.py``, ``.yml``, ``.js``).
 
     Uses :func:`os.scandir` recursively so that ``DirEntry.is_file()``
     reuses cached ``d_type``, avoiding ``stat()`` syscalls on every entry.
@@ -660,10 +596,6 @@ def _has_plugin_file(directory: Path, *, _depth: int = 0) -> bool:
     return False
 
 
-# Known platform directory names for platform-specific plugin scanning.
-_PLATFORM_DIR_NAMES: frozenset[str] = frozenset(p.value for p in Platform)
-
-
 def _scan_plugins_dir(
     dir_path: Path,
     gitignore: GitIgnoreMatcher | None = None,
@@ -671,19 +603,14 @@ def _scan_plugins_dir(
     """Scan *dir_path* for plugin files and plugin directories.
 
     **Item type**: :attr:`~agentfiles.models.ItemType.PLUGIN`
-    **Registry platforms**: ``(OPENCODE,)`` (default for non-platform-specific items)
 
     Supports two organization styles:
 
-    1. **Platform-specific subdirectories** — directories named after a platform
-       (e.g. ``plugins/opencode/``, ``plugins/claude_code/``) are scanned for
-       plugin files/directories, and items found within are assigned only to
-       that platform.
+    1. **OpenCode subdirectory** — an ``opencode/`` subdirectory is scanned
+       for plugin files and directories, identical to top-level scanning.
 
-    2. **Flat files and directories** — at the top level of ``plugins/``,
-       single files with recognised extensions or directories containing plugin
-       files are parsed as before (backward compatible), using the default
-       platform tuple from the registry.
+    2. **Top-level files and directories** — single files with recognised
+       extensions or directories containing plugin files are parsed.
 
     Args:
         dir_path: Directory containing plugin definitions.
@@ -702,10 +629,40 @@ def _scan_plugins_dir(
         if gitignore and gitignore.is_ignored(child):
             continue
 
-        # Platform-specific subdirectory (e.g. plugins/opencode/)
-        if entry.is_dir() and entry.name in _PLATFORM_DIR_NAMES:
-            platform = Platform(entry.name)
-            items.extend(_scan_platform_plugins_dir(child, platform, gitignore))
+        # OpenCode subdirectory (e.g. plugins/opencode/)
+        if entry.is_dir() and entry.name == Platform.OPENCODE.value:
+            for sub_entry in _scandir_sorted(child):
+                if _should_skip(sub_entry.name):
+                    continue
+                sub_child = Path(sub_entry.path)
+                if gitignore and gitignore.is_ignored(sub_child):
+                    continue
+
+                if sub_entry.is_file():
+                    if sub_child.suffix not in _PLUGIN_EXTENSIONS:
+                        continue
+                    try:
+                        item = item_from_file(sub_child, ItemType.PLUGIN)
+                        items.append(item)
+                    except (AgentfilesError, OSError) as exc:
+                        logger.warning(
+                            "Skipping plugin file %s: %s", sub_child.name, exc, exc_info=True
+                        )
+
+                elif sub_entry.is_dir():
+                    if not _has_plugin_file(sub_child):
+                        logger.debug("Skipping plugin dir %s — no plugin files", sub_child.name)
+                        continue
+                    try:
+                        item = item_from_directory(sub_child, ItemType.PLUGIN)
+                        items.append(item)
+                    except (AgentfilesError, OSError) as exc:
+                        logger.warning(
+                            "Skipping plugin directory %s: %s",
+                            sub_child.name,
+                            exc,
+                            exc_info=True,
+                        )
             continue
 
         # Top-level flat plugin file
@@ -714,66 +671,18 @@ def _scan_plugins_dir(
                 continue
             try:
                 item = item_from_file(child, ItemType.PLUGIN)
-                items.append(_apply_platforms(item))
+                items.append(item)
             except (AgentfilesError, OSError) as exc:
                 logger.warning("Skipping plugin file %s: %s", child.name, exc, exc_info=True)
 
-        # Top-level plugin directory (not a platform name)
+        # Top-level plugin directory
         elif entry.is_dir():
             if not _has_plugin_file(child):
                 logger.debug("Skipping plugin dir %s — no plugin files", child.name)
                 continue
             try:
                 item = item_from_directory(child, ItemType.PLUGIN)
-                items.append(_apply_platforms(item))
-            except (AgentfilesError, OSError) as exc:
-                logger.warning("Skipping plugin directory %s: %s", child.name, exc, exc_info=True)
-
-    return items
-
-
-def _scan_platform_plugins_dir(
-    platform_dir: Path,
-    platform: Platform,
-    gitignore: GitIgnoreMatcher | None = None,
-) -> list[Item]:
-    """Scan a platform-specific plugin subdirectory.
-
-    Items found within are assigned only to *platform*.
-
-    Args:
-        platform_dir: Platform subdirectory (e.g. plugins/opencode/).
-        platform: The platform these plugins belong to.
-        gitignore: Optional gitignore matcher.
-
-    Returns:
-        List of plugin Items assigned to *platform*.
-    """
-    items: list[Item] = []
-
-    for entry in _scandir_sorted(platform_dir):
-        if _should_skip(entry.name):
-            continue
-        child = Path(entry.path)
-        if gitignore and gitignore.is_ignored(child):
-            continue
-
-        if entry.is_file():
-            if child.suffix not in _PLUGIN_EXTENSIONS:
-                continue
-            try:
-                item = item_from_file(child, ItemType.PLUGIN)
-                items.append(replace(item, supported_platforms=(platform,)))
-            except (AgentfilesError, OSError) as exc:
-                logger.warning("Skipping plugin file %s: %s", child.name, exc, exc_info=True)
-
-        elif entry.is_dir():
-            if not _has_plugin_file(child):
-                logger.debug("Skipping plugin dir %s — no plugin files", child.name)
-                continue
-            try:
-                item = item_from_directory(child, ItemType.PLUGIN)
-                items.append(replace(item, supported_platforms=(platform,)))
+                items.append(item)
             except (AgentfilesError, OSError) as exc:
                 logger.warning("Skipping plugin directory %s: %s", child.name, exc, exc_info=True)
 
@@ -787,7 +696,6 @@ def _scan_workflows_dir(
     """Scan *dir_path* for workflow subdirectories.
 
     **Item type**: :attr:`~agentfiles.models.ItemType.WORKFLOW`
-    **Registry platforms**: ``(OPENCODE, CLAUDE_CODE, WINDSURF, CURSOR)``
 
     Workflows are **directory-only**: each subdirectory must contain a
     markdown file (``<dirname>.md`` or any ``.md`` file).  Flat ``.md``
@@ -811,7 +719,7 @@ def _scan_workflows_dir(
             continue
         try:
             item = item_from_directory(child, ItemType.WORKFLOW)
-            items.append(_apply_platforms(item))
+            items.append(item)
         except (AgentfilesError, OSError) as exc:
             logger.warning("Skipping workflow directory %s: %s", child.name, exc, exc_info=True)
 
@@ -846,7 +754,7 @@ def _scan_config_dirs(
             continue
         try:
             item = item_from_file(child, ItemType.CONFIG)
-            items.append(_apply_platforms(item))
+            items.append(item)
         except (AgentfilesError, OSError) as exc:
             logger.warning("Skipping config file %s: %s", child.name, exc, exc_info=True)
 
@@ -855,59 +763,41 @@ def _scan_config_dirs(
 
 # Populate the registry once all scanner functions are defined.
 #
-# Summary of registered scanners and their platform support:
+# Summary of registered scanners:
 #
-#   ItemType   | Scanner function      | Platforms
-#   -----------|-----------------------|------------------------------------------
-#   AGENT      | _scan_agents_dir      | OPENCODE, CLAUDE_CODE, COPILOT, AIDER, CONTINUE
-#   SKILL      | _scan_skills_dir      | OPENCODE, CLAUDE_CODE, WINDSURF, CURSOR
-#   COMMAND    | _scan_commands_dir    | OPENCODE, CONTINUE
-#   PLUGIN     | _scan_plugins_dir     | OPENCODE
-#   CONFIG     | _scan_config_dirs     | OPENCODE, CLAUDE_CODE, COPILOT, AIDER, CONTINUE
-#   WORKFLOW   | _scan_workflows_dir   | OPENCODE, CLAUDE_CODE, WINDSURF, CURSOR
+#   ItemType   | Scanner function
+#   -----------|-----------------------
+#   AGENT      | _scan_agents_dir
+#   SKILL      | _scan_skills_dir
+#   COMMAND    | _scan_commands_dir
+#   PLUGIN     | _scan_plugins_dir
+#   CONFIG     | _scan_config_dirs
+#   WORKFLOW   | _scan_workflows_dir
 #
 # Each call is atomic: adding a new ItemType only needs one more line here.
 _register_scanner(
     ItemType.AGENT,
     _scan_agents_dir,
-    (
-        Platform.OPENCODE,
-        Platform.CLAUDE_CODE,
-        Platform.COPILOT,
-        Platform.AIDER,
-        Platform.CONTINUE,
-    ),
 )
 _register_scanner(
     ItemType.SKILL,
     _scan_skills_dir,
-    (Platform.OPENCODE, Platform.CLAUDE_CODE, Platform.WINDSURF, Platform.CURSOR),
 )
 _register_scanner(
     ItemType.COMMAND,
     _scan_commands_dir,
-    (Platform.OPENCODE, Platform.CONTINUE),
 )
 _register_scanner(
     ItemType.PLUGIN,
     _scan_plugins_dir,
-    (Platform.OPENCODE,),
 )
 _register_scanner(
     ItemType.CONFIG,
     _scan_config_dirs,
-    (
-        Platform.OPENCODE,
-        Platform.CLAUDE_CODE,
-        Platform.COPILOT,
-        Platform.AIDER,
-        Platform.CONTINUE,
-    ),
 )
 _register_scanner(
     ItemType.WORKFLOW,
     _scan_workflows_dir,
-    (Platform.OPENCODE, Platform.CLAUDE_CODE, Platform.WINDSURF, Platform.CURSOR),
 )
 
 
@@ -928,10 +818,7 @@ class SourceScanner:
        (e.g. :func:`_scan_agents_dir`).
     4. Each scanner delegates parsing to :func:`~agentfiles.models.item_from_file`
        or :func:`~agentfiles.models.item_from_directory`.
-    5. Platform metadata is applied from the registry; if *platforms*
-       was provided at construction, items whose platforms don't
-       intersect with the filter are excluded.
-    6. Results are sorted by ``(item_type, name)``.
+    5. Results are sorted by ``(item_type, name)``.
 
     GitIgnore integration
     ~~~~~~~~~~~~~~~~~~~~~
@@ -941,10 +828,6 @@ class SourceScanner:
 
     Args:
         source_dir: Root directory to scan (resolved to an absolute path).
-        platforms: Optional platform filter.  When ``None``, all platforms
-            are included (no filtering is applied).  When provided, only
-            items whose ``supported_platforms`` intersect with *platforms*
-            are returned.
         scope: Optional scope filter.  When ``None``, all scopes are
             discovered.  When provided, only items in the specified scope
             are returned.
@@ -952,10 +835,6 @@ class SourceScanner:
     Example::
 
         scanner = SourceScanner(Path("~/my-tools"))
-        items = scanner.scan()
-
-        # Filter to a single platform
-        scanner = SourceScanner(Path("~/my-tools"), platforms=(Platform.OPENCODE,))
         items = scanner.scan()
 
         # Filter to a single scope
@@ -967,12 +846,10 @@ class SourceScanner:
     def __init__(
         self,
         source_dir: Path,
-        platforms: tuple[Platform, ...] | None = None,
         scope: Scope | None = None,
     ) -> None:
-        """Initialise the scanner with a source directory and optional filters."""
+        """Initialise the scanner with a source directory and optional scope filter."""
         self._source_dir = source_dir.resolve()
-        self._platforms = platforms
         self._scope = scope
         self._gitignore = GitIgnoreMatcher.from_directory(source_dir)
 
@@ -1009,8 +886,7 @@ class SourceScanner:
             item_type: The category to scan.
 
         Returns:
-            Validated items for that type, filtered by ``self._platforms``
-            and ``self._scope``.
+            Validated items for that type, filtered by ``self._scope``.
 
         """
         scope_dirs = _find_item_dirs(self._source_dir, item_type, self._scope)
@@ -1066,14 +942,6 @@ class SourceScanner:
                         continue
                     all_items.append(scoped_item)
 
-        # Apply optional platform filter.
-        if self._platforms is not None:
-            all_items = [
-                item
-                for item in all_items
-                if any(p in item.supported_platforms for p in self._platforms)
-            ]
-
         return all_items
 
     def _resolve_content_dir(self, item_type: ItemType) -> Path | None:
@@ -1114,11 +982,11 @@ class SourceScanner:
         warning when the item type has no registered scanner, preventing
         a ``KeyError`` from propagating.
         """
-        entry = _SCANNER_REGISTRY.get(item_type)
-        if entry is None:
+        scanner = _SCANNER_REGISTRY.get(item_type)
+        if scanner is None:
             logger.warning("No scanner registered for %s — skipping", item_type.value)
             return []
-        return entry.scanner(dir_path, gitignore=self._gitignore)
+        return scanner(dir_path, gitignore=self._gitignore)
 
     @staticmethod
     def _count_by_type(items: list[Item]) -> dict[ItemType, int]:

@@ -60,16 +60,15 @@ logger = logging.getLogger(__name__)
 
 def _resolve_target_path(
     item: Item,
-    platform: Platform,
     target_manager: TargetManager,
 ) -> Path | None:
-    """Resolve the on-disk path for *item* on *platform*.
+    """Resolve the on-disk path for *item* on the target platform.
 
     Returns ``None`` when the platform has not been discovered or does
     not support the item's type.
     """
     try:
-        target_dir = target_manager.get_target_dir(platform, item.item_type)
+        target_dir = target_manager.get_target_dir(Platform.OPENCODE, item.item_type)
     except TargetError:
         return None
     if target_dir is None:
@@ -141,8 +140,8 @@ def _dir_file_count(path: Path) -> int:
 class Differ:
     """Compares source items with installed items on target platforms.
 
-    For each source :class:`~agentfiles.models.Item`, the differ determines which
-    platforms it applies to, then classifies the installed state as one of:
+    For each source :class:`~agentfiles.models.Item`, classifies the installed
+    state as one of:
 
     * :attr:`~agentfiles.models.DiffStatus.NEW`        — not present at target.
     * :attr:`~agentfiles.models.DiffStatus.UPDATED`    — present but metadata
@@ -167,15 +166,10 @@ class Differ:
         self._target_manager = target_manager
         logger.debug("Differ initialised")
 
-    def diff(
-        self,
-        items: list[Item],
-        platforms: tuple[Platform, ...] | None = None,
-    ) -> dict[Platform, list[DiffEntry]]:
-        """Compare source items against installed items on each platform.
+    def diff(self, items: list[Item]) -> list[DiffEntry]:
+        """Compare source items against installed items.
 
-        For every item, checks which platforms it supports (filtered by
-        *platforms* if provided), then classifies the difference:
+        For every item, classifies the difference:
 
         * **NEW** — not installed at target.
         * **UPDATED** — installed but metadata differs from source.
@@ -183,25 +177,17 @@ class Differ:
 
         Args:
             items: Source items to compare.
-            platforms: Optional whitelist of platforms to check.
-                When ``None``, all platforms supported by each item
-                are considered.
 
         Returns:
-            Mapping of platform to the list of :class:`DiffEntry` objects.
+            Flat list of :class:`DiffEntry` objects.
 
         """
-        results: dict[Platform, list[DiffEntry]] = {}
+        results: list[DiffEntry] = []
 
         for item in items:
             try:
-                applicable = self._applicable_platforms(item, platforms)
-                if not applicable:
-                    continue
-
-                for platform in applicable:
-                    entry = self._compare_item(item, platform)
-                    results.setdefault(platform, []).append(entry)
+                entry = self._compare_item(item)
+                results.append(entry)
             except (AgentfilesError, OSError):
                 logger.warning(
                     "Failed to diff item %s, skipping",
@@ -209,38 +195,23 @@ class Differ:
                     exc_info=True,
                 )
 
-        logger.info(
-            "Diff complete: %d items across %d platform(s)",
-            len(items),
-            len(results),
-        )
+        logger.info("Diff complete: %d items", len(items))
         return results
 
     # -- private helpers --------------------------------------------------
 
-    def _applicable_platforms(
-        self,
-        item: Item,
-        platforms: tuple[Platform, ...] | None,
-    ) -> list[Platform]:
-        """Return platforms that *item* supports, optionally filtered."""
-        if platforms is not None:
-            return [p for p in platforms if p in item.supported_platforms]
-        return list(item.supported_platforms)
-
-    def _compare_item(
-        self,
-        item: Item,
-        platform: Platform,
-    ) -> DiffEntry:
-        """Classify the difference for a single item on a single platform.
+    def _compare_item(self, item: Item) -> DiffEntry:
+        """Classify the difference for a single item.
 
         Two-stage comparison:
         1. Installation check — not installed → NEW.
         2. Metadata check — size/count differs → UPDATED, otherwise → UNCHANGED.
         """
         # Stage 1: installation check — not installed → NEW.
-        is_installed = self._target_manager.is_item_installed(item, platform)
+        is_installed = self._target_manager.is_item_installed(
+            item,
+            Platform.OPENCODE,
+        )
 
         if not is_installed:
             return DiffEntry(
@@ -250,7 +221,7 @@ class Differ:
             )
 
         # Stage 2: metadata comparison — if metadata differs, mark as UPDATED.
-        if self._metadata_differs(item, platform):
+        if self._metadata_differs(item):
             return DiffEntry(
                 item=item,
                 status=DiffStatus.UPDATED,
@@ -264,11 +235,7 @@ class Differ:
             details="metadata matches",
         )
 
-    def _metadata_differs(
-        self,
-        item: Item,
-        platform: Platform,
-    ) -> bool:
+    def _metadata_differs(self, item: Item) -> bool:
         """Quick metadata comparison to detect changed items.
 
         This is a **conservative** check: it only returns ``True`` when
@@ -289,7 +256,6 @@ class Differ:
         """
         target_path = _resolve_target_path(
             item,
-            platform,
             self._target_manager,
         )
         if target_path is None:
@@ -337,7 +303,6 @@ _UNIFIED_DIFF_CONTEXT_LINES = 3
 
 def compute_content_diff(
     entry: DiffEntry,
-    platform: Platform,
     target_manager: TargetManager,
 ) -> list[str]:
     """Compute a unified diff between source and target file contents.
@@ -351,7 +316,6 @@ def compute_content_diff(
 
     Args:
         entry: The :class:`~agentfiles.models.DiffEntry` whose content to diff.
-        platform: The target platform to read content from.
         target_manager: Provides access to target filesystem paths.
 
     Returns:
@@ -362,12 +326,14 @@ def compute_content_diff(
     """
     source_result = _read_content_safe(entry.item.source_path)
 
-    target_path = _resolve_target_path(entry.item, platform, target_manager)
+    target_path = _resolve_target_path(
+        entry.item,
+        target_manager,
+    )
     if target_path is None:
         logger.debug(
-            "No target path for %s on %s, skipping content diff",
+            "No target path for %s, skipping content diff",
             entry.item.name,
-            platform.display_name,
         )
         return []
 

@@ -10,8 +10,9 @@ from unittest import mock
 import pytest
 
 from agentfiles.engine import SyncEngine
-from agentfiles.models import Item, ItemType, Platform
+from agentfiles.models import ItemType
 from agentfiles.target import TargetDiscovery, TargetManager
+from tests.conftest import make_item
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -78,31 +79,6 @@ def target_manager(fake_home: SimpleNamespace) -> TargetManager:
         return TargetManager(targets)
 
 
-def _make_item(
-    name: str,
-    item_type: ItemType = ItemType.AGENT,
-    platforms: tuple[Platform, ...] = (
-        Platform.OPENCODE,
-        Platform.CLAUDE_CODE,
-    ),
-) -> Item:
-    """Create a test Item with a correct source_path for the given type.
-
-    File-based items (agents, commands) use a ``.md`` extension so that
-    ``resolve_target_name`` produces the correct on-disk filename.
-    """
-    if item_type.is_file_based:
-        src = Path(f"/src/{item_type.plural}/{name}.md")
-    else:
-        src = Path(f"/src/{item_type.plural}/{name}")
-    return Item(
-        item_type=item_type,
-        name=name,
-        source_path=src,
-        supported_platforms=platforms,
-    )
-
-
 def _install_agent(fake_home: SimpleNamespace, name: str, content: str = "# Agent\n") -> None:
     """Create an agent file on the OpenCode target."""
     agent_file = fake_home.opencode / "agent" / f"{name}.md"
@@ -131,10 +107,10 @@ class TestCleanEngineUninstall:
     ) -> None:
         """An orphaned agent is removed from the target."""
         _install_agent(fake_home, "old-reviewer", "# Old Reviewer\n")
-        orphan = _make_item("old-reviewer", ItemType.AGENT)
+        orphan = make_item("old-reviewer", ItemType.AGENT)
 
         engine = SyncEngine(target_manager)
-        report = engine.uninstall([orphan], (Platform.OPENCODE,))
+        report = engine.uninstall([orphan])
 
         assert report.is_success
         assert len(report.uninstalled) >= 1
@@ -147,10 +123,10 @@ class TestCleanEngineUninstall:
     ) -> None:
         """An orphaned skill directory is removed from the target."""
         _install_skill(fake_home, "deprecated-skill", "# Deprecated\n")
-        orphan = _make_item("deprecated-skill", ItemType.SKILL)
+        orphan = make_item("deprecated-skill", ItemType.SKILL)
 
         engine = SyncEngine(target_manager)
-        report = engine.uninstall([orphan], (Platform.OPENCODE,))
+        report = engine.uninstall([orphan])
 
         assert report.is_success
         assert len(report.uninstalled) >= 1
@@ -167,13 +143,13 @@ class TestCleanEngineUninstall:
         _install_skill(fake_home, "old-skill-1")
 
         orphans = [
-            _make_item("old-agent-1", ItemType.AGENT),
-            _make_item("old-agent-2", ItemType.AGENT),
-            _make_item("old-skill-1", ItemType.SKILL),
+            make_item("old-agent-1", ItemType.AGENT),
+            make_item("old-agent-2", ItemType.AGENT),
+            make_item("old-skill-1", ItemType.SKILL),
         ]
 
         engine = SyncEngine(target_manager)
-        report = engine.uninstall(orphans, (Platform.OPENCODE,))
+        report = engine.uninstall(orphans)
 
         assert report.is_success
         assert len(report.uninstalled) >= 3
@@ -188,9 +164,9 @@ class TestCleanEngineUninstall:
         _install_agent(fake_home, "orphan-agent", "# Orphan\n")
 
         # Only remove the orphan.
-        orphan = _make_item("orphan-agent", ItemType.AGENT)
+        orphan = make_item("orphan-agent", ItemType.AGENT)
         engine = SyncEngine(target_manager)
-        engine.uninstall([orphan], (Platform.OPENCODE,))
+        engine.uninstall([orphan])
 
         # Coder should still exist.
         assert (fake_home.opencode / "agent" / "coder.md").exists()

@@ -4,24 +4,15 @@ This module implements a two-phase pipeline for locating and managing
 configuration directories used by AI coding tools:
 
 1. **Discovery** (:class:`TargetDiscovery`) — scans well-known filesystem
-   locations for each supported platform (OpenCode, Claude Code, Windsurf,
-   Cursor), returning a mapping of :class:`Platform` to :class:`TargetPaths`.
-   Candidate directories are tried in priority order so that user overrides
-   (e.g. ``XDG_CONFIG_HOME``) take precedence over default paths.
+   locations for OpenCode, returning a :class:`TargetPaths` (or ``None``
+   when no config directory is found).  Candidate directories are tried
+   in priority order so that user overrides (e.g. ``XDG_CONFIG_HOME``)
+   take precedence over default paths.
 
-2. **Management** (:class:`TargetManager`) — wraps discovered targets and
-   exposes a query API for resolving item subdirectories, checking whether
-   items are installed, listing installed items, and producing per-platform
-   summaries.
-
-Platform-specific knowledge (candidate paths, subdirectory naming conventions)
-is encapsulated in two dispatch tables (``_PLATFORM_CANDIDATE_RESOLVERS`` and
-``_PLATFORM_SUBDIR_RESOLVERS``).  Adding a new platform requires only:
-
-1. Adding a :class:`Platform` enum value in ``models.py``.
-2. Writing a candidate resolver function (``_<platform>_candidates``).
-3. Writing a subdir resolver function (``_<platform>_subdirs``).
-4. Registering both in the dispatch tables.
+2. **Management** (:class:`TargetManager`) — wraps the discovered target
+   and exposes a query API for resolving item subdirectories, checking
+   whether items are installed, listing installed items, and producing
+   a summary.
 
 The convenience factory :func:`build_target_manager` ties everything together
 by running discovery and then applying optional custom path overrides supplied
@@ -34,9 +25,7 @@ import logging
 import os
 import sys
 from collections import Counter
-from collections.abc import Callable
 from pathlib import Path
-from types import MappingProxyType
 from typing import TYPE_CHECKING, ClassVar
 
 from agentfiles.models import (
@@ -56,8 +45,7 @@ from agentfiles.paths import get_item_dest_path
 logger = logging.getLogger(__name__)
 
 # Well-known names that are NOT agentfiles items but may appear in platform
-# directories (e.g. node_modules in OpenCode's plugin dir, blocklist.json in
-# Claude Code's plugins dir).
+# directories (e.g. node_modules in OpenCode's plugin dir).
 _IGNORED_NAMES: frozenset[str] = frozenset(
     {
         "node_modules",
@@ -87,10 +75,6 @@ _NON_CONFIG_FILES: frozenset[str] = frozenset(
     }
 )
 
-_CONFIG_OVERRIDES: dict[Platform, frozenset[str]] = {
-    Platform.CLAUDE_CODE: frozenset({"settings.json"}),
-}
-
 
 # ---------------------------------------------------------------------------
 # Convenience factory
@@ -99,95 +83,66 @@ _CONFIG_OVERRIDES: dict[Platform, frozenset[str]] = {
 
 def build_target_manager(
     custom_paths: dict[str, str] | None = None,
-    *,
-    force_all: bool = False,
 ) -> TargetManager:
-    """Discover target platforms and apply custom path overrides.
+    """Discover OpenCode config directory and apply custom path overrides.
 
-    Creates a :class:`TargetManager` by discovering all available platforms
-    via :class:`TargetDiscovery` and then applying any custom path overrides.
-    Custom paths that reference unknown platforms or non-existent directories
-    are skipped with a warning.
+    Creates a :class:`TargetManager` by discovering the OpenCode config
+    directory via :class:`TargetDiscovery` and then applying any custom
+    path override.  Custom paths that reference unknown keys or
+    non-existent directories are skipped with a warning.
 
     **Custom path handling:**
 
-    * Keys must match a :class:`Platform` enum value (e.g. ``"opencode"``,
-      ``"claude_code"``).  Unknown keys are logged and ignored.
+    * Keys other than ``"opencode"`` are logged as warnings and ignored.
     * Values are expanded via :meth:`Path.expanduser` so ``~`` is supported.
     * The path must point to an **existing directory** on disk; files and
       non-existent paths are skipped with a warning.
     * :func:`os.path.realpath` is used to resolve symlinks.  If resolution
       fails (e.g. stale mount), the path is skipped.
-    * A custom path **replaces** any auto-discovered path for that platform,
-      but does not affect other platforms.
-    * Custom paths can also enable platforms that were **not** auto-discovered
-      (e.g. providing an OpenCode path on a machine with no default install).
+    * A custom path **replaces** the auto-discovered path.
 
     Args:
         custom_paths: Mapping of platform name (e.g. ``"opencode"``) to an
             absolute or ``~``-expanded directory path.  ``None`` is treated
             as an empty mapping.
-        force_all: When ``True``, platforms whose config directories do not
-            yet exist on disk are still included using the first candidate
-            path.  This enables ``pull`` / ``install`` operations to create
-            the directories during sync.
 
     Returns:
         A fully configured :class:`TargetManager`.  The caller should check
-        ``manager.targets`` if an empty result needs special handling.
+        ``manager.targets is not None`` if a missing target needs special
+        handling.
 
     """
     custom_paths = custom_paths or {}
     discovery = TargetDiscovery()
-    targets = discovery.discover_all()
+    target = discovery.discover_all()
 
-    if force_all:
-        for platform in Platform:
-            if platform in targets:
-                continue
-            candidates = discovery._get_candidates(platform)
-            if not candidates:
-                continue
-            config_dir = candidates[0]
-            try:
-                subdirs = _resolve_subdirs(platform, config_dir)
-            except Exception:
-                subdirs = {}
-            targets[platform] = TargetPaths(
-                platform=platform,
-                config_dir=config_dir,
-                subdirs=subdirs,
-            )
-
-    for platform_name, custom_path_str in custom_paths.items():
-        try:
-            platform = Platform(platform_name)
-        except ValueError:
-            logger.warning("Unknown platform in custom_paths: %s", platform_name)
-            continue
-
+    # Apply custom path override if provided.
+    custom_path_str = custom_paths.get(Platform.OPENCODE.value)
+    if custom_path_str is not None:
         custom_dir = Path(custom_path_str).expanduser()
-        # Check existence *before* resolve() to avoid an unnecessary
-        # realpath syscall when the directory is missing.
         if not custom_dir.is_dir():
             logger.warning("Custom path does not exist: %s", custom_dir)
-            continue
-        try:
-            custom_dir = Path(os.path.realpath(custom_dir))
-        except OSError as exc:
-            logger.warning(
-                "Cannot resolve custom path %s: %s",
-                custom_dir,
-                exc,
-            )
-            continue
+        else:
+            try:
+                custom_dir = Path(os.path.realpath(custom_dir))
+            except OSError as exc:
+                logger.warning(
+                    "Cannot resolve custom path %s: %s",
+                    custom_dir,
+                    exc,
+                )
+            else:
+                target = TargetPaths(
+                    platform=Platform.OPENCODE,
+                    config_dir=custom_dir,
+                )
 
-        targets[platform] = TargetPaths(
-            platform=platform,
-            config_dir=custom_dir,
-        )
+    # Warn about unknown keys in custom_paths.
+    for platform_name in custom_paths:
+        if platform_name != Platform.OPENCODE.value:
+            logger.warning("Unknown platform in custom_paths: %s", platform_name)
 
-    return TargetManager(targets)
+    return TargetManager(target)
 
 
 # ---------------------------------------------------------------------------
@@ -210,7 +165,7 @@ def _opencode_candidates(home: Path) -> list[Path]:
 
     Args:
         home: Pre-resolved home directory (avoids repeated
-            ``Path.home()`` calls when discovering multiple platforms).
+            ``Path.home()`` calls within a discovery cycle).
 
     """
     xdg = os.environ.get("XDG_CONFIG_HOME")
@@ -228,101 +183,9 @@ def _opencode_candidates(home: Path) -> list[Path]:
     return candidates
 
 
-def _claude_code_candidates(home: Path) -> list[Path]:
-    """Return candidate Claude Code config directories in priority order.
-
-    Resolution order:
-
-    1. ``~/.claude`` — user-level configuration.
-    2. ``<cwd>/.claude`` — project-level configuration.
-
-    Args:
-        home: Pre-resolved home directory.
-
-    """
-    return [home / ".claude", Path.cwd() / ".claude"]
-
-
-def _windsurf_candidates(home: Path) -> list[Path]:
-    """Return candidate Windsurf config directories in priority order.
-
-    Resolution order:
-
-    1. ``~/.codeium/windsurf/skills/`` — current Codeium-based layout.
-    2. ``~/.windsurf`` — legacy fallback path.
-
-    Args:
-        home: Pre-resolved home directory.
-
-    """
-    return [home / ".codeium" / "windsurf" / "skills", home / ".windsurf"]
-
-
-def _cursor_candidates(home: Path) -> list[Path]:
-    """Return candidate Cursor config directories in priority order.
-
-    Resolution order:
-
-    1. ``~/.cursor/skills/`` — the standard Cursor skills directory.
-
-    Args:
-        home: Pre-resolved home directory.
-
-    """
-    return [home / ".cursor" / "skills"]
-
-
-def _copilot_candidates(home: Path) -> list[Path]:
-    """Return candidate GitHub Copilot config directories in priority order.
-
-    Resolution order:
-
-    1. ``<cwd>/.github/`` — project-level instructions.
-    2. ``~/.config/github-copilot/`` — global instructions.
-
-    Args:
-        home: Pre-resolved home directory.
-
-    """
-    return [Path.cwd() / ".github", home / ".config" / "github-copilot"]
-
-
-def _aider_candidates(home: Path) -> list[Path]:
-    """Return candidate Aider config directories in priority order.
-
-    Resolution order:
-
-    1. ``<cwd>/.aider/`` — project-level conventions and prompts.
-
-    Args:
-        home: Pre-resolved home directory.
-
-    """
-    return [Path.cwd() / ".aider"]
-
-
-def _continue_candidates(home: Path) -> list[Path]:
-    """Return candidate Continue.dev config directories in priority order.
-
-    Resolution order:
-
-    1. ``<cwd>/.continue/`` — project-level configuration.
-    2. ``~/.continue/`` — global configuration.
-
-    Args:
-        home: Pre-resolved home directory.
-
-    """
-    return [Path.cwd() / ".continue", home / ".continue"]
-
-
 # ---------------------------------------------------------------------------
 # Platform PROJECT candidate resolvers
 # ---------------------------------------------------------------------------
-# Each resolver returns a list of candidate config directories for
-# project-level (non-global) configuration.  Unlike the global candidate
-# resolvers above, these receive a *project_dir* rather than *home*
-# because project configs live inside the project tree.
 
 
 def _opencode_project_candidates(project_dir: Path) -> list[Path]:
@@ -337,86 +200,9 @@ def _opencode_project_candidates(project_dir: Path) -> list[Path]:
     return [project_dir / ".opencode"]
 
 
-def _claude_code_project_candidates(project_dir: Path) -> list[Path]:
-    """Return candidate Claude Code PROJECT config directories.
-
-    Claude Code stores project-level configuration in ``<project>/.claude/``.
-
-    Args:
-        project_dir: Root directory of the project.
-
-    """
-    return [project_dir / ".claude"]
-
-
-def _windsurf_project_candidates(project_dir: Path) -> list[Path]:
-    """Return candidate Windsurf PROJECT config directories.
-
-    Windsurf stores project-level skills in ``<project>/.windsurf/skills/``.
-
-    Args:
-        project_dir: Root directory of the project.
-
-    """
-    return [project_dir / ".windsurf" / "skills"]
-
-
-def _cursor_project_candidates(project_dir: Path) -> list[Path]:
-    """Return candidate Cursor PROJECT config directories.
-
-    Cursor stores project-level skills in ``<project>/.cursor/skills/``.
-
-    Args:
-        project_dir: Root directory of the project.
-
-    """
-    return [project_dir / ".cursor" / "skills"]
-
-
-def _copilot_project_candidates(project_dir: Path) -> list[Path]:
-    """Return candidate GitHub Copilot PROJECT config directories.
-
-    GitHub Copilot stores project-level instructions in ``<project>/.github/``.
-
-    Args:
-        project_dir: Root directory of the project.
-
-    """
-    return [project_dir / ".github"]
-
-
-def _aider_project_candidates(project_dir: Path) -> list[Path]:
-    """Return candidate Aider PROJECT config directories.
-
-    Aider stores project-level conventions and prompts in ``<project>/.aider/``.
-
-    Args:
-        project_dir: Root directory of the project.
-
-    """
-    return [project_dir / ".aider"]
-
-
-def _continue_project_candidates(project_dir: Path) -> list[Path]:
-    """Return candidate Continue.dev PROJECT config directories.
-
-    Continue.dev stores project-level configuration in ``<project>/.continue/``.
-
-    Args:
-        project_dir: Root directory of the project.
-
-    """
-    return [project_dir / ".continue"]
-
-
 # ---------------------------------------------------------------------------
 # Platform subdir resolvers
 # ---------------------------------------------------------------------------
-# Each resolver maps a platform's config directory to its item-type
-# subdirectories.  The mapping key is the **plural** item-type name
-# (e.g. ``"agents"``, ``"skills"``) and the value is the resolved Path.
-# Platforms that share the same layout (e.g. Windsurf and Cursor both
-# support only skills) can reuse the same resolver function.
 
 
 def _opencode_subdirs(config_dir: Path) -> dict[str, Path]:
@@ -443,161 +229,9 @@ def _opencode_subdirs(config_dir: Path) -> dict[str, Path]:
     }
 
 
-def _claude_code_subdirs(config_dir: Path) -> dict[str, Path]:
-    """Claude Code uses plural directory names.
-
-    Supports agents, skills, commands, and plugins.
-
-    Args:
-        config_dir: Root Claude Code configuration directory.
-
-    """
-    supported: tuple[str, ...] = ("agents", "skills", "commands", "plugins", "workflows")
-    return {name: config_dir / name for name in supported}
-
-
-def _skills_only_subdirs(config_dir: Path) -> dict[str, Path]:
-    """Shared resolver for platforms that support only skills.
-
-    Used by Windsurf and Cursor.  The *config_dir* itself is treated as
-    the skills directory (no additional subdirectory nesting).
-
-    Args:
-        config_dir: Root platform configuration directory.
-
-    """
-    return {"skills": config_dir, "workflows": config_dir / "workflows"}
-
-
-def _copilot_subdirs(config_dir: Path) -> dict[str, Path]:
-    """GitHub Copilot stores agents in ``.github/copilot/`` and configs at root.
-
-    Args:
-        config_dir: Root ``.github/`` directory.
-
-    """
-    return {
-        "agents": config_dir / "copilot",
-        "configs": config_dir,
-    }
-
-
-def _aider_subdirs(config_dir: Path) -> dict[str, Path]:
-    """Aider stores agents in ``.aider/prompts/`` and configs at root.
-
-    Args:
-        config_dir: Root ``.aider/`` directory.
-
-    """
-    return {
-        "agents": config_dir / "prompts",
-        "configs": config_dir,
-    }
-
-
-def _continue_subdirs(config_dir: Path) -> dict[str, Path]:
-    """Continue.dev stores agents and commands in ``.continue/prompts/``.
-
-    Args:
-        config_dir: Root ``.continue/`` directory.
-
-    """
-    return {
-        "agents": config_dir / "prompts",
-        "commands": config_dir / "prompts",
-        "configs": config_dir,
-    }
-
-
-# ---------------------------------------------------------------------------
-# Platform dispatch tables
-# ---------------------------------------------------------------------------
-# Keeps a single source of truth instead of if/elif chains.
-#
-# EXTENSION POINT — Adding a new Platform
-# ========================================
-# When a new Platform is added to models.py:
-#
-#   1. Write a candidate resolver function above (e.g. ``_copilot_candidates``)
-#      that returns config directory paths in priority order.
-#
-#   2. Write or reuse a subdir resolver function above (e.g. reuse
-#      ``_skills_only_subdirs`` or write a new ``_copilot_subdirs``).
-#
-#   3. Register both in the dispatch tables below — add one entry to
-#      ``_PLATFORM_CANDIDATE_RESOLVERS`` and one to
-#      ``_PLATFORM_SUBDIR_RESOLVERS``.
-#
-# No other code in this module needs to change — ``TargetDiscovery.discover_all``
-# iterates over all Platform enum values and looks up the dispatch tables
-# automatically.
-
-# Dispatch: Platform → candidate resolver function.
-# Each resolver receives the pre-computed home directory to avoid
-# redundant ``Path.home()`` syscalls when scanning all platforms.
-_PLATFORM_CANDIDATE_RESOLVERS: dict[Platform, Callable[[Path], list[Path]]] = {
-    Platform.OPENCODE: _opencode_candidates,
-    Platform.CLAUDE_CODE: _claude_code_candidates,
-    Platform.WINDSURF: _windsurf_candidates,
-    Platform.CURSOR: _cursor_candidates,
-    Platform.COPILOT: _copilot_candidates,
-    Platform.AIDER: _aider_candidates,
-    Platform.CONTINUE: _continue_candidates,
-}
-
-# Dispatch: Platform → subdir resolver function.
-_PLATFORM_SUBDIR_RESOLVERS: dict[Platform, Callable[[Path], dict[str, Path]]] = {
-    Platform.OPENCODE: _opencode_subdirs,
-    Platform.CLAUDE_CODE: _claude_code_subdirs,
-    Platform.WINDSURF: _skills_only_subdirs,
-    Platform.CURSOR: _skills_only_subdirs,
-    Platform.COPILOT: _copilot_subdirs,
-    Platform.AIDER: _aider_subdirs,
-    Platform.CONTINUE: _continue_subdirs,
-}
-
-# Dispatch: Platform → project-level candidate resolver function.
-# Each resolver receives the project root directory and returns candidate
-# config directory paths in priority order.
-_PLATFORM_PROJECT_CANDIDATE_RESOLVERS: dict[Platform, Callable[[Path], list[Path]]] = {
-    Platform.OPENCODE: _opencode_project_candidates,
-    Platform.CLAUDE_CODE: _claude_code_project_candidates,
-    Platform.WINDSURF: _windsurf_project_candidates,
-    Platform.CURSOR: _cursor_project_candidates,
-    Platform.COPILOT: _copilot_project_candidates,
-    Platform.AIDER: _aider_project_candidates,
-    Platform.CONTINUE: _continue_project_candidates,
-}
-
 # ---------------------------------------------------------------------------
 # Resolution helpers
 # ---------------------------------------------------------------------------
-
-
-def _resolve_subdirs(
-    platform: Platform,
-    config_dir: Path,
-) -> dict[str, Path]:
-    """Build the ``subdirs`` mapping for a discovered config directory.
-
-    Looks up the platform in ``_PLATFORM_SUBDIR_RESOLVERS`` and delegates
-    to the registered resolver.  Returns an empty dict for platforms with
-    no registered resolver, which effectively disables item discovery for
-    that platform.
-
-    Args:
-        platform: The target platform.
-        config_dir: Root configuration directory (already verified to exist).
-
-    Returns:
-        Mapping of plural item-type names (e.g. ``"agents"``) to their
-        resolved filesystem paths.
-
-    """
-    resolver = _PLATFORM_SUBDIR_RESOLVERS.get(platform)
-    if resolver is not None:
-        return resolver(config_dir)
-    return {}
 
 
 def _find_existing(candidates: list[Path]) -> Path | None:
@@ -658,149 +292,69 @@ class TargetDiscovery:
         """Initialise the discovery with the current home directory."""
         self._home = Path.home()
 
-    def discover_all(self) -> dict[Platform, TargetPaths]:
-        """Discover all available platforms.
+    def discover_all(self) -> TargetPaths | None:
+        """Discover the OpenCode configuration directory.
 
-        Scans well-known filesystem locations for each supported platform
-        and returns a mapping of discovered platforms to their resolved
-        paths.  Platforms whose config directories are not found are
-        silently omitted.
+        Scans well-known filesystem locations and returns the resolved
+        :class:`TargetPaths` when found, or ``None`` otherwise.
 
         Returns:
-            Mapping of platform to its resolved :class:`TargetPaths`.
+            :class:`TargetPaths` for OpenCode, or ``None`` if not found.
 
         """
-        discovered: dict[Platform, TargetPaths] = {}
+        result = self.discover()
 
-        for platform in Platform:
-            result = self.discover(platform)
-            if result is not None:
-                discovered[platform] = result
+        if result is None:
+            logger.warning("OpenCode not found")
 
-        if not discovered:
-            logger.warning("No target platforms discovered")
+        return result
 
-        return discovered
-
-    def discover(self, platform: Platform) -> TargetPaths | None:
-        """Discover a single platform's configuration directory.
-
-        Args:
-            platform: The platform to look for.
+    def discover(self) -> TargetPaths | None:
+        """Discover the OpenCode configuration directory.
 
         Returns:
             :class:`TargetPaths` if the config directory exists, else ``None``.
 
         """
-        candidates = self._get_candidates(platform)
+        candidates = self._get_candidates()
 
         try:
             config_dir = _find_existing(candidates)
         except Exception:
             logger.warning(
-                "Unexpected error scanning candidates for %s",
-                platform.display_name,
+                "Unexpected error scanning OpenCode candidates",
                 exc_info=True,
             )
             return None
 
         if config_dir is None:
             logger.debug(
-                "Platform %s not found (checked: %s)",
-                platform.display_name,
+                "OpenCode not found (checked: %s)",
                 ", ".join(str(p) for p in candidates),
             )
             return None
 
         try:
-            subdirs = _resolve_subdirs(platform, config_dir)
+            subdirs = _opencode_subdirs(config_dir)
         except Exception:
             logger.warning(
-                "Failed to resolve subdirs for %s at %s",
-                platform.display_name,
+                "Failed to resolve subdirs for OpenCode at %s",
                 config_dir,
                 exc_info=True,
             )
             subdirs = {}
 
         return TargetPaths(
-            platform=platform,
+            platform=Platform.OPENCODE,
             config_dir=config_dir,
             subdirs=subdirs,
         )
 
     # -- private ---------------------------------------------------------
 
-    def _get_candidates(self, platform: Platform) -> list[Path]:
-        """Return candidate directories for the given platform."""
-        resolver = _PLATFORM_CANDIDATE_RESOLVERS.get(platform)
-        if resolver is None:
-            return []
-        return resolver(self._home)
-
-    def discover_project(self, project_dir: Path) -> dict[Platform, TargetPaths]:
-        """Discover project-level configuration directories.
-
-        Scans for project-level configuration directories under
-        *project_dir* for each supported platform and returns a mapping
-        of discovered platforms to their resolved paths.
-
-        Unlike :meth:`discover_all` which scans global (home-level) paths,
-        this method looks for project-local config directories such as
-        ``<project_dir>/.opencode/`` or ``<project_dir>/.claude/``.
-
-        Platforms whose project-level config directories are not found are
-        silently omitted.
-
-        Args:
-            project_dir: Root directory of the project (e.g. repo root).
-
-        Returns:
-            Mapping of platform to its resolved :class:`TargetPaths`.
-
-        """
-        discovered: dict[Platform, TargetPaths] = {}
-
-        for platform in Platform:
-            resolver = _PLATFORM_PROJECT_CANDIDATE_RESOLVERS.get(platform)
-            if resolver is None:
-                continue
-
-            candidates = resolver(project_dir)
-            config_dir = _find_existing(candidates)
-
-            if config_dir is None:
-                logger.debug(
-                    "Project-level %s not found (checked: %s)",
-                    platform.display_name,
-                    ", ".join(str(p) for p in candidates),
-                )
-                continue
-
-            try:
-                subdirs = _resolve_subdirs(platform, config_dir)
-            except Exception:
-                logger.warning(
-                    "Failed to resolve project subdirs for %s at %s",
-                    platform.display_name,
-                    config_dir,
-                    exc_info=True,
-                )
-                subdirs = {}
-
-            discovered[platform] = TargetPaths(
-                platform=platform,
-                config_dir=config_dir,
-                subdirs=subdirs,
-            )
-
-        if not discovered:
-            logger.debug(
-                "No project-level platforms discovered under %s",
-                project_dir,
-            )
-
-        return discovered
+    def _get_candidates(self) -> list[Path]:
+        """Return candidate directories for OpenCode."""
+        return _opencode_candidates(self._home)
 
 
 # ---------------------------------------------------------------------------
@@ -809,41 +363,44 @@ class TargetDiscovery:
 
 
 class TargetManager:
-    """Manages discovered target platforms and their installed items.
+    """Manages the discovered OpenCode target and its installed items.
 
-    Wraps the mapping produced by :class:`TargetDiscovery` and provides
-    a query API for:
+    Wraps the :class:`TargetPaths` produced by :class:`TargetDiscovery` and
+    provides a query API for:
 
-    * Resolving the on-disk directory for a given ``(Platform, ItemType)``
-      pair (:meth:`get_target_dir`).
-    * Checking whether a specific item is already installed at a target
+    * Resolving the on-disk directory for a given ``ItemType``
+      (:meth:`get_target_dir`).
+    * Checking whether a specific item is already installed
       (:meth:`is_item_installed`).
-    * Listing all installed items for a platform (:meth:`get_installed_items`).
-    * Producing a count-based summary across platforms (:meth:`platform_summary`).
+    * Listing all installed items (:meth:`get_installed_items`).
+    * Producing a count-based summary (:meth:`platform_summary`).
 
     All OS-level errors (permission denied, broken symlinks, etc.) are
     handled gracefully — individual methods return safe defaults (``None``,
-    ``False``, or empty lists) rather than propagating exceptions, so that
-    a single inaccessible directory never prevents scanning other platforms.
+    ``False``, or empty lists) rather than propagating exceptions.
 
     Args:
-        targets: Mapping of discovered platforms to their path info.
-            Typically obtained via :meth:`TargetDiscovery.discover_all`.
+        targets: Discovered platform paths, or ``None`` when nothing was
+            found.  Typically obtained via :meth:`TargetDiscovery.discover_all`.
 
     """
 
-    def __init__(self, targets: dict[Platform, TargetPaths]) -> None:
+    def __init__(self, targets: TargetPaths | None) -> None:
         """Initialise the manager with discovered platform targets."""
         self._targets = targets
-        logger.info(
-            "TargetManager initialised with %d platform(s)",
-            len(targets),
-        )
+        if targets is not None:
+            logger.info(
+                "TargetManager initialised with platform %s at %s",
+                targets.platform.display_name,
+                targets.config_dir,
+            )
+        else:
+            logger.info("TargetManager initialised with no targets")
 
     @property
-    def targets(self) -> dict[Platform, TargetPaths]:
-        """Return a read-only view of discovered platform targets."""
-        return MappingProxyType(self._targets)  # type: ignore[return-value]
+    def targets(self) -> TargetPaths | None:
+        """Return the discovered platform targets, or ``None``."""
+        return self._targets
 
     # -- public API -------------------------------------------------------
 
@@ -854,19 +411,22 @@ class TargetManager:
     ) -> Path | None:
         """Resolve the target directory for a specific item type.
 
+        The *platform* parameter is accepted for interface compatibility
+        but ignored — this manager always manages OpenCode.
+
         Args:
-            platform: The target platform.
+            platform: The target platform (unused, kept for protocol compat).
             item_type: The category of item (agent, skill, …).
 
         Returns:
-            Absolute path to the subdirectory, or ``None`` if the
-            platform is not discovered or the subdirectory does not exist.
+            Absolute path to the subdirectory, or ``None`` if no target
+            has been discovered or the subdirectory does not exist.
 
         Raises:
-            TargetError: When *platform* has not been discovered.
+            TargetError: When no target has been discovered.
 
         """
-        target_paths = self._require_platform(platform)
+        target_paths = self._require_target()
         # Config files live directly in the platform config root, not a
         # subdirectory.  Return the config root so callers can compute the
         # full path as ``config_root / filename``.
@@ -883,19 +443,19 @@ class TargetManager:
         scope: Scope,
         project_dir: Path | None = None,
     ) -> Path | None:
-        """Resolve target directory for a given platform, item type, and scope.
+        """Resolve target directory for a given item type and scope.
 
-        Combines scope awareness with the existing platform/item-type
-        resolution.  For **GLOBAL** scope the method delegates to the
-        discovered global targets.  For **PROJECT** or **LOCAL** scope it
-        resolves the expected project-level path — the directory does
-        **not** need to exist on disk (useful for install-to targets).
+        Combines scope awareness with the existing item-type resolution.
+        For **GLOBAL** scope the method delegates to the discovered global
+        target.  For **PROJECT** or **LOCAL** scope it resolves the expected
+        project-level path — the directory does **not** need to exist on
+        disk (useful for install-to targets).
 
-        PROJECT and LOCAL share the same filesystem layout; the
-        distinction is semantic (LOCAL is typically gitignored).
+        The *platform* parameter is accepted for interface compatibility
+        but ignored — this manager always manages OpenCode.
 
         Args:
-            platform: The target platform.
+            platform: The target platform (unused, kept for compat).
             item_type: The category of item (agent, skill, …).
             scope: Configuration scope (``Scope.GLOBAL``,
                 ``Scope.PROJECT``, or ``Scope.LOCAL``).
@@ -904,12 +464,11 @@ class TargetManager:
 
         Returns:
             Absolute path to the target subdirectory, or ``None`` if
-            the scope cannot be resolved (e.g. unknown platform for
-            project scope, missing *project_dir*).
+            the scope cannot be resolved (e.g. missing *project_dir*).
 
         Raises:
-            TargetError: When *scope* is GLOBAL and *platform* has not
-                been discovered.
+            TargetError: When *scope* is GLOBAL and no target has been
+                discovered.
 
         """
         scope_value = scope.value if hasattr(scope, "value") else str(scope)
@@ -925,15 +484,7 @@ class TargetManager:
             )
             return None
 
-        resolver = _PLATFORM_PROJECT_CANDIDATE_RESOLVERS.get(platform)
-        if resolver is None:
-            logger.debug(
-                "No project candidate resolver for %s",
-                platform.display_name,
-            )
-            return None
-
-        candidates = resolver(project_dir)
+        candidates = _opencode_project_candidates(project_dir)
         if not candidates:
             return None
 
@@ -945,7 +496,7 @@ class TargetManager:
         if item_type == ItemType.CONFIG:
             return config_dir
 
-        subdirs = _resolve_subdirs(platform, config_dir)
+        subdirs = _opencode_subdirs(config_dir)
         if item_type.plural in subdirs:
             return subdirs[item_type.plural]
 
@@ -955,21 +506,24 @@ class TargetManager:
         """Check whether an item is already installed at the target.
 
         An item is considered installed when a directory (or file) matching
-        its name exists inside the appropriate subdirectory for the platform.
+        its name exists inside the appropriate subdirectory.
 
-        Returns ``False`` (never raises) when the platform has not been
-        discovered, the subdirectory does not exist, or the directory
-        cannot be accessed due to permission errors.
+        The *platform* parameter is accepted for interface compatibility
+        but ignored — this manager always manages OpenCode.
+
+        Returns ``False`` (never raises) when no target has been discovered,
+        the subdirectory does not exist, or the directory cannot be accessed
+        due to permission errors.
 
         Args:
             item: The source item to check.
-            platform: The target platform.
+            platform: The target platform (unused, kept for compat).
 
         Returns:
             ``True`` if a matching entry exists on disk.
 
         """
-        if platform not in self._targets:
+        if self._targets is None:
             return False
 
         target_dir = self.get_target_dir(platform, item.item_type)
@@ -998,10 +552,13 @@ class TargetManager:
         self,
         platform: Platform,
     ) -> list[tuple[ItemType, str]]:
-        """List all installed items for a platform.
+        """List all installed items.
 
-        Scans the subdirectories that belong to *platform* and returns
+        Scans the subdirectories of the discovered target and returns
         the type and name of every entry found.
+
+        The *platform* parameter is accepted for interface compatibility
+        but ignored — this manager always manages OpenCode.
 
         Permission errors and other OS-level failures while scanning
         individual subdirectories are logged as warnings and skipped
@@ -1009,16 +566,16 @@ class TargetManager:
         items from other subdirectories.
 
         Args:
-            platform: The platform to scan.
+            platform: The platform to scan (unused, kept for compat).
 
         Returns:
             List of ``(item_type, name)`` tuples.
 
         Raises:
-            TargetError: When *platform* has not been discovered.
+            TargetError: When no target has been discovered.
 
         """
-        target_paths = self._require_platform(platform)
+        target_paths = self._require_target()
         items: list[tuple[ItemType, str]] = []
 
         for plural_key, subdir_path in target_paths.subdirs.items():
@@ -1087,8 +644,7 @@ class TargetManager:
                     continue
                 if entry.suffix != ".json":
                     continue
-                platform_overrides = _CONFIG_OVERRIDES.get(platform, frozenset())
-                if entry.name in _NON_CONFIG_FILES and entry.name not in platform_overrides:
+                if entry.name in _NON_CONFIG_FILES:
                     continue
                 try:
                     if not entry.is_file():
@@ -1101,51 +657,47 @@ class TargetManager:
 
         return items
 
-    def platform_summary(self) -> dict[Platform, dict[str, int]]:
-        """Return a summary of installed items per platform.
+    def platform_summary(self) -> dict[str, int]:
+        """Return a summary of installed items.
 
         Returns:
-            Nested dict mapping each platform to a count dict keyed by
-            item type (plural form).
+            Dict mapping item type plural names to their count.
+            Returns an empty dict when no target is discovered.
 
         """
-        return {
-            platform: dict(Counter(t.plural for t, _ in self.get_installed_items(platform)))
-            for platform in self._targets
-        }
+        if self._targets is None:
+            return {}
+        return dict(Counter(t.plural for t, _ in self.get_installed_items(Platform.OPENCODE)))
 
     def resolve_platform_for(
         self,
         item_type: ItemType,
         target_dir: Path,
     ) -> Platform | None:
-        """Reverse-lookup which platform owns a given target directory.
+        """Return ``Platform.OPENCODE`` if the target directory matches.
 
-        Iterates all discovered platforms and compares their resolved target
-        directory for *item_type* against *target_dir*.
-
-        This is the canonical implementation — callers (CLI, engine) should
-        use this instead of maintaining their own reverse-lookup loops.
+        With only OpenCode supported, this is a simple existence check
+        comparing the resolved target directory for *item_type* against
+        *target_dir*.
 
         Args:
-            item_type: The item category used to resolve the platform's
-                target directory.
+            item_type: The item category used to resolve the target directory.
             target_dir: The directory to match.
 
         Returns:
-            The matching :class:`Platform`, or ``None`` if no discovered
-            platform's resolved directory matches *target_dir*.
+            ``Platform.OPENCODE`` if the directory matches, or ``None``.
 
         """
-        for platform in self._targets:
-            td = self.get_target_dir(platform, item_type)
-            if td is not None and td == target_dir:
-                return platform
+        if self._targets is None:
+            return None
+        td = self.get_target_dir(Platform.OPENCODE, item_type)
+        if td is not None and td == target_dir:
+            return Platform.OPENCODE
         return None
 
     # -- private helpers --------------------------------------------------
 
-    # Pre-built reverse lookup: plural name → ItemType.
+    # Pre-built reverse lookup: plural name -> ItemType.
     # Populated from both ``ItemType.value`` (e.g. ``"agent"``) and
     # ``ItemType.plural`` (e.g. ``"agents"``) so either form resolves.
     _PLURAL_TO_ITEM_TYPE: ClassVar[dict[str, ItemType]] = {
@@ -1224,23 +776,19 @@ class TargetManager:
             )
             return None
 
-    def _require_platform(self, platform: Platform) -> TargetPaths:
-        """Return :class:`TargetPaths` for *platform* or raise.
+    def _require_target(self) -> TargetPaths:
+        """Return :class:`TargetPaths` or raise.
 
         Centralised guard used by public methods that require a
-        previously-discovered platform.  The raised :class:`TargetError`
-        message lists the available platforms to aid debugging.
+        previously-discovered target.
 
         Raises:
-            TargetError: When *platform* is not in ``self._targets``.
+            TargetError: When no target has been discovered.
 
         """
-        if platform not in self._targets:
-            raise TargetError(
-                f"platform '{platform.display_name}' has not been discovered, "
-                f"available: {', '.join(p.display_name for p in self._targets)}"
-            )
-        return self._targets[platform]
+        if self._targets is None:
+            raise TargetError("OpenCode has not been discovered on this system")
+        return self._targets
 
     @classmethod
     def _item_type_from_plural(cls, plural: str) -> ItemType | None:

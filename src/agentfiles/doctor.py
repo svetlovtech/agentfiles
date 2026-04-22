@@ -175,7 +175,7 @@ def _check_state_file(source_dir: Path | None) -> CheckResult:
     try:
         with open(state_path, encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
-        if isinstance(data, dict) and ("version" in data or "platforms" in data):
+        if isinstance(data, dict) and ("version" in data or "items" in data):
             return CheckResult(label, CheckStatus.OK, f"{short} (found, valid)")
         return CheckResult(label, CheckStatus.WARNING, f"{short} (found, missing expected keys)")
     except (OSError, yaml.YAMLError) as exc:
@@ -184,33 +184,10 @@ def _check_state_file(source_dir: Path | None) -> CheckResult:
 
 def _check_platform_tools() -> list[CheckResult]:
     """Check which AI platform CLI binaries are installed."""
-    tools = [
-        ("opencode", "OpenCode CLI"),
-        ("claude", "Claude Code CLI"),
-        ("cursor", "Cursor CLI"),
-        ("windsurf", "Windsurf CLI"),
-    ]
-    results: list[CheckResult] = []
-    found_any = False
-
-    for binary, display in tools:
-        path = shutil.which(binary)
-        if path is not None:
-            found_any = True
-            results.append(CheckResult(f"Tool: {display}", CheckStatus.OK, f"found ({path})"))
-        else:
-            results.append(CheckResult(f"Tool: {display}", CheckStatus.WARNING, "not found"))
-
-    if not found_any:
-        results.append(
-            CheckResult(
-                "Platform tools",
-                CheckStatus.WARNING,
-                "none installed — install at least one AI coding tool",
-            )
-        )
-
-    return results
+    path = shutil.which("opencode")
+    if path is not None:
+        return [CheckResult("Tool: OpenCode CLI", CheckStatus.OK, f"found ({path})")]
+    return [CheckResult("Tool: OpenCode CLI", CheckStatus.WARNING, "not found")]
 
 
 # ---------------------------------------------------------------------------
@@ -263,10 +240,14 @@ def run_doctor(
     # Use TargetDiscovery to find platforms instead of hardcoding paths.
     discovery = TargetDiscovery()
     discovered = discovery.discover_all()
-    for platform, target_paths in discovered.items():
-        report.results.append(_check_platform_dir(platform.display_name, target_paths.config_dir))
-
-    if not discovered:
+    if discovered is not None:
+        report.results.append(
+            _check_platform_dir(
+                discovered.platform.display_name,
+                discovered.config_dir,
+            )
+        )
+    else:
         report.results.append(
             CheckResult("Platforms", CheckStatus.WARNING, "no platform directories found")
         )

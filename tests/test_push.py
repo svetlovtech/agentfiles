@@ -2,61 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
 import pytest
 
 from agentfiles.cli import _COMMAND_MAP, build_parser, cmd_push
-from agentfiles.models import Item, ItemType, Platform
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
-def _make_item(
-    name: str = "coder",
-    item_type: ItemType = ItemType.AGENT,
-) -> Item:
-    return Item(
-        item_type=item_type,
-        name=name,
-        source_path=Path("/src") / item_type.plural / name,
-        supported_platforms=(Platform.OPENCODE,),
-    )
-
-
-def _make_args(
-    *,
-    non_interactive: bool = True,
-    dry_run: bool = False,
-    target: str | None = None,
-    item_type: str | None = None,
-    source: str | None = None,
-    config: Path | None = None,
-    cache_dir: str | None = None,
-    symlinks: bool = False,
-    fmt: str = "text",
-    only: str | None = None,
-    except_items: str | None = None,
-) -> SimpleNamespace:
-    return SimpleNamespace(
-        command="push",
-        source=source,
-        config=config,
-        cache_dir=cache_dir,
-        target=target,
-        item_type=item_type,
-        non_interactive=non_interactive,
-        dry_run=dry_run,
-        symlinks=symlinks,
-        format=fmt,
-        only=only,
-        except_items=except_items,
-    )
-
+from tests.conftest import make_args, make_item
 
 # ---------------------------------------------------------------------------
 # Parser tests
@@ -127,70 +79,28 @@ class TestPushParser:
 class TestCmdPushIntegration:
     """Integration tests for cmd_push with mocked dependencies."""
 
-    @mock.patch("agentfiles.cli._apply_item_filter")
-    @mock.patch("agentfiles.cli._resolve_item_filter")
-    @mock.patch("agentfiles.cli._discover_installed_from_targets")
-    @mock.patch("agentfiles.cli._resolve_platforms")
-    @mock.patch("agentfiles.cli._resolve_item_types")
-    @mock.patch("agentfiles.cli._create_sync_pipeline")
-    @mock.patch("agentfiles.cli._get_source")
-    @mock.patch("agentfiles.config.AgentfilesConfig.load")
     def test_push_no_installed_items(
         self,
-        mock_config_load: mock.MagicMock,
-        mock_get_source: mock.MagicMock,
-        mock_pipeline: mock.MagicMock,
-        mock_resolve_types: mock.MagicMock,
-        mock_resolve_platforms: mock.MagicMock,
-        mock_discover: mock.MagicMock,
-        mock_resolve_filter: mock.MagicMock,
-        mock_apply_filter: mock.MagicMock,
-        tmp_path: Path,
+        push_mocks: SimpleNamespace,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """When no installed items found, push returns 0."""
-        mock_config_load.return_value = mock.MagicMock(cache_dir=None)
-        mock_get_source.return_value = tmp_path
-        mock_pipeline.return_value = (
-            mock.MagicMock(),
-            mock.MagicMock(),
-            mock.MagicMock(),
-        )
-        mock_resolve_types.return_value = [ItemType.AGENT]
-        mock_resolve_platforms.return_value = [Platform.OPENCODE]
-        mock_discover.return_value = []
-        mock_resolve_filter.return_value = (None, None)
-        mock_apply_filter.return_value = []
+        push_mocks.discover.return_value = []
+        push_mocks.apply_filter.return_value = []
 
-        args = _make_args(non_interactive=True)
+        args = make_args(command="push", non_interactive=True)
         result = cmd_push(args)
 
         assert result == 0
         output = capsys.readouterr().out
         assert "No installed items" in output
 
-    @mock.patch("agentfiles.cli._apply_item_filter")
-    @mock.patch("agentfiles.cli._resolve_item_filter")
-    @mock.patch("agentfiles.cli._discover_installed_from_targets")
-    @mock.patch("agentfiles.cli._resolve_platforms")
-    @mock.patch("agentfiles.cli._resolve_item_types")
-    @mock.patch("agentfiles.cli._create_sync_pipeline")
-    @mock.patch("agentfiles.cli._get_source")
-    @mock.patch("agentfiles.config.AgentfilesConfig.load")
     def test_push_non_interactive_success(
         self,
-        mock_config_load: mock.MagicMock,
-        mock_get_source: mock.MagicMock,
-        mock_pipeline: mock.MagicMock,
-        mock_resolve_types: mock.MagicMock,
-        mock_resolve_platforms: mock.MagicMock,
-        mock_discover: mock.MagicMock,
-        mock_resolve_filter: mock.MagicMock,
-        mock_apply_filter: mock.MagicMock,
-        tmp_path: Path,
+        push_mocks: SimpleNamespace,
     ) -> None:
         """Non-interactive push succeeds with installed items."""
-        item = _make_item()
+        item = make_item()
 
         engine = mock.MagicMock()
         report = mock.MagicMock()
@@ -202,44 +112,22 @@ class TestCmdPushIntegration:
         report.summary.return_value = "1 pushed"
         engine.push.return_value = report
 
-        target_manager = mock.MagicMock()
-        mock_config_load.return_value = mock.MagicMock(cache_dir=None)
-        mock_get_source.return_value = tmp_path
-        mock_pipeline.return_value = (mock.MagicMock(), target_manager, engine)
-        mock_resolve_types.return_value = [ItemType.AGENT]
-        mock_resolve_platforms.return_value = [Platform.OPENCODE]
-        mock_discover.return_value = [item]
-        mock_resolve_filter.return_value = (None, None)
-        mock_apply_filter.return_value = [item]
+        push_mocks.pipeline.return_value = (mock.MagicMock(), mock.MagicMock(), engine)
+        push_mocks.discover.return_value = [item]
+        push_mocks.apply_filter.return_value = [item]
 
-        args = _make_args(non_interactive=True)
+        args = make_args(command="push", non_interactive=True)
         result = cmd_push(args)
 
         assert result == 0
         engine.push.assert_called_once()
 
-    @mock.patch("agentfiles.cli._apply_item_filter")
-    @mock.patch("agentfiles.cli._resolve_item_filter")
-    @mock.patch("agentfiles.cli._discover_installed_from_targets")
-    @mock.patch("agentfiles.cli._resolve_platforms")
-    @mock.patch("agentfiles.cli._resolve_item_types")
-    @mock.patch("agentfiles.cli._create_sync_pipeline")
-    @mock.patch("agentfiles.cli._get_source")
-    @mock.patch("agentfiles.config.AgentfilesConfig.load")
     def test_push_failure_returns_1(
         self,
-        mock_config_load: mock.MagicMock,
-        mock_get_source: mock.MagicMock,
-        mock_pipeline: mock.MagicMock,
-        mock_resolve_types: mock.MagicMock,
-        mock_resolve_platforms: mock.MagicMock,
-        mock_discover: mock.MagicMock,
-        mock_resolve_filter: mock.MagicMock,
-        mock_apply_filter: mock.MagicMock,
-        tmp_path: Path,
+        push_mocks: SimpleNamespace,
     ) -> None:
         """When push fails, returns 1."""
-        item = _make_item()
+        item = make_item()
 
         engine = mock.MagicMock()
         report = mock.MagicMock()
@@ -251,39 +139,18 @@ class TestCmdPushIntegration:
         report.summary.return_value = "1 failed"
         engine.push.return_value = report
 
-        mock_config_load.return_value = mock.MagicMock(cache_dir=None)
-        mock_get_source.return_value = tmp_path
-        mock_pipeline.return_value = (mock.MagicMock(), mock.MagicMock(), engine)
-        mock_resolve_types.return_value = [ItemType.AGENT]
-        mock_resolve_platforms.return_value = [Platform.OPENCODE]
-        mock_discover.return_value = [item]
-        mock_resolve_filter.return_value = (None, None)
-        mock_apply_filter.return_value = [item]
+        push_mocks.pipeline.return_value = (mock.MagicMock(), mock.MagicMock(), engine)
+        push_mocks.discover.return_value = [item]
+        push_mocks.apply_filter.return_value = [item]
 
-        args = _make_args(non_interactive=True)
+        args = make_args(command="push", non_interactive=True)
         result = cmd_push(args)
 
         assert result == 1
 
-    @mock.patch("agentfiles.cli._apply_item_filter")
-    @mock.patch("agentfiles.cli._resolve_item_filter")
-    @mock.patch("agentfiles.cli._discover_installed_from_targets")
-    @mock.patch("agentfiles.cli._resolve_platforms")
-    @mock.patch("agentfiles.cli._resolve_item_types")
-    @mock.patch("agentfiles.cli._create_sync_pipeline")
-    @mock.patch("agentfiles.cli._get_source")
-    @mock.patch("agentfiles.config.AgentfilesConfig.load")
     def test_push_keyboard_interrupt_returns_1(
         self,
-        mock_config_load: mock.MagicMock,
-        mock_get_source: mock.MagicMock,
-        mock_pipeline: mock.MagicMock,
-        mock_resolve_types: mock.MagicMock,
-        mock_resolve_platforms: mock.MagicMock,
-        mock_discover: mock.MagicMock,
-        mock_resolve_filter: mock.MagicMock,
-        mock_apply_filter: mock.MagicMock,
-        tmp_path: Path,
+        push_mocks: SimpleNamespace,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """Ctrl+C during interactive item selection aborts push and returns 1.
@@ -292,22 +159,17 @@ class TestCmdPushIntegration:
         ``InputParser.prompt()`` and treated as empty input (which selected all
         items).  Now it properly aborts the operation.
         """
-        item = _make_item()
+        item = make_item()
 
         engine = mock.MagicMock()
         target_manager = mock.MagicMock()
 
-        mock_config_load.return_value = mock.MagicMock(cache_dir=None)
-        mock_get_source.return_value = tmp_path
-        mock_pipeline.return_value = (mock.MagicMock(), target_manager, engine)
-        mock_resolve_types.return_value = [ItemType.AGENT]
-        mock_resolve_platforms.return_value = [Platform.OPENCODE]
-        mock_discover.return_value = [item]
-        mock_resolve_filter.return_value = (None, None)
-        mock_apply_filter.return_value = [item]
+        push_mocks.pipeline.return_value = (mock.MagicMock(), target_manager, engine)
+        push_mocks.discover.return_value = [item]
+        push_mocks.apply_filter.return_value = [item]
 
         # Interactive mode — user presses Ctrl+C at item selection.
-        args = _make_args(non_interactive=False)
+        args = make_args(command="push", non_interactive=False)
         with mock.patch(
             "agentfiles.interactive.InputParser.prompt",
             side_effect=KeyboardInterrupt,
@@ -320,29 +182,13 @@ class TestCmdPushIntegration:
         output = capsys.readouterr().out
         assert "Aborted" in output
 
-    @mock.patch("agentfiles.cli._apply_item_filter")
-    @mock.patch("agentfiles.cli._resolve_item_filter")
-    @mock.patch("agentfiles.cli._discover_installed_from_targets")
-    @mock.patch("agentfiles.cli._resolve_platforms")
-    @mock.patch("agentfiles.cli._resolve_item_types")
-    @mock.patch("agentfiles.cli._create_sync_pipeline")
-    @mock.patch("agentfiles.cli._get_source")
-    @mock.patch("agentfiles.config.AgentfilesConfig.load")
     def test_push_dry_run_no_state_update(
         self,
-        mock_config_load: mock.MagicMock,
-        mock_get_source: mock.MagicMock,
-        mock_pipeline: mock.MagicMock,
-        mock_resolve_types: mock.MagicMock,
-        mock_resolve_platforms: mock.MagicMock,
-        mock_discover: mock.MagicMock,
-        mock_resolve_filter: mock.MagicMock,
-        mock_apply_filter: mock.MagicMock,
-        tmp_path: Path,
+        push_mocks: SimpleNamespace,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """Dry-run push prints warning and does not modify files."""
-        item = _make_item()
+        item = make_item()
 
         engine = mock.MagicMock()
         report = mock.MagicMock()
@@ -354,16 +200,11 @@ class TestCmdPushIntegration:
         report.summary.return_value = "1 pushed"
         engine.push.return_value = report
 
-        mock_config_load.return_value = mock.MagicMock(cache_dir=None)
-        mock_get_source.return_value = tmp_path
-        mock_pipeline.return_value = (mock.MagicMock(), mock.MagicMock(), engine)
-        mock_resolve_types.return_value = [ItemType.AGENT]
-        mock_resolve_platforms.return_value = [Platform.OPENCODE]
-        mock_discover.return_value = [item]
-        mock_resolve_filter.return_value = (None, None)
-        mock_apply_filter.return_value = [item]
+        push_mocks.pipeline.return_value = (mock.MagicMock(), mock.MagicMock(), engine)
+        push_mocks.discover.return_value = [item]
+        push_mocks.apply_filter.return_value = [item]
 
-        args = _make_args(non_interactive=True, dry_run=True)
+        args = make_args(command="push", non_interactive=True, dry_run=True)
         result = cmd_push(args)
 
         assert result == 0

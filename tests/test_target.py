@@ -14,12 +14,8 @@ from agentfiles.models import Item, ItemType, Platform, Scope, TargetError, Targ
 from agentfiles.target import (
     TargetDiscovery,
     TargetManager,
-    build_target_manager,
-    _cursor_project_candidates,
-    _claude_code_project_candidates,
     _opencode_project_candidates,
-    _windsurf_project_candidates,
-    _PLATFORM_PROJECT_CANDIDATE_RESOLVERS,
+    build_target_manager,
 )
 
 # ---------------------------------------------------------------------------
@@ -40,14 +36,7 @@ def fake_home(tmp_path: Path) -> SimpleNamespace:
     (oc_dir / "command").mkdir(parents=True)
     (oc_dir / "plugin").mkdir(parents=True)
 
-    # Claude Code layout (plural dir names).
-    cc_dir = home / ".claude"
-    (cc_dir / "agents").mkdir(parents=True)
-    (cc_dir / "skills").mkdir(parents=True)
-    (cc_dir / "plugins").mkdir(parents=True)
-    (cc_dir / "commands").mkdir(parents=True)
-
-    return SimpleNamespace(home=home, opencode=oc_dir, claude=cc_dir)
+    return SimpleNamespace(home=home, opencode=oc_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -63,35 +52,23 @@ class TestTargetDiscoveryDiscover:
             mock.patch.object(Path, "home", return_value=fake_home.home),
             mock.patch.dict(os.environ, {}, clear=True),
         ):
-            result = TargetDiscovery().discover(Platform.OPENCODE)
+            result = TargetDiscovery().discover()
 
         assert result is not None
         assert result.platform == Platform.OPENCODE
         assert result.is_valid
         assert result.config_dir == fake_home.opencode.resolve()
 
-    def test_discover_claude_code_finds_home(self, fake_home: SimpleNamespace) -> None:
-        with (
-            mock.patch.object(Path, "home", return_value=fake_home.home),
-            mock.patch.dict(os.environ, {}, clear=True),
-        ):
-            result = TargetDiscovery().discover(Platform.CLAUDE_CODE)
-
-        assert result is not None
-        assert result.platform == Platform.CLAUDE_CODE
-        assert result.is_valid
-        assert result.config_dir == fake_home.claude.resolve()
-
     def test_discover_returns_none_when_missing(self, tmp_path: Path) -> None:
         with (
             mock.patch.object(Path, "home", return_value=tmp_path / "nonexistent"),
             mock.patch.dict(os.environ, {}, clear=True),
         ):
-            result = TargetDiscovery().discover(Platform.OPENCODE)
+            result = TargetDiscovery().discover()
 
         assert result is None
 
-    def test_discover_all_returns_both_platforms(self, fake_home: SimpleNamespace) -> None:
+    def test_discover_all_returns_discovered_platforms(self, fake_home: SimpleNamespace) -> None:
         with (
             mock.patch.object(Path, "home", return_value=fake_home.home),
             mock.patch.object(Path, "cwd", return_value=fake_home.home / "project"),
@@ -99,9 +76,8 @@ class TestTargetDiscoveryDiscover:
         ):
             targets = TargetDiscovery().discover_all()
 
-        assert Platform.OPENCODE in targets
-        assert Platform.CLAUDE_CODE in targets
-        assert len(targets) == 2
+        assert targets is not None
+        assert targets.platform == Platform.OPENCODE
 
     def test_discover_all_skips_missing(self, tmp_path: Path) -> None:
         with (
@@ -111,7 +87,7 @@ class TestTargetDiscoveryDiscover:
         ):
             targets = TargetDiscovery().discover_all()
 
-        assert targets == {}
+        assert targets is None
 
     def test_discover_xdg_config_home_preferred(self, fake_home: SimpleNamespace) -> None:
         xdg_dir = fake_home.home / "xdg" / "opencode"
@@ -125,7 +101,7 @@ class TestTargetDiscoveryDiscover:
                 clear=True,
             ),
         ):
-            result = TargetDiscovery().discover(Platform.OPENCODE)
+            result = TargetDiscovery().discover()
 
         assert result is not None
         assert result.config_dir == xdg_dir.resolve()
@@ -142,7 +118,7 @@ class TestTargetDiscoveryDiscover:
             linux_dir = fake_home.home / ".config" / "opencode"
             if linux_dir.exists():
                 shutil.rmtree(linux_dir, ignore_errors=True)
-            result = TargetDiscovery().discover(Platform.OPENCODE)
+            result = TargetDiscovery().discover()
 
         assert result is not None
         assert result.config_dir == macos_dir.resolve()
@@ -161,7 +137,7 @@ class TestSubdirectoryResolution:
             mock.patch.object(Path, "home", return_value=fake_home.home),
             mock.patch.dict(os.environ, {}, clear=True),
         ):
-            result = TargetDiscovery().discover(Platform.OPENCODE)
+            result = TargetDiscovery().discover()
 
         assert result is not None
         assert result.subdirs["agents"] == fake_home.opencode / "agent"
@@ -169,41 +145,16 @@ class TestSubdirectoryResolution:
         assert result.subdirs["commands"] == fake_home.opencode / "command"
         assert result.subdirs["plugins"] == fake_home.opencode / "plugin"
 
-    def test_claude_code_subdirs_are_plural(self, fake_home: SimpleNamespace) -> None:
-        with (
-            mock.patch.object(Path, "home", return_value=fake_home.home),
-            mock.patch.dict(os.environ, {}, clear=True),
-        ):
-            result = TargetDiscovery().discover(Platform.CLAUDE_CODE)
-
-        assert result is not None
-        assert result.subdirs["agents"] == fake_home.claude / "agents"
-        assert result.subdirs["skills"] == fake_home.claude / "skills"
-        assert result.subdirs["commands"] == fake_home.claude / "commands"
-        assert result.subdirs["plugins"] == fake_home.claude / "plugins"
-
     def test_opencode_subdir_for_returns_existing(self, fake_home: SimpleNamespace) -> None:
         with (
             mock.patch.object(Path, "home", return_value=fake_home.home),
             mock.patch.dict(os.environ, {}, clear=True),
         ):
-            result = TargetDiscovery().discover(Platform.OPENCODE)
+            result = TargetDiscovery().discover()
 
         assert result is not None
         path = result.subdir_for(ItemType.AGENT)
         assert path == fake_home.opencode / "agent"
-
-    def test_subdir_for_missing_returns_computed_path(self, fake_home: SimpleNamespace) -> None:
-        with (
-            mock.patch.object(Path, "home", return_value=fake_home.home),
-            mock.patch.dict(os.environ, {}, clear=True),
-        ):
-            result = TargetDiscovery().discover(Platform.CLAUDE_CODE)
-
-        assert result is not None
-        path = result.subdir_for(ItemType.COMMAND)
-        # subdir_for always returns a Path; falls back to config_dir / plural
-        assert path == fake_home.claude / "commands"
 
 
 # ---------------------------------------------------------------------------
@@ -214,10 +165,7 @@ class TestSubdirectoryResolution:
 def _make_item(
     item_type: ItemType,
     name: str,
-    platforms: tuple[Platform, ...] = (
-        Platform.OPENCODE,
-        Platform.CLAUDE_CODE,
-    ),
+    platforms: tuple[Platform, ...] = (Platform.OPENCODE,),
 ) -> Item:
     """Create a minimal Item for testing."""
     ext = ".md" if item_type.is_file_based else ""
@@ -246,25 +194,10 @@ class TestTargetManager:
         assert result == fake_home.opencode / "agent"
 
     def test_get_target_dir_raises_for_missing_platform(self) -> None:
-        manager = TargetManager({})
+        manager = TargetManager(None)
 
-        with pytest.raises(TargetError, match="not been discovered"):
+        with pytest.raises(TargetError, match="OpenCode has not been discovered"):
             manager.get_target_dir(Platform.OPENCODE, ItemType.AGENT)
-
-    def test_get_target_dir_none_for_unsupported_type(self, fake_home: SimpleNamespace) -> None:
-        # Add windsurf dir (skills-only platform, no commands support).
-        ws_dir = fake_home.home / ".codeium" / "windsurf" / "skills"
-        ws_dir.mkdir(parents=True)
-
-        with (
-            mock.patch.object(Path, "home", return_value=fake_home.home),
-            mock.patch.dict(os.environ, {}, clear=True),
-        ):
-            targets = TargetDiscovery().discover_all()
-
-        manager = TargetManager(targets)
-        result = manager.get_target_dir(Platform.WINDSURF, ItemType.COMMAND)
-        assert result is None
 
     def test_is_item_installed_true(self, fake_home: SimpleNamespace) -> None:
         (fake_home.opencode / "agent" / "python-reviewer.md").write_text("# agent")
@@ -293,7 +226,7 @@ class TestTargetManager:
         assert manager.is_item_installed(item, Platform.OPENCODE) is False
 
     def test_is_item_installed_false_for_missing_platform(self) -> None:
-        manager = TargetManager({})
+        manager = TargetManager(None)
         item = _make_item(ItemType.AGENT, "anything")
 
         assert manager.is_item_installed(item, Platform.OPENCODE) is False
@@ -318,9 +251,9 @@ class TestTargetManager:
         assert (ItemType.SKILL, "python-stylist") in types_and_names
 
     def test_get_installed_items_raises_for_missing_platform(self) -> None:
-        manager = TargetManager({})
+        manager = TargetManager(None)
 
-        with pytest.raises(TargetError, match="not been discovered"):
+        with pytest.raises(TargetError, match="OpenCode has not been discovered"):
             manager.get_installed_items(Platform.OPENCODE)
 
     def test_get_installed_items_skips_hidden(self, fake_home: SimpleNamespace) -> None:
@@ -345,11 +278,6 @@ class TestTargetManager:
         (fake_home.opencode / "agent" / "a2.md").write_text("# agent")
         (fake_home.opencode / "skill" / "s1").mkdir()
 
-        (fake_home.claude / "agents" / "c1.md").write_text("# agent")
-        (fake_home.claude / "skills" / "c2").mkdir()
-        (fake_home.claude / "skills" / "c3").mkdir()
-        (fake_home.claude / "plugins" / "p1.ts").write_text("export {};")
-
         with (
             mock.patch.object(Path, "home", return_value=fake_home.home),
             mock.patch.dict(os.environ, {}, clear=True),
@@ -359,18 +287,11 @@ class TestTargetManager:
         manager = TargetManager(targets)
         summary = manager.platform_summary()
 
-        assert summary[Platform.OPENCODE] == {
-            "agents": 2,
-            "skills": 1,
-        }
-        assert summary[Platform.CLAUDE_CODE] == {
-            "agents": 1,
-            "skills": 2,
-            "plugins": 1,
-        }
+        assert summary["agents"] == 2
+        assert summary["skills"] == 1
 
     def test_platform_summary_empty(self) -> None:
-        manager = TargetManager({})
+        manager = TargetManager(None)
         assert manager.platform_summary() == {}
 
 
@@ -390,8 +311,8 @@ class TestBuildTargetManager:
         ):
             manager = build_target_manager()
 
-        assert Platform.OPENCODE in manager.targets
-        assert Platform.CLAUDE_CODE in manager.targets
+        assert manager.targets is not None
+        assert manager.targets.platform == Platform.OPENCODE
 
     def test_applies_custom_paths(self, fake_home: SimpleNamespace) -> None:
         """Custom paths override discovered platform directories."""
@@ -406,8 +327,8 @@ class TestBuildTargetManager:
                 custom_paths={"opencode": str(custom_dir)},
             )
 
-        assert Platform.OPENCODE in manager.targets
-        assert manager.targets[Platform.OPENCODE].config_dir == custom_dir.resolve()
+        assert manager.targets is not None
+        assert manager.targets.config_dir == custom_dir.resolve()
 
     def test_skips_unknown_platform_in_custom_paths(
         self,
@@ -422,7 +343,9 @@ class TestBuildTargetManager:
                 custom_paths={"unknown_platform": "/tmp/whatever"},
             )
 
-        assert "unknown_platform" not in manager.targets
+        # Auto-discovered opencode should still be present
+        assert manager.targets is not None
+        assert manager.targets.platform == Platform.OPENCODE
 
     def test_skips_nonexistent_custom_path(
         self,
@@ -438,11 +361,11 @@ class TestBuildTargetManager:
             )
 
         # Should still have the auto-discovered path
-        assert Platform.OPENCODE in manager.targets
-        assert manager.targets[Platform.OPENCODE].config_dir == fake_home.opencode.resolve()
+        assert manager.targets is not None
+        assert manager.targets.config_dir == fake_home.opencode.resolve()
 
     def test_returns_empty_manager_when_no_platforms(self, tmp_path: Path) -> None:
-        """Returns a manager with empty targets when nothing is found."""
+        """Returns a manager with no targets when nothing is found."""
         with (
             mock.patch.object(Path, "home", return_value=tmp_path / "empty"),
             mock.patch.object(Path, "cwd", return_value=tmp_path / "empty" / "project"),
@@ -450,7 +373,7 @@ class TestBuildTargetManager:
         ):
             manager = build_target_manager()
 
-        assert manager.targets == {}
+        assert manager.targets is None
 
     def test_none_custom_paths_same_as_empty(
         self,
@@ -464,7 +387,9 @@ class TestBuildTargetManager:
             manager_default = build_target_manager()
             manager_none = build_target_manager(custom_paths=None)
 
-        assert set(manager_default.targets.keys()) == set(manager_none.targets.keys())
+        assert manager_default.targets is not None
+        assert manager_none.targets is not None
+        assert manager_default.targets.config_dir == manager_none.targets.config_dir
 
 
 # ---------------------------------------------------------------------------
@@ -545,7 +470,7 @@ class TestPermissionErrorHandling:
                 side_effect=RuntimeError("surprise"),
             ),
         ):
-            result = TargetDiscovery().discover(Platform.OPENCODE)
+            result = TargetDiscovery().discover()
 
         assert result is None
 
@@ -558,11 +483,11 @@ class TestPermissionErrorHandling:
             mock.patch.object(Path, "home", return_value=fake_home.home),
             mock.patch.dict(os.environ, {}, clear=True),
             mock.patch(
-                "agentfiles.target._resolve_subdirs",
+                "agentfiles.target._opencode_subdirs",
                 side_effect=RuntimeError("boom"),
             ),
         ):
-            result = TargetDiscovery().discover(Platform.OPENCODE)
+            result = TargetDiscovery().discover()
 
         assert result is not None
         assert result.subdirs == {}
@@ -726,8 +651,8 @@ class TestPermissionErrorHandling:
             )
 
         # Custom path was skipped, but auto-discovered path should remain.
-        assert Platform.OPENCODE in manager.targets
-        assert manager.targets[Platform.OPENCODE].config_dir == fake_home.opencode.resolve()
+        assert manager.targets is not None
+        assert manager.targets.config_dir == fake_home.opencode.resolve()
 
 
 # ---------------------------------------------------------------------------
@@ -764,8 +689,8 @@ class TestCustomPathHandling:
                 custom_paths={"opencode": "~/my_custom_opencode"},
             )
 
-        assert Platform.OPENCODE in manager.targets
-        assert manager.targets[Platform.OPENCODE].config_dir == custom_dir.resolve()
+        assert manager.targets is not None
+        assert manager.targets.config_dir == custom_dir.resolve()
 
     def test_custom_path_for_undiscovered_platform(self, tmp_path: Path) -> None:
         """Custom path can enable a platform that was not auto-discovered."""
@@ -784,8 +709,8 @@ class TestCustomPathHandling:
                 custom_paths={"opencode": str(custom_oc)},
             )
 
-        assert Platform.OPENCODE in manager.targets
-        assert manager.targets[Platform.OPENCODE].config_dir == custom_oc.resolve()
+        assert manager.targets is not None
+        assert manager.targets.config_dir == custom_oc.resolve()
 
     def test_custom_path_file_not_directory(
         self,
@@ -804,43 +729,8 @@ class TestCustomPathHandling:
             )
 
         # Should fall back to auto-discovered path.
-        assert Platform.OPENCODE in manager.targets
-        assert manager.targets[Platform.OPENCODE].config_dir == fake_home.opencode.resolve()
-
-    def test_empty_custom_paths_dict(
-        self,
-        fake_home: SimpleNamespace,
-    ) -> None:
-        """An empty custom_paths dict behaves like None."""
-        with (
-            mock.patch.object(Path, "home", return_value=fake_home.home),
-            mock.patch.dict(os.environ, {}, clear=True),
-        ):
-            manager = build_target_manager(custom_paths={})
-
-        assert Platform.OPENCODE in manager.targets
-        assert Platform.CLAUDE_CODE in manager.targets
-
-    def test_custom_path_overrides_discovered_path(
-        self,
-        fake_home: SimpleNamespace,
-    ) -> None:
-        """Custom path should replace the auto-discovered config_dir."""
-        custom_dir = fake_home.home / "overridden_claude"
-        custom_dir.mkdir()
-
-        with (
-            mock.patch.object(Path, "home", return_value=fake_home.home),
-            mock.patch.dict(os.environ, {}, clear=True),
-        ):
-            manager = build_target_manager(
-                custom_paths={"claude_code": str(custom_dir)},
-            )
-
-        assert Platform.CLAUDE_CODE in manager.targets
-        assert manager.targets[Platform.CLAUDE_CODE].config_dir == custom_dir.resolve()
-        # OpenCode should still be auto-discovered.
-        assert Platform.OPENCODE in manager.targets
+        assert manager.targets is not None
+        assert manager.targets.config_dir == fake_home.opencode.resolve()
 
 
 # ---------------------------------------------------------------------------
@@ -865,43 +755,6 @@ class TestPlatformSubdirResolvers:
             "plugins": config_dir / "plugin",
             "workflows": config_dir / "workflow",
         }
-
-    def test_claude_code_subdirs_maps_supported_types(self) -> None:
-        """Claude Code subdirs covers agents, skills, commands, and plugins."""
-        from agentfiles.target import _claude_code_subdirs
-
-        config_dir = Path("/fake/claude")
-        subdirs = _claude_code_subdirs(config_dir)
-
-        assert subdirs == {
-            "agents": config_dir / "agents",
-            "skills": config_dir / "skills",
-            "commands": config_dir / "commands",
-            "plugins": config_dir / "plugins",
-            "workflows": config_dir / "workflows",
-        }
-
-    def test_skills_only_subdirs_returns_skills_key(self) -> None:
-        """Skills-only platforms return a single 'skills' key."""
-        from agentfiles.target import _skills_only_subdirs
-
-        config_dir = Path("/fake/windsurf")
-        subdirs = _skills_only_subdirs(config_dir)
-
-        assert subdirs == {"skills": config_dir, "workflows": config_dir / "workflows"}
-
-    def test_resolve_subdirs_unknown_platform_returns_empty(self) -> None:
-        """_resolve_subdirs returns empty dict for unregistered platforms."""
-        from agentfiles.target import _PLATFORM_SUBDIR_RESOLVERS, _resolve_subdirs
-
-        # Temporarily remove all resolvers to test unknown platform.
-        saved = dict(_PLATFORM_SUBDIR_RESOLVERS)
-        _PLATFORM_SUBDIR_RESOLVERS.clear()
-        try:
-            result = _resolve_subdirs(Platform.OPENCODE, Path("/any"))
-            assert result == {}
-        finally:
-            _PLATFORM_SUBDIR_RESOLVERS.update(saved)
 
 
 # ---------------------------------------------------------------------------
@@ -949,15 +802,13 @@ class TestInstalledItemsEdgeCases:
         bare_oc = fake_home.home / "bare_opencode"
         bare_oc.mkdir()
 
-        targets = {
-            Platform.OPENCODE: TargetPaths(
-                platform=Platform.OPENCODE,
-                config_dir=bare_oc,
-                subdirs={
-                    "agents": bare_oc / "agent",  # does not exist
-                },
-            ),
-        }
+        targets = TargetPaths(
+            platform=Platform.OPENCODE,
+            config_dir=bare_oc,
+            subdirs={
+                "agents": bare_oc / "agent",  # does not exist
+            },
+        )
         manager = TargetManager(targets)
         items = manager.get_installed_items(Platform.OPENCODE)
 
@@ -967,13 +818,11 @@ class TestInstalledItemsEdgeCases:
         """is_item_installed returns False when item type has no subdirectory."""
         from agentfiles.models import TargetPaths
 
-        targets = {
-            Platform.OPENCODE: TargetPaths(
-                platform=Platform.OPENCODE,
-                config_dir=Path("/fake"),
-                subdirs={"skills": Path("/fake/skill")},
-            ),
-        }
+        targets = TargetPaths(
+            platform=Platform.OPENCODE,
+            config_dir=Path("/fake"),
+            subdirs={"skills": Path("/fake/skill")},
+        )
         manager = TargetManager(targets)
         item = _make_item(ItemType.AGENT, "test")
 
@@ -1019,38 +868,6 @@ class TestFindExistingEdgeCases:
 
         result = _find_existing([])
         assert result is None
-
-    def test_get_candidates_unknown_platform(self) -> None:
-        """_get_candidates returns empty list for unregistered platforms."""
-        from agentfiles.target import _PLATFORM_CANDIDATE_RESOLVERS, TargetDiscovery
-
-        discovery = TargetDiscovery()
-        saved = dict(_PLATFORM_CANDIDATE_RESOLVERS)
-        _PLATFORM_CANDIDATE_RESOLVERS.clear()
-        try:
-            candidates = discovery._get_candidates(Platform.OPENCODE)
-            assert candidates == []
-        finally:
-            _PLATFORM_CANDIDATE_RESOLVERS.update(saved)
-
-    def test_discover_with_empty_candidates(self, tmp_path: Path) -> None:
-        """discover returns None when platform has no candidate resolver."""
-        from agentfiles.target import _PLATFORM_CANDIDATE_RESOLVERS, TargetDiscovery
-
-        empty_home = tmp_path / "empty"
-        empty_home.mkdir()
-
-        saved = dict(_PLATFORM_CANDIDATE_RESOLVERS)
-        _PLATFORM_CANDIDATE_RESOLVERS.pop(Platform.OPENCODE, None)
-        try:
-            with (
-                mock.patch.object(Path, "home", return_value=empty_home),
-                mock.patch.dict(os.environ, {}, clear=True),
-            ):
-                result = TargetDiscovery().discover(Platform.OPENCODE)
-            assert result is None
-        finally:
-            _PLATFORM_CANDIDATE_RESOLVERS.update(saved)
 
     def test_is_dir_oserror_on_subdir_is_dir_check(
         self,
@@ -1100,185 +917,6 @@ class TestProjectCandidateResolvers:
         candidates = _opencode_project_candidates(project_dir)
         assert candidates == [project_dir / ".opencode"]
 
-    def test_claude_code_project_candidates(self) -> None:
-        """Claude Code project candidate points to <project>/.claude."""
-        project_dir = Path("/my/project")
-        candidates = _claude_code_project_candidates(project_dir)
-        assert candidates == [project_dir / ".claude"]
-
-    def test_windsurf_project_candidates(self) -> None:
-        """Windsurf project candidate points to <project>/.windsurf/skills."""
-        project_dir = Path("/my/project")
-        candidates = _windsurf_project_candidates(project_dir)
-        assert candidates == [project_dir / ".windsurf" / "skills"]
-
-    def test_cursor_project_candidates(self) -> None:
-        """Cursor project candidate points to <project>/.cursor/skills."""
-        project_dir = Path("/my/project")
-        candidates = _cursor_project_candidates(project_dir)
-        assert candidates == [project_dir / ".cursor" / "skills"]
-
-    def test_all_platforms_have_project_resolvers(self) -> None:
-        """Every Platform enum value has a project candidate resolver."""
-        for platform in Platform:
-            assert platform in _PLATFORM_PROJECT_CANDIDATE_RESOLVERS, (
-                f"Platform {platform.display_name} missing from "
-                f"_PLATFORM_PROJECT_CANDIDATE_RESOLVERS"
-            )
-
-    def test_project_resolvers_return_single_candidate(self) -> None:
-        """Each project resolver returns exactly one candidate path."""
-        project_dir = Path("/test")
-        for platform, resolver in _PLATFORM_PROJECT_CANDIDATE_RESOLVERS.items():
-            candidates = resolver(project_dir)
-            assert len(candidates) == 1, (
-                f"{platform.display_name} resolver returned {len(candidates)} "
-                f"candidates, expected 1"
-            )
-
-
-# ---------------------------------------------------------------------------
-# TargetDiscovery — discover_project
-# ---------------------------------------------------------------------------
-
-
-class TestDiscoverProject:
-    """Tests for the discover_project method."""
-
-    def test_discovers_opencode_project_dir(self, tmp_path: Path) -> None:
-        """discover_project finds <project>/.opencode when it exists."""
-        project_dir = tmp_path / "project"
-        oc_dir = project_dir / ".opencode"
-        (oc_dir / "agent").mkdir(parents=True)
-
-        discovery = TargetDiscovery()
-        result = discovery.discover_project(project_dir)
-
-        assert Platform.OPENCODE in result
-        assert result[Platform.OPENCODE].config_dir == oc_dir.resolve()
-        assert result[Platform.OPENCODE].subdirs["agents"] == oc_dir / "agent"
-
-    def test_discovers_claude_code_project_dir(self, tmp_path: Path) -> None:
-        """discover_project finds <project>/.claude when it exists."""
-        project_dir = tmp_path / "project"
-        cc_dir = project_dir / ".claude"
-        (cc_dir / "agents").mkdir(parents=True)
-
-        discovery = TargetDiscovery()
-        result = discovery.discover_project(project_dir)
-
-        assert Platform.CLAUDE_CODE in result
-        assert result[Platform.CLAUDE_CODE].config_dir == cc_dir.resolve()
-        assert result[Platform.CLAUDE_CODE].subdirs["agents"] == cc_dir / "agents"
-
-    def test_discovers_windsurf_project_dir(self, tmp_path: Path) -> None:
-        """discover_project finds <project>/.windsurf/skills when it exists."""
-        project_dir = tmp_path / "project"
-        ws_dir = project_dir / ".windsurf" / "skills"
-        ws_dir.mkdir(parents=True)
-
-        discovery = TargetDiscovery()
-        result = discovery.discover_project(project_dir)
-
-        assert Platform.WINDSURF in result
-        assert result[Platform.WINDSURF].config_dir == ws_dir.resolve()
-        assert result[Platform.WINDSURF].subdirs["skills"] == ws_dir
-
-    def test_discovers_cursor_project_dir(self, tmp_path: Path) -> None:
-        """discover_project finds <project>/.cursor/skills when it exists."""
-        project_dir = tmp_path / "project"
-        cr_dir = project_dir / ".cursor" / "skills"
-        cr_dir.mkdir(parents=True)
-
-        discovery = TargetDiscovery()
-        result = discovery.discover_project(project_dir)
-
-        assert Platform.CURSOR in result
-        assert result[Platform.CURSOR].config_dir == cr_dir.resolve()
-        assert result[Platform.CURSOR].subdirs["skills"] == cr_dir
-
-    def test_skips_nonexistent_project_dirs(self, tmp_path: Path) -> None:
-        """discover_project skips platforms whose project dirs don't exist."""
-        project_dir = tmp_path / "project"
-        project_dir.mkdir()
-
-        discovery = TargetDiscovery()
-        result = discovery.discover_project(project_dir)
-
-        assert result == {}
-
-    def test_discovers_multiple_platforms(self, tmp_path: Path) -> None:
-        """discover_project finds multiple platforms simultaneously."""
-        project_dir = tmp_path / "project"
-        (project_dir / ".opencode" / "agent").mkdir(parents=True)
-        (project_dir / ".claude" / "agents").mkdir(parents=True)
-
-        discovery = TargetDiscovery()
-        result = discovery.discover_project(project_dir)
-
-        assert Platform.OPENCODE in result
-        assert Platform.CLAUDE_CODE in result
-        assert len(result) == 2
-
-    def test_subdirs_match_global_layout_opencode(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """OpenCode project subdirs use singular names like global scope."""
-        project_dir = tmp_path / "project"
-        oc_dir = project_dir / ".opencode"
-        (oc_dir / "agent").mkdir(parents=True)
-
-        discovery = TargetDiscovery()
-        result = discovery.discover_project(project_dir)
-
-        assert result[Platform.OPENCODE].subdirs == {
-            "agents": oc_dir / "agent",
-            "skills": oc_dir / "skill",
-            "commands": oc_dir / "command",
-            "plugins": oc_dir / "plugin",
-            "workflows": oc_dir / "workflow",
-        }
-
-    def test_subdirs_match_global_layout_claude(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """Claude Code project subdirs use plural names like global scope."""
-        project_dir = tmp_path / "project"
-        cc_dir = project_dir / ".claude"
-        (cc_dir / "agents").mkdir(parents=True)
-
-        discovery = TargetDiscovery()
-        result = discovery.discover_project(project_dir)
-
-        assert result[Platform.CLAUDE_CODE].subdirs == {
-            "agents": cc_dir / "agents",
-            "skills": cc_dir / "skills",
-            "commands": cc_dir / "commands",
-            "plugins": cc_dir / "plugins",
-            "workflows": cc_dir / "workflows",
-        }
-
-    def test_subdirs_resolve_error_returns_empty(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """discover_project returns empty subdirs when resolution fails."""
-        project_dir = tmp_path / "project"
-        oc_dir = project_dir / ".opencode"
-        oc_dir.mkdir(parents=True)
-
-        with mock.patch(
-            "agentfiles.target._resolve_subdirs",
-            side_effect=RuntimeError("boom"),
-        ):
-            discovery = TargetDiscovery()
-            result = discovery.discover_project(project_dir)
-
-        assert Platform.OPENCODE in result
-        assert result[Platform.OPENCODE].subdirs == {}
-
 
 # ---------------------------------------------------------------------------
 # TargetManager — get_target_dir_for_scope
@@ -1311,9 +949,9 @@ class TestGetTargetDirForScope:
 
     def test_global_scope_raises_for_missing_platform(self) -> None:
         """GLOBAL scope raises TargetError when platform not discovered."""
-        manager = TargetManager({})
+        manager = TargetManager(None)
 
-        with pytest.raises(TargetError, match="not been discovered"):
+        with pytest.raises(TargetError, match="OpenCode has not been discovered"):
             manager.get_target_dir_for_scope(
                 Platform.OPENCODE,
                 ItemType.AGENT,
@@ -1323,7 +961,7 @@ class TestGetTargetDirForScope:
     def test_project_scope_resolves_path(self, tmp_path: Path) -> None:
         """PROJECT scope resolves path relative to project_dir."""
         project_dir = tmp_path / "myproject"
-        manager = TargetManager({})  # Empty global targets is fine.
+        manager = TargetManager(None)  # No global targets is fine.
 
         result = manager.get_target_dir_for_scope(
             Platform.OPENCODE,
@@ -1340,22 +978,22 @@ class TestGetTargetDirForScope:
     ) -> None:
         """LOCAL scope resolves the same filesystem path as PROJECT."""
         project_dir = tmp_path / "myproject"
-        manager = TargetManager({})
+        manager = TargetManager(None)
 
         project_result = manager.get_target_dir_for_scope(
-            Platform.CLAUDE_CODE,
+            Platform.OPENCODE,
             ItemType.SKILL,
             Scope.PROJECT,
             project_dir=project_dir,
         )
         local_result = manager.get_target_dir_for_scope(
-            Platform.CLAUDE_CODE,
+            Platform.OPENCODE,
             ItemType.SKILL,
             Scope.LOCAL,
             project_dir=project_dir,
         )
 
-        assert project_result == project_dir / ".claude" / "skills"
+        assert project_result == project_dir / ".opencode" / "skill"
         assert local_result == project_result
 
     def test_project_scope_does_not_require_existing_dir(
@@ -1365,7 +1003,7 @@ class TestGetTargetDirForScope:
         """PROJECT scope returns a path even when the dir doesn't exist."""
         project_dir = tmp_path / "nonexistent_project"
         # Don't create any directories.
-        manager = TargetManager({})
+        manager = TargetManager(None)
 
         result = manager.get_target_dir_for_scope(
             Platform.OPENCODE,
@@ -1379,7 +1017,7 @@ class TestGetTargetDirForScope:
 
     def test_project_scope_returns_none_without_project_dir(self) -> None:
         """PROJECT scope returns None when project_dir is not provided."""
-        manager = TargetManager({})
+        manager = TargetManager(None)
 
         result = manager.get_target_dir_for_scope(
             Platform.OPENCODE,
@@ -1396,7 +1034,7 @@ class TestGetTargetDirForScope:
     ) -> None:
         """PROJECT scope returns config_dir root for CONFIG item type."""
         project_dir = tmp_path / "myproject"
-        manager = TargetManager({})
+        manager = TargetManager(None)
 
         result = manager.get_target_dir_for_scope(
             Platform.OPENCODE,
@@ -1407,30 +1045,14 @@ class TestGetTargetDirForScope:
 
         assert result == project_dir / ".opencode"
 
-    def test_project_scope_unsupported_item_type(
+    def test_project_scope_opencode_resolves(
         self,
         tmp_path: Path,
     ) -> None:
-        """PROJECT scope returns None for unsupported item type."""
-        project_dir = tmp_path / "myproject"
-        manager = TargetManager({})
-
-        # Windsurf only supports skills, not agents.
-        result = manager.get_target_dir_for_scope(
-            Platform.WINDSURF,
-            ItemType.AGENT,
-            Scope.PROJECT,
-            project_dir=project_dir,
-        )
-
-        assert result is None
-
-    def test_project_scope_all_platforms(self, tmp_path: Path) -> None:
-        """PROJECT scope resolves correctly for all platforms."""
+        """PROJECT scope resolves correctly for OpenCode."""
         project_dir = tmp_path / "project"
-        manager = TargetManager({})
+        manager = TargetManager(None)
 
-        # OpenCode: agents, skills, commands, plugins
         assert (
             manager.get_target_dir_for_scope(
                 Platform.OPENCODE, ItemType.AGENT, Scope.PROJECT, project_dir=project_dir
@@ -1442,34 +1064,4 @@ class TestGetTargetDirForScope:
                 Platform.OPENCODE, ItemType.SKILL, Scope.PROJECT, project_dir=project_dir
             )
             == project_dir / ".opencode" / "skill"
-        )
-
-        # Claude Code: agents, skills, commands, plugins
-        assert (
-            manager.get_target_dir_for_scope(
-                Platform.CLAUDE_CODE, ItemType.AGENT, Scope.PROJECT, project_dir=project_dir
-            )
-            == project_dir / ".claude" / "agents"
-        )
-        assert (
-            manager.get_target_dir_for_scope(
-                Platform.CLAUDE_CODE, ItemType.SKILL, Scope.PROJECT, project_dir=project_dir
-            )
-            == project_dir / ".claude" / "skills"
-        )
-
-        # Windsurf: skills only
-        assert (
-            manager.get_target_dir_for_scope(
-                Platform.WINDSURF, ItemType.SKILL, Scope.PROJECT, project_dir=project_dir
-            )
-            == project_dir / ".windsurf" / "skills"
-        )
-
-        # Cursor: skills only
-        assert (
-            manager.get_target_dir_for_scope(
-                Platform.CURSOR, ItemType.SKILL, Scope.PROJECT, project_dir=project_dir
-            )
-            == project_dir / ".cursor" / "skills"
         )

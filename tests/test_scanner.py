@@ -6,11 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from agentfiles.models import Item, ItemType, Platform, Scope, item_from_file
+from agentfiles.models import Item, ItemType, Platform, Scope
 from agentfiles.scanner import (
     _SCANNER_REGISTRY,
     SourceScanner,
-    _apply_platforms,
     _find_item_dirs,
     _is_in_scope_subdir,
     _register_scanner,
@@ -18,7 +17,6 @@ from agentfiles.scanner import (
     _scan_commands_dir,
     _scan_plugins_dir,
     _scan_skills_dir,
-    _ScannerEntry,
     _should_skip,
 )
 
@@ -129,53 +127,6 @@ class TestShouldSkip:
     @pytest.mark.parametrize("name", ["agent.md", "SKILL.md", "plugin.ts", "my-dir"])
     def test_do_not_skip_normal_names(self, name: str) -> None:
         assert _should_skip(name) is False
-
-
-# ---------------------------------------------------------------------------
-# _apply_platforms
-# ---------------------------------------------------------------------------
-
-
-class TestApplyPlatforms:
-    """Tests for _apply_platforms helper."""
-
-    def test_agents_get_both_platforms(self, tmp_path: Path) -> None:
-        _write_md(tmp_path, "test.md", _VALID_AGENT_MD)
-        item = item_from_file(tmp_path / "test.md", ItemType.AGENT)
-        result = _apply_platforms(item)
-        assert Platform.OPENCODE in result.supported_platforms
-        assert Platform.CLAUDE_CODE in result.supported_platforms
-
-    def test_commands_get_opencode_and_continue(self, tmp_path: Path) -> None:
-        _write_md(tmp_path, "test.md", _VALID_COMMAND_MD)
-        item = item_from_file(tmp_path / "test.md", ItemType.COMMAND)
-        result = _apply_platforms(item)
-        assert result.supported_platforms == (Platform.OPENCODE, Platform.CONTINUE)
-
-    def test_plugins_get_opencode_only(self, tmp_path: Path) -> None:
-        (tmp_path / "plugin.ts").write_text("export default {};", encoding="utf-8")
-        item = item_from_file(tmp_path / "plugin.ts", ItemType.PLUGIN)
-        result = _apply_platforms(item)
-        assert result.supported_platforms == (Platform.OPENCODE,)
-
-    def test_config_opencode_json_gets_opencode_only(self, tmp_path: Path) -> None:
-        (tmp_path / "opencode.json").write_text('{"model": "test"}', encoding="utf-8")
-        item = item_from_file(tmp_path / "opencode.json", ItemType.CONFIG)
-        result = _apply_platforms(item)
-        assert result.supported_platforms == (Platform.OPENCODE,)
-
-    def test_config_claude_json_gets_claude_code_only(self, tmp_path: Path) -> None:
-        (tmp_path / "claude.json").write_text('{"model": "test"}', encoding="utf-8")
-        item = item_from_file(tmp_path / "claude.json", ItemType.CONFIG)
-        result = _apply_platforms(item)
-        assert result.supported_platforms == (Platform.CLAUDE_CODE,)
-
-    def test_config_generic_name_keeps_all_platforms(self, tmp_path: Path) -> None:
-        (tmp_path / "settings.json").write_text('{"key": "value"}', encoding="utf-8")
-        item = item_from_file(tmp_path / "settings.json", ItemType.CONFIG)
-        result = _apply_platforms(item)
-        assert Platform.OPENCODE in result.supported_platforms
-        assert Platform.CLAUDE_CODE in result.supported_platforms
 
 
 # ---------------------------------------------------------------------------
@@ -602,20 +553,6 @@ class TestSourceScannerScan:
         items = scanner.scan_type(ItemType.AGENT)
         assert items == []
 
-    def test_scan_type_with_platform_filter(self, tmp_path: Path) -> None:
-        _make_source_dir(tmp_path, commands=["deploy.md"])
-        scanner = SourceScanner(tmp_path, platforms=(Platform.OPENCODE,))
-        items = scanner.scan_type(ItemType.COMMAND)
-        assert len(items) == 1
-
-    def test_scan_type_with_non_matching_platform(self, tmp_path: Path) -> None:
-        _make_source_dir(tmp_path, commands=["deploy.md"])
-        # Commands only support OPENCODE, so filtering for CLAUDE_CODE
-        # should yield nothing.
-        scanner = SourceScanner(tmp_path, platforms=(Platform.CLAUDE_CODE,))
-        items = scanner.scan_type(ItemType.COMMAND)
-        assert items == []
-
 
 # ---------------------------------------------------------------------------
 # SourceScanner.get_summary
@@ -709,13 +646,10 @@ class TestScannerRegistry:
         for item_type in ItemType:
             assert item_type in _SCANNER_REGISTRY, f"{item_type!r} missing from _SCANNER_REGISTRY"
 
-    def test_registry_entries_have_scanner_and_platforms(self) -> None:
-        """Each registry entry must be a _ScannerEntry with both fields."""
-        for item_type, entry in _SCANNER_REGISTRY.items():
-            assert isinstance(entry, _ScannerEntry), f"{item_type!r} entry is not a _ScannerEntry"
-            assert callable(entry.scanner), f"{item_type!r} scanner is not callable"
-            assert isinstance(entry.platforms, tuple), f"{item_type!r} platforms not a tuple"
-            assert len(entry.platforms) > 0, f"{item_type!r} has no platforms"
+    def test_registry_entries_are_callable(self) -> None:
+        """Each registry entry must be a callable scanner function."""
+        for item_type, scanner in _SCANNER_REGISTRY.items():
+            assert callable(scanner), f"{item_type!r} scanner is not callable"
 
     def test_register_scanner_adds_entry(self) -> None:
         """_register_scanner should add a new entry to the registry."""
@@ -731,35 +665,16 @@ class TestScannerRegistry:
         _register_scanner(
             ItemType.AGENT,  # Re-register an existing type for testing
             _dummy_scanner,
-            (Platform.OPENCODE,),
         )
 
-        assert _SCANNER_REGISTRY[ItemType.AGENT].scanner is _dummy_scanner
-        assert _SCANNER_REGISTRY[ItemType.AGENT].platforms == (Platform.OPENCODE,)
+        assert _SCANNER_REGISTRY[ItemType.AGENT] is _dummy_scanner
 
         # Restore original scanner.
         _register_scanner(
             ItemType.AGENT,
             _scan_agents_dir,
-            (Platform.OPENCODE, Platform.CLAUDE_CODE),
         )
         assert len(_SCANNER_REGISTRY) == original_len
-
-    def test_platforms_consistent_with_apply_platforms(self, tmp_path: Path) -> None:
-        """_apply_platforms must use the same platforms as the registry entry."""
-        _write_md(tmp_path, "test.md", _VALID_AGENT_MD)
-        for item_type in ItemType:
-            item = Item(
-                item_type=item_type,
-                name="test",
-                source_path=tmp_path / "test.md",
-                files=("test.md",),
-            )
-            result = _apply_platforms(item)
-            expected = _SCANNER_REGISTRY[item_type].platforms
-            assert result.supported_platforms == expected, (
-                f"{item_type!r}: _apply_platforms mismatch"
-            )
 
 
 # ---------------------------------------------------------------------------
@@ -1522,49 +1437,15 @@ class TestScandirSorted:
 
 
 # ---------------------------------------------------------------------------
-# Platform filtering edge cases
+# Platform assignment
 # ---------------------------------------------------------------------------
 
 
-class TestPlatformFiltering:
-    """Tests for SourceScanner platform filtering."""
+class TestPlatformAssignment:
+    """Tests for platform assignment on discovered items."""
 
-    def test_skills_available_on_all_registered_platforms(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """Skills are registered for OPENCODE, CLAUDE_CODE, WINDSURF, CURSOR."""
-        d = tmp_path / "skills" / "multi-platform"
-        d.mkdir(parents=True)
-        (d / "SKILL.md").write_text(
-            "---\nname: multi\n---\nbody",
-            encoding="utf-8",
-        )
-
-        for platform in (
-            Platform.OPENCODE,
-            Platform.CLAUDE_CODE,
-            Platform.WINDSURF,
-            Platform.CURSOR,
-        ):
-            scanner = SourceScanner(tmp_path, platforms=(platform,))
-            items = scanner.scan_type(ItemType.SKILL)
-            assert len(items) == 1, f"Skill not found for platform {platform}"
-
-    def test_commands_not_available_on_non_opencode_platforms(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """Commands are OPENCODE-only, filtering by other platforms yields []."""
-        _write_md(tmp_path / "commands", "test.md", _VALID_COMMAND_MD)
-
-        for platform in (Platform.CLAUDE_CODE, Platform.WINDSURF, Platform.CURSOR):
-            scanner = SourceScanner(tmp_path, platforms=(platform,))
-            items = scanner.scan_type(ItemType.COMMAND)
-            assert items == [], f"Commands should not match platform {platform}"
-
-    def test_no_platform_filter_includes_all(self, tmp_path: Path) -> None:
-        """When platforms=None, all items are included regardless of type."""
+    def test_all_items_get_opencode_platform(self, tmp_path: Path) -> None:
+        """All discovered items receive OPENCODE platform."""
         _make_source_dir(
             tmp_path,
             agents=["a.md"],
@@ -1572,10 +1453,12 @@ class TestPlatformFiltering:
             commands=["c.md"],
             plugins=["p.ts"],
         )
-        scanner = SourceScanner(tmp_path, platforms=None)
+        scanner = SourceScanner(tmp_path)
         items = scanner.scan()
-        types = {i.item_type for i in items}
-        assert types == {ItemType.AGENT, ItemType.SKILL, ItemType.COMMAND, ItemType.PLUGIN}
+        for item in items:
+            assert item.supported_platforms == (Platform.OPENCODE,), (
+                f"{item.item_type!r} item '{item.name}' has wrong platforms"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -1793,16 +1676,15 @@ class TestScopeAwareScanning:
         types = {i.item_type for i in items}
         assert types == {ItemType.AGENT, ItemType.SKILL, ItemType.COMMAND, ItemType.PLUGIN}
 
-    def test_scope_combined_with_platform_filter(self, tmp_path: Path) -> None:
-        """Scope and platform filters work together."""
+    def test_scope_filter_with_project_scope(self, tmp_path: Path) -> None:
+        """Scope filter correctly returns project-scoped items."""
         agents_dir = tmp_path / "agents"
         agents_dir.mkdir()
         project_dir = agents_dir / "project"
         project_dir.mkdir()
         _write_md(project_dir, "coder.md", _VALID_AGENT_MD)
 
-        # Agents support OPENCODE + CLAUDE_CODE
-        scanner = SourceScanner(tmp_path, platforms=(Platform.OPENCODE,), scope=Scope.PROJECT)
+        scanner = SourceScanner(tmp_path, scope=Scope.PROJECT)
         items = scanner.scan_type(ItemType.AGENT)
         assert len(items) == 1
         assert items[0].scope == Scope.PROJECT
