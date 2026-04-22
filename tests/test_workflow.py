@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from agentfiles.models import ItemType, Platform
+from agentfiles.models import ItemType
 from agentfiles.scanner import (
     _SCANNER_REGISTRY,
     SourceScanner,
@@ -167,6 +167,4 @@ def test_source_scanner_workflow_platforms(tmp_path: Path) -> None:
 
     workflow_items = [i for i in items if i.item_type == ItemType.WORKFLOW]
     assert len(workflow_items) == 1
-    platforms = set(workflow_items[0].supported_platforms)
-    expected = {Platform.OPENCODE}
-    assert platforms == expected
+    assert workflow_items[0].name == "my-workflow"

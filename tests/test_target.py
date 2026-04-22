@@ -10,7 +10,7 @@ from unittest import mock
 
 import pytest
 
-from agentfiles.models import Item, ItemType, Platform, Scope, TargetError, TargetPaths
+from agentfiles.models import Item, ItemType, TARGET_PLATFORM, Scope, TargetError, TargetPaths
 from agentfiles.target import (
     TargetDiscovery,
     TargetManager,
@@ -55,7 +55,7 @@ class TestTargetDiscoveryDiscover:
             result = TargetDiscovery().discover()
 
         assert result is not None
-        assert result.platform == Platform.OPENCODE
+        assert result.platform == TARGET_PLATFORM
         assert result.is_valid
         assert result.config_dir == fake_home.opencode.resolve()
 
@@ -77,7 +77,7 @@ class TestTargetDiscoveryDiscover:
             targets = TargetDiscovery().discover_all()
 
         assert targets is not None
-        assert targets.platform == Platform.OPENCODE
+        assert targets.platform == TARGET_PLATFORM
 
     def test_discover_all_skips_missing(self, tmp_path: Path) -> None:
         with (
@@ -172,7 +172,7 @@ def _make_item(
         item_type=item_type,
         name=name,
         source_path=Path("/src") / f"{name}{ext}",
-            )
+    )
 
 
 class TestTargetManager:
@@ -310,7 +310,7 @@ class TestBuildTargetManager:
             manager = build_target_manager()
 
         assert manager.targets is not None
-        assert manager.targets.platform == Platform.OPENCODE
+        assert manager.targets.platform == TARGET_PLATFORM
 
     def test_applies_custom_paths(self, fake_home: SimpleNamespace) -> None:
         """Custom paths override discovered platform directories."""
@@ -343,7 +343,7 @@ class TestBuildTargetManager:
 
         # Auto-discovered opencode should still be present
         assert manager.targets is not None
-        assert manager.targets.platform == Platform.OPENCODE
+        assert manager.targets.platform == TARGET_PLATFORM
 
     def test_skips_nonexistent_custom_path(
         self,
@@ -801,7 +801,6 @@ class TestInstalledItemsEdgeCases:
         bare_oc.mkdir()
 
         targets = TargetPaths(
-            platform=Platform.OPENCODE,
             config_dir=bare_oc,
             subdirs={
                 "agents": bare_oc / "agent",  # does not exist
@@ -817,7 +816,6 @@ class TestInstalledItemsEdgeCases:
         from agentfiles.models import TargetPaths
 
         targets = TargetPaths(
-            platform=Platform.OPENCODE,
             config_dir=Path("/fake"),
             subdirs={"skills": Path("/fake/skill")},
         )
@@ -936,7 +934,8 @@ class TestGetTargetDirForScope:
             targets = TargetDiscovery().discover_all()
 
         manager = TargetManager(targets)
-        result = manager.get_target_dir_for_scope(ItemType.AGENT,
+        result = manager.get_target_dir_for_scope(
+            ItemType.AGENT,
             Scope.GLOBAL,
         )
 
@@ -948,7 +947,8 @@ class TestGetTargetDirForScope:
         manager = TargetManager(None)
 
         with pytest.raises(TargetError, match="OpenCode has not been discovered"):
-            manager.get_target_dir_for_scope(ItemType.AGENT,
+            manager.get_target_dir_for_scope(
+                ItemType.AGENT,
                 Scope.GLOBAL,
             )
 
@@ -957,7 +957,8 @@ class TestGetTargetDirForScope:
         project_dir = tmp_path / "myproject"
         manager = TargetManager(None)  # No global targets is fine.
 
-        result = manager.get_target_dir_for_scope(ItemType.AGENT,
+        result = manager.get_target_dir_for_scope(
+            ItemType.AGENT,
             Scope.PROJECT,
             project_dir=project_dir,
         )
@@ -972,11 +973,13 @@ class TestGetTargetDirForScope:
         project_dir = tmp_path / "myproject"
         manager = TargetManager(None)
 
-        project_result = manager.get_target_dir_for_scope(ItemType.SKILL,
+        project_result = manager.get_target_dir_for_scope(
+            ItemType.SKILL,
             Scope.PROJECT,
             project_dir=project_dir,
         )
-        local_result = manager.get_target_dir_for_scope(ItemType.SKILL,
+        local_result = manager.get_target_dir_for_scope(
+            ItemType.SKILL,
             Scope.LOCAL,
             project_dir=project_dir,
         )
@@ -993,7 +996,8 @@ class TestGetTargetDirForScope:
         # Don't create any directories.
         manager = TargetManager(None)
 
-        result = manager.get_target_dir_for_scope(ItemType.SKILL,
+        result = manager.get_target_dir_for_scope(
+            ItemType.SKILL,
             Scope.PROJECT,
             project_dir=project_dir,
         )
@@ -1005,7 +1009,8 @@ class TestGetTargetDirForScope:
         """PROJECT scope returns None when project_dir is not provided."""
         manager = TargetManager(None)
 
-        result = manager.get_target_dir_for_scope(ItemType.SKILL,
+        result = manager.get_target_dir_for_scope(
+            ItemType.SKILL,
             Scope.PROJECT,
             project_dir=None,
         )
@@ -1020,7 +1025,8 @@ class TestGetTargetDirForScope:
         project_dir = tmp_path / "myproject"
         manager = TargetManager(None)
 
-        result = manager.get_target_dir_for_scope(ItemType.CONFIG,
+        result = manager.get_target_dir_for_scope(
+            ItemType.CONFIG,
             Scope.PROJECT,
             project_dir=project_dir,
         )
@@ -1036,12 +1042,10 @@ class TestGetTargetDirForScope:
         manager = TargetManager(None)
 
         assert (
-            manager.get_target_dir_for_scope(ItemType.AGENT, Scope.PROJECT, project_dir=project_dir
-            )
+            manager.get_target_dir_for_scope(ItemType.AGENT, Scope.PROJECT, project_dir=project_dir)
             == project_dir / ".opencode" / "agent"
         )
         assert (
-            manager.get_target_dir_for_scope(ItemType.SKILL, Scope.PROJECT, project_dir=project_dir
-            )
+            manager.get_target_dir_for_scope(ItemType.SKILL, Scope.PROJECT, project_dir=project_dir)
             == project_dir / ".opencode" / "skill"
         )

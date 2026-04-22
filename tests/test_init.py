@@ -26,7 +26,7 @@ from agentfiles.models import (
     AgentfilesError,
     Item,
     ItemType,
-    Platform,
+    TARGET_PLATFORM,
     TargetPaths,
     TokenEstimate,
 )
@@ -769,7 +769,7 @@ class TestDiscoverInstalledFromTargets:
         )
         # Single item
         assert len(items) == 1
-        assert Platform.OPENCODE in items[0].supported_platforms
+        assert items[0].name == "coder"
 
 
 # ---------------------------------------------------------------------------
@@ -790,9 +790,7 @@ class TestResolvePlatformFor:
     def test_finds_matching_platform(self, tmp_path: Path) -> None:
         target_dir = tmp_path / "agent"
         target_dir.mkdir()
-        tp = TargetPaths(
-            platform=Platform.OPENCODE, config_dir=tmp_path, subdirs={"agents": target_dir}
-        )
+        tp = TargetPaths(config_dir=tmp_path, subdirs={"agents": target_dir})
         tm = self._make_target_manager(tp)
 
         result = tm.owns_target_dir(ItemType.AGENT, target_dir)
@@ -801,9 +799,7 @@ class TestResolvePlatformFor:
     def test_returns_none_when_no_match(self, tmp_path: Path) -> None:
         other_dir = tmp_path / "other"
         other_dir.mkdir()
-        tp = TargetPaths(
-            platform=Platform.OPENCODE, config_dir=tmp_path, subdirs={"agents": other_dir}
-        )
+        tp = TargetPaths(config_dir=tmp_path, subdirs={"agents": other_dir})
         tm = self._make_target_manager(tp)
 
         result = tm.owns_target_dir(ItemType.AGENT, tmp_path / "agents")

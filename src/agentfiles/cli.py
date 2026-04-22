@@ -82,7 +82,6 @@ if TYPE_CHECKING:
     from agentfiles.models import (
         Item,
         ItemType,
-        Platform,
         Scope,
         SyncPlan,
         SyncResult,
@@ -541,7 +540,7 @@ def _build_context(
 def _filter_items_by_installed(
     items: list[Item],
     target_manager: TargetManager,
-    platforms: list[Platform],
+    platforms: list[str],
     *,
     installed: bool,
 ) -> list[Item]:
@@ -573,7 +572,7 @@ def _filter_items_by_installed(
 
 def _discover_installed_from_targets(
     target_manager: TargetManager,
-    platforms: list[Platform],
+    platforms: list[str],
     item_types: list[ItemType],
 ) -> list[Item]:
     """Discover installed items directly from target platforms.
@@ -647,8 +646,8 @@ def _discover_installed_from_targets(
 def _run_pull_interactive(
     items: list[Item],
     target_manager: TargetManager,
-    platforms: list[Platform],
-) -> tuple[list[Item], list[Platform], str] | None:
+    platforms: list[str],
+) -> tuple[list[Item], list[str], str] | None:
     """Run an interactive pull session to let the user choose what to install.
 
     Presents a mode chooser (``full``, ``install``, ``update``, ``custom``)
@@ -938,9 +937,9 @@ def cmd_pull(args: argparse.Namespace) -> int:
     items = _filter_items(all_items, ctx.item_types)
     items = _filter_items_by_scope(items, ctx.scopes)
 
-    from agentfiles.models import Platform
+    from agentfiles.models import TARGET_PLATFORM
 
-    platforms = [Platform.OPENCODE]
+    platforms = [TARGET_PLATFORM]
 
     # Apply --only / --except item-name filters
     items = _apply_item_filter(items, ctx.only_set, ctx.except_set)
@@ -1235,9 +1234,9 @@ def cmd_push(args: argparse.Namespace) -> int:
 
     item_types = _resolve_item_types(args.item_type)
 
-    from agentfiles.models import Platform
+    from agentfiles.models import TARGET_PLATFORM
 
-    platforms = [Platform.OPENCODE]
+    platforms = [TARGET_PLATFORM]
 
     # Discover items from target platforms, not from the source scanner.
     installed_items = _discover_installed_from_targets(
@@ -1280,13 +1279,15 @@ def cmd_push(args: argparse.Namespace) -> int:
         target_manager,
     )
 
+    from agentfiles.models import TARGET_PLATFORM_DISPLAY
+
     skip_keys: set[str] = set()
     if conflicts:
         if args.non_interactive:
             # Non-interactive mode: skip conflicts and warn.
             for c in conflicts:
                 warning(
-                    f"Conflict: {c.item.item_key} on {c.platform.display_name} "
+                    f"Conflict: {c.item.item_key} on {TARGET_PLATFORM_DISPLAY} "
                     f"— both source and target changed. Skipping."
                 )
                 skip_keys.add(c.item.item_key)
@@ -1296,7 +1297,6 @@ def cmd_push(args: argparse.Namespace) -> int:
                 (
                     c.item.item_key,
                     c.item.item_type.value,
-                    c.platform.display_name,
                     c.source_path,
                     c.target_path,
                 )
@@ -1466,6 +1466,8 @@ def cmd_status(args: argparse.Namespace) -> int:
     if fmt == "json":
         return _format_status_json(target_manager, summary)
 
+    from agentfiles.models import TARGET_PLATFORM_DISPLAY
+
     headers = ["Platform", "Path", "Agents", "Skills", "Commands", "Plugins"]
     rows: list[list[str]] = []
 
@@ -1473,7 +1475,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     if targets is not None:
         rows.append(
             [
-                Platform.OPENCODE.display_name,
+                TARGET_PLATFORM_DISPLAY,
                 str(targets.config_dir),
                 str(summary.get("agents", 0)),
                 str(summary.get("skills", 0)),
@@ -1523,9 +1525,9 @@ def cmd_clean(args: argparse.Namespace) -> int:
     target_manager = _discover_targets(config)
     item_types = _resolve_item_types(args.item_type)
 
-    from agentfiles.models import Platform
+    from agentfiles.models import TARGET_PLATFORM
 
-    platforms = [Platform.OPENCODE]
+    platforms = [TARGET_PLATFORM]
 
     # Discover all installed items across target platforms.
     installed_items = _discover_installed_from_targets(
@@ -1703,12 +1705,6 @@ def _update_sync_state_from_results(
 
         plan = result.plan
         item = plan.item
-        platform = target_manager.resolve_platform_for(
-            item.item_type,
-            plan.target_dir,
-        )
-        if platform is None:
-            continue
 
         item_key = item.item_key
         state.items[item_key] = ItemState(

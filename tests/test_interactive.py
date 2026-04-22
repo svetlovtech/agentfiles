@@ -21,7 +21,6 @@ from agentfiles.models import (
     DiffStatus,
     Item,
     ItemType,
-    Platform,
     SyncAction,
     SyncPlan,
 )

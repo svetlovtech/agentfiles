@@ -9,7 +9,7 @@ from unittest import mock
 import pytest
 
 from agentfiles.cli import _COMMAND_MAP, build_parser, cmd_pull
-from agentfiles.models import ItemType, Platform
+from agentfiles.models import ItemType
 from tests.conftest import make_args, make_item
 
 # ---------------------------------------------------------------------------

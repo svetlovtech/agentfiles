@@ -13,8 +13,8 @@ from agentfiles.frontmatter import (
 )
 from agentfiles.models import (
     CHARS_PER_TOKEN,
-    PLATFORM_ALIASES,
-    PLATFORM_NAMES,
+    TARGET_PLATFORM,
+    TARGET_PLATFORM_DISPLAY,
     AgentfilesError,
     ConfigError,
     DiffEntry,
@@ -23,7 +23,6 @@ from agentfiles.models import (
     ItemMeta,
     ItemState,
     ItemType,
-    Platform,
     SourceError,
     SourceInfo,
     SourceType,
@@ -131,38 +130,18 @@ class TestItemType:
         assert len(ItemType) == 6
 
 
-class TestPlatform:
-    """Tests for Platform enum."""
+class TestPlatformConstants:
+    """Tests for platform string constants."""
 
-    def test_values(self) -> None:
-        assert Platform.OPENCODE.value == "opencode"
+    def test_target_platform_value(self) -> None:
+        assert TARGET_PLATFORM == "opencode"
 
-    def test_display_name_property(self) -> None:
-        assert Platform.OPENCODE.display_name == "OpenCode"
-
-    def test_member_count(self) -> None:
-        assert len(Platform) == 1
+    def test_target_platform_display_value(self) -> None:
+        assert TARGET_PLATFORM_DISPLAY == "OpenCode"
 
 
 class TestPlatformRegistry:
-    """Tests for PLATFORM_ALIASES, PLATFORM_NAMES, and resolve_platform."""
-
-    def test_platform_names_covers_all_enum_values(self) -> None:
-        assert frozenset(p.value for p in Platform) == PLATFORM_NAMES
-
-    def test_platform_names_contains_canonical_names(self) -> None:
-        assert "opencode" in PLATFORM_NAMES
-
-    def test_all_canonical_names_are_in_aliases(self) -> None:
-        for name in PLATFORM_NAMES:
-            assert name in PLATFORM_ALIASES
-            assert PLATFORM_ALIASES[name] == name
-
-    def test_aliases_map_to_valid_platforms(self) -> None:
-        for alias, canonical in PLATFORM_ALIASES.items():
-            assert canonical in PLATFORM_NAMES, (
-                f"Alias {alias!r} maps to unknown platform {canonical!r}"
-            )
+    """Tests for resolve_platform and alias resolution."""
 
     def test_resolve_canonical_names(self) -> None:
         assert resolve_platform("opencode") == "opencode"
@@ -184,15 +163,15 @@ class TestPlatformRegistry:
         assert resolve_platform("\toc\n") == "opencode"
 
     def test_resolve_unknown_raises(self) -> None:
-        with pytest.raises(ValueError, match="unknown platform"):
+        with pytest.raises(ValueError, match="Unknown platform"):
             resolve_platform("unknown_platform")
 
     def test_resolve_empty_raises(self) -> None:
-        with pytest.raises(ValueError, match="unknown platform"):
+        with pytest.raises(ValueError, match="Unknown platform"):
             resolve_platform("")
 
     def test_resolve_nonexistent_alias_raises(self) -> None:
-        with pytest.raises(ValueError, match="unknown platform"):
+        with pytest.raises(ValueError, match="Unknown platform"):
             resolve_platform("vscode")
 
 
@@ -305,7 +284,6 @@ class TestItem:
         assert item.meta is None
         assert item.version == "1.0.0"
         assert item.files == ()
-        assert item.supported_platforms == (Platform.OPENCODE,)
 
     def test_full_creation(self) -> None:
         meta = ItemMeta(name="full", version="3.0.0")
@@ -321,7 +299,6 @@ class TestItem:
         assert item.meta is meta
         assert item.version == "3.0.0"
         assert item.files == ("SKILL.md", "refs.yaml")
-        assert item.supported_platforms == (Platform.OPENCODE,)
 
     def test_frozen_immutability(self) -> None:
         item = Item(item_type=ItemType.AGENT, name="x", source_path=Path("/x"))
@@ -349,15 +326,14 @@ class TestTargetPaths:
     """Tests for TargetPaths data class."""
 
     def test_defaults(self) -> None:
-        tp = TargetPaths(platform=Platform.OPENCODE, config_dir=Path("/cfg"))
-        assert tp.platform == Platform.OPENCODE
+        tp = TargetPaths(config_dir=Path("/cfg"))
+        assert tp.platform == TARGET_PLATFORM
         assert tp.config_dir == Path("/cfg")
         assert tp.subdirs == {}
         assert tp.config_file is None
 
     def test_subdir_for_known_key(self, tmp_path: Path) -> None:
         tp = TargetPaths(
-            platform=Platform.OPENCODE,
             config_dir=tmp_path,
             subdirs={"agents": tmp_path / "agent"},
         )
@@ -365,12 +341,12 @@ class TestTargetPaths:
         assert result == tmp_path / "agent"
 
     def test_subdir_for_unknown_key_falls_back(self, tmp_path: Path) -> None:
-        tp = TargetPaths(platform=Platform.OPENCODE, config_dir=tmp_path)
+        tp = TargetPaths(config_dir=tmp_path)
         result = tp.subdir_for(ItemType.AGENT)
         assert result == tmp_path / "agents"
 
     def test_frozen_immutability(self) -> None:
-        tp = TargetPaths(platform=Platform.OPENCODE, config_dir=Path("/cfg"))
+        tp = TargetPaths(config_dir=Path("/cfg"))
         with pytest.raises(AttributeError):
             tp.config_dir = Path("/other")  # type: ignore[misc]
 
@@ -1168,15 +1144,15 @@ class TestPlatformResolutionEdgeCases:
     )
     def test_whitespace_only_input_raises(self, input_val: str) -> None:
         """Whitespace-only input is treated as unknown platform."""
-        with pytest.raises(ValueError, match="unknown platform"):
+        with pytest.raises(ValueError, match="Unknown platform"):
             resolve_platform(input_val)
 
 
 class TestPlatformDisplayNames:
-    """Tests for Platform.display_name values."""
+    """Tests for TARGET_PLATFORM_DISPLAY constant."""
 
     def test_display_name(self) -> None:
-        assert Platform.OPENCODE.display_name == "OpenCode"
+        assert TARGET_PLATFORM_DISPLAY == "OpenCode"
 
 
 # ---------------------------------------------------------------------------
@@ -1323,11 +1299,11 @@ class TestTargetPathsIsValid:
     """Tests for TargetPaths.is_valid property."""
 
     def test_valid_when_dir_exists(self, tmp_path: Path) -> None:
-        tp = TargetPaths(platform=Platform.OPENCODE, config_dir=tmp_path)
+        tp = TargetPaths(config_dir=tmp_path)
         assert tp.is_valid is True
 
     def test_invalid_when_dir_does_not_exist(self) -> None:
-        tp = TargetPaths(platform=Platform.OPENCODE, config_dir=Path("/nonexistent/dir"))
+        tp = TargetPaths(config_dir=Path("/nonexistent/dir"))
         assert tp.is_valid is False
 
 

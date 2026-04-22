@@ -28,7 +28,7 @@ Data flow::
     scanner.py         Walks source dirs → list[Item]
          │
          ▼
-    differ.py          Compares source vs installed → dict[Platform, list[DiffEntry]]
+    differ.py          Compares source vs installed → list[DiffEntry]
          │
          ▼
     engine.py          Plans actions (INSTALL/UPDATE/UNINSTALL/SKIP)
@@ -39,7 +39,7 @@ Data flow::
 
 Key Modules
 -----------
-models    Data models, enums, exceptions (Item, DiffEntry, SyncPlan, Platform, ItemType)
+models    Data models, enums, exceptions (Item, DiffEntry, SyncPlan, ItemType)
 source    Source detection and resolution (local dir, git URL, git repo)
 scanner   Convention-based directory scanner with registry pattern for item types
 differ    Three-stage comparison: existence → metadata → SHA-256 checksum
@@ -100,7 +100,8 @@ _EXPORT_MAP: dict[str, tuple[str, str]] = {
     "ItemMeta": ("agentfiles.models", "ItemMeta"),
     "ItemState": ("agentfiles.models", "ItemState"),
     "ItemType": ("agentfiles.models", "ItemType"),
-    "Platform": ("agentfiles.models", "Platform"),
+    "TARGET_PLATFORM": ("agentfiles.models", "TARGET_PLATFORM"),
+    "TARGET_PLATFORM_DISPLAY": ("agentfiles.models", "TARGET_PLATFORM_DISPLAY"),
     "SourceError": ("agentfiles.models", "SourceError"),
     "SourceInfo": ("agentfiles.models", "SourceInfo"),
     "SourceType": ("agentfiles.models", "SourceType"),
@@ -153,7 +154,8 @@ __all__ = [
     # Enums
     "DiffStatus",
     "ItemType",
-    "Platform",
+    "TARGET_PLATFORM",
+    "TARGET_PLATFORM_DISPLAY",
     "SourceType",
     "SyncAction",
     # Data models

@@ -30,7 +30,6 @@ from agentfiles.models import (
     DiffStatus,
     Item,
     ItemType,
-    Platform,
     SyncAction,
     SyncPlan,
 )
@@ -479,7 +478,7 @@ class InteractiveSession:
     **Selection prompts** — used by pull/push commands::
 
         choose_sync_mode()      → str              # cmd_pull
-        select_platforms(...)   → list[Platform]   # cmd_pull (no-op)
+        select_platforms(...)   → list[str]         # cmd_pull (no-op)
         select_item_types()     → list[ItemType]   # cmd_pull
         select_items(...)       → list[Item]       # cmd_pull, cmd_push
 
@@ -558,7 +557,7 @@ class InteractiveSession:
 
     # -- public API: selection prompts -------------------------------------
 
-    def select_platforms(self, available: list[Platform]) -> list[Platform]:
+    def select_platforms(self, available: list[str]) -> list[str]:
         """Return all available platforms unchanged.
 
         Since only OpenCode is supported, platform selection is a no-op.

@@ -74,7 +74,7 @@ from agentfiles.models import (
     AgentfilesError,
     Item,
     ItemType,
-    Platform,
+    TARGET_PLATFORM,
     Scope,
     SourceError,
     item_from_directory,
@@ -630,7 +630,7 @@ def _scan_plugins_dir(
             continue
 
         # OpenCode subdirectory (e.g. plugins/opencode/)
-        if entry.is_dir() and entry.name == Platform.OPENCODE.value:
+        if entry.is_dir() and entry.name == TARGET_PLATFORM:
             for sub_entry in _scandir_sorted(child):
                 if _should_skip(sub_entry.name):
                     continue

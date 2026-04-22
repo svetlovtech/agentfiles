@@ -20,6 +20,8 @@ from pathlib import Path
 
 import yaml
 
+from agentfiles.models import TARGET_PLATFORM_DISPLAY
+
 logger = logging.getLogger(__name__)
 
 
@@ -243,7 +245,7 @@ def run_doctor(
     if discovered is not None:
         report.results.append(
             _check_platform_dir(
-                discovered.platform.display_name,
+                TARGET_PLATFORM_DISPLAY,
                 discovered.config_dir,
             )
         )

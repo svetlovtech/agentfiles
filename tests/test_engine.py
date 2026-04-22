@@ -14,7 +14,6 @@ from agentfiles.engine import SyncEngine, SyncReport, SyncTarget, _copy_item, _r
 from agentfiles.models import (
     Item,
     ItemType,
-    Platform,
     SyncAction,
     SyncPlan,
     SyncResult,
@@ -71,7 +70,7 @@ def _make_dir_item(
         name=name,
         source_path=src,
         files=("SKILL.md",) if item_type == ItemType.SKILL else (),
-            )
+    )
 
 
 def _make_file_item(
@@ -86,7 +85,7 @@ def _make_file_item(
         name=name,
         source_path=src,
         files=(f"{name}.md",),
-            )
+    )
 
 
 # ---------------------------------------------------------------------------

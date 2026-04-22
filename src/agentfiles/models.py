@@ -18,7 +18,6 @@ into installation plans::
     Item                A single syncable unit (agent, skill, command, plugin).
     ├── ItemMeta        Frontmatter metadata (name, description, version, …).
     ├── ItemType        Category enum (AGENT, SKILL, COMMAND, PLUGIN).
-    └── Platform        Target platform enum.
         │
         ▼
     SyncPlan            Planned action (install / update / skip) for one item.
@@ -67,13 +66,13 @@ __all__ = [
     # Enumerations
     "DiffStatus",
     "ItemType",
-    "Platform",
-    "PLATFORM_ALIASES",
-    "PLATFORM_NAMES",
     "Scope",
     "SourceType",
     "SyncAction",
     "SyncDirection",
+    # Platform constants
+    "TARGET_PLATFORM",
+    "TARGET_PLATFORM_DISPLAY",
     # Data models
     "DiffEntry",
     "Item",
@@ -195,56 +194,42 @@ class ItemType(Enum):
         return self in (ItemType.AGENT, ItemType.COMMAND, ItemType.PLUGIN, ItemType.CONFIG)
 
 
-class Platform(Enum):
-    """Target platform for installation.
+TARGET_PLATFORM: Final = "opencode"
+"""Canonical platform identifier — the only supported target."""
 
-    Currently only OpenCode is supported.
-    """
-
-    OPENCODE = "opencode"
-
-    @property
-    def display_name(self) -> str:
-        """Human-readable platform name for UI output."""
-        return "OpenCode"
+TARGET_PLATFORM_DISPLAY: Final = "OpenCode"
+"""Human-readable platform name for UI output."""
 
 
 # ---------------------------------------------------------------------------
-# Platform registry — single source of truth for name resolution
+# Platform name resolution
 # ---------------------------------------------------------------------------
 
-PLATFORM_ALIASES: dict[str, str] = {
-    "oc": "opencode",
-    "opencode": "opencode",
-    "open-code": "opencode",
-    "open_code": "opencode",
-}
-
-PLATFORM_NAMES: frozenset[str] = frozenset(p.value for p in Platform)
+_OPENCODE_ALIASES: Final[frozenset[str]] = frozenset(
+    {"opencode", "oc", "open-code", "open_code"},
+)
 
 
 def resolve_platform(name: str) -> str:
     """Normalize a platform name or alias to its canonical value.
 
-    Looks up *name* (case-insensitive) in :data:`PLATFORM_ALIASES` and
-    returns the canonical platform value string.
+    Accepts ``"opencode"`` and common aliases (``"oc"``, ``"open-code"``,
+    ``"open_code"``), returning the canonical ``TARGET_PLATFORM`` string.
 
     Args:
         name: Platform name or alias (case-insensitive).
 
     Returns:
-        Canonical platform value string (always ``"opencode"``).
+        Canonical platform value string (always :data:`TARGET_PLATFORM`).
 
     Raises:
         ValueError: When *name* is not a recognized platform or alias.
 
     """
-    key = name.lower().strip()
-    canonical = PLATFORM_ALIASES.get(key)
-    if canonical is None:
-        valid = ", ".join(sorted(PLATFORM_ALIASES.keys()))
-        raise ValueError(f"unknown platform: {name!r}. Valid names and aliases: {valid}")
-    return canonical
+    n = name.lower().strip()
+    if n in _OPENCODE_ALIASES:
+        return TARGET_PLATFORM
+    raise ValueError(f"Unknown platform: {name!r}. Only 'opencode' is supported.")
 
 
 class SyncAction(Enum):
@@ -427,7 +412,6 @@ class Item:
         meta: Parsed frontmatter metadata, if available.
         version: Semantic version (defaults to ``"1.0.0"``).
         files: All file paths (relative to *source_path*) in the item.
-        supported_platforms: Which platforms this item supports.
 
     """
 
@@ -437,7 +421,6 @@ class Item:
     meta: ItemMeta | None = None
     version: str = _DEFAULT_VERSION
     files: tuple[str, ...] = ()
-    supported_platforms: tuple[Platform, ...] = (Platform.OPENCODE,)
     scope: Scope = Scope.GLOBAL
 
     # -- derived keys / sorting ---------------------------------------------
@@ -476,8 +459,8 @@ class TargetPaths:
 
     """
 
-    platform: Platform
     config_dir: Path
+    platform: str = TARGET_PLATFORM
     subdirs: dict[str, Path] = field(default_factory=dict)
     config_file: Path | None = None
 

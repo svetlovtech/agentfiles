@@ -20,7 +20,7 @@ from agentfiles.engine import SyncReport
 from agentfiles.models import (
     Item,
     ItemType,
-    Platform,
+    TARGET_PLATFORM,
     SyncAction,
     SyncPlan,
     SyncResult,
@@ -42,7 +42,7 @@ def _make_item(
         source_path=Path(f"/fake/{item_type.plural}/{name}.md"),
         version="1.0.0",
         files=("file.md",),
-            )
+    )
 
 
 def _make_plan(
@@ -89,7 +89,7 @@ class TestFormatStatusJson:
         """JSON output has item type counts and total_items."""
         target_manager = MagicMock()
         target_manager.targets = MagicMock(
-            platform=Platform.OPENCODE,
+            platform=TARGET_PLATFORM,
             config_dir=Path("/oc"),
         )
         summary = {"agents": 3, "skills": 5, "commands": 2, "plugins": 1}
@@ -107,7 +107,7 @@ class TestFormatStatusJson:
         """Output has agents, skills, commands, plugins, and total."""
         target_manager = MagicMock()
         target_manager.targets = MagicMock(
-            platform=Platform.OPENCODE,
+            platform=TARGET_PLATFORM,
             config_dir=Path("/oc"),
         )
         summary = {"agents": 3, "skills": 5, "commands": 2, "plugins": 1}
@@ -128,7 +128,7 @@ class TestFormatStatusJson:
         """Missing item types default to 0 in the output."""
         target_manager = MagicMock()
         target_manager.targets = MagicMock(
-            platform=Platform.OPENCODE,
+            platform=TARGET_PLATFORM,
             config_dir=Path("/oc"),
         )
         summary = {}
@@ -381,7 +381,7 @@ class TestJsonValidity:
         """Status JSON has no trailing commas."""
         target_manager = MagicMock()
         target_manager.targets = MagicMock(
-            platform=Platform.OPENCODE,
+            platform=TARGET_PLATFORM,
             config_dir=Path("/oc"),
         )
         summary = {"agents": 1}

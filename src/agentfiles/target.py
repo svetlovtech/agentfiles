@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, ClassVar
 from agentfiles.models import (
     Item,
     ItemType,
-    Platform,
+    TARGET_PLATFORM,
     TargetError,
     TargetPaths,
     resolve_source_name_for_config,
@@ -117,7 +117,7 @@ def build_target_manager(
     target = discovery.discover_all()
 
     # Apply custom path override if provided.
-    custom_path_str = custom_paths.get(Platform.OPENCODE.value)
+    custom_path_str = custom_paths.get(TARGET_PLATFORM)
     if custom_path_str is not None:
         custom_dir = Path(custom_path_str).expanduser()
         if not custom_dir.is_dir():
@@ -133,13 +133,13 @@ def build_target_manager(
                 )
             else:
                 target = TargetPaths(
-                    platform=Platform.OPENCODE,
+                    platform=TARGET_PLATFORM,
                     config_dir=custom_dir,
                 )
 
     # Warn about unknown keys in custom_paths.
     for platform_name in custom_paths:
-        if platform_name != Platform.OPENCODE.value:
+        if platform_name != TARGET_PLATFORM:
             logger.warning("Unknown platform in custom_paths: %s", platform_name)
 
     return TargetManager(target)
@@ -345,7 +345,7 @@ class TargetDiscovery:
             subdirs = {}
 
         return TargetPaths(
-            platform=Platform.OPENCODE,
+            platform=TARGET_PLATFORM,
             config_dir=config_dir,
             subdirs=subdirs,
         )
@@ -391,7 +391,7 @@ class TargetManager:
         if targets is not None:
             logger.info(
                 "TargetManager initialised with platform %s at %s",
-                targets.platform.display_name,
+                targets.platform,
                 targets.config_dir,
             )
         else:

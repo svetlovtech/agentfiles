@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from agentfiles.models import Item, ItemType, Platform, Scope
+from agentfiles.models import Item, ItemType, Scope
 from agentfiles.scanner import (
     _SCANNER_REGISTRY,
     SourceScanner,
@@ -1442,10 +1442,10 @@ class TestScandirSorted:
 
 
 class TestPlatformAssignment:
-    """Tests for platform assignment on discovered items."""
+    """Tests that discovered items have correct item_type and scope."""
 
-    def test_all_items_get_opencode_platform(self, tmp_path: Path) -> None:
-        """All discovered items receive OPENCODE platform."""
+    def test_all_items_have_correct_type(self, tmp_path: Path) -> None:
+        """All discovered items have the expected item type."""
         _make_source_dir(
             tmp_path,
             agents=["a.md"],
@@ -1455,10 +1455,9 @@ class TestPlatformAssignment:
         )
         scanner = SourceScanner(tmp_path)
         items = scanner.scan()
-        for item in items:
-            assert item.supported_platforms == (Platform.OPENCODE,), (
-                f"{item.item_type!r} item '{item.name}' has wrong platforms"
-            )
+        expected_types = {ItemType.AGENT, ItemType.SKILL, ItemType.COMMAND, ItemType.PLUGIN}
+        actual_types = {item.item_type for item in items}
+        assert actual_types == expected_types
 
 
 # ---------------------------------------------------------------------------

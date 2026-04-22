@@ -8,7 +8,7 @@ from unittest import mock
 
 import pytest
 
-from agentfiles.models import Item, ItemType, Platform
+from agentfiles.models import Item, ItemType
 
 # ---------------------------------------------------------------------------
 # Shared helper functions

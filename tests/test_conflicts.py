@@ -18,7 +18,6 @@ from agentfiles.models import (
     Item,
     ItemState,
     ItemType,
-    Platform,
     SyncState,
 )
 

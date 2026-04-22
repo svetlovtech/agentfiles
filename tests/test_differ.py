@@ -23,7 +23,6 @@ from agentfiles.models import (
     DiffStatus,
     Item,
     ItemType,
-    Platform,
 )
 from agentfiles.output import format_diff, format_diff_json
 from agentfiles.target import TargetDiscovery, TargetManager
@@ -71,7 +70,7 @@ def _make_item(
         item_type=item_type,
         name=name,
         source_path=Path("/src") / item_type.plural / name,
-            )
+    )
 
 
 # ---------------------------------------------------------------------------
