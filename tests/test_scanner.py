@@ -583,29 +583,6 @@ class TestSourceScannerSummary:
 
 
 # ---------------------------------------------------------------------------
-# SourceScanner._count_by_type
-# ---------------------------------------------------------------------------
-
-
-class TestCountByType:
-    """Tests for SourceScanner._count_by_type static method."""
-
-    def test_counts_items(self, tmp_path: Path) -> None:
-        items = [
-            Item(item_type=ItemType.AGENT, name="a", source_path=tmp_path),
-            Item(item_type=ItemType.AGENT, name="b", source_path=tmp_path),
-            Item(item_type=ItemType.SKILL, name="s", source_path=tmp_path),
-        ]
-        counts = SourceScanner._count_by_type(items)
-        assert counts[ItemType.AGENT] == 2
-        assert counts[ItemType.SKILL] == 1
-        assert ItemType.COMMAND not in counts
-
-    def test_empty_list(self) -> None:
-        assert SourceScanner._count_by_type([]) == {}
-
-
-# ---------------------------------------------------------------------------
 # Singular directory name support
 # ---------------------------------------------------------------------------
 

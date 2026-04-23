@@ -96,41 +96,6 @@ def _dir_stats(path: Path) -> tuple[int, int]:
     return count, total
 
 
-def _path_total_size(path: Path) -> int:
-    """Return total byte size for a file or directory.
-
-    For files returns ``st_size`` directly.  For directories sums the
-    sizes of all regular files found via :func:`os.walk`.
-
-    Returns ``-1`` when the size cannot be determined.
-    """
-    if not path.exists():
-        return -1
-
-    if path.is_file():
-        try:
-            return path.stat().st_size
-        except OSError:
-            return -1
-
-    if path.is_dir():
-        count, total = _dir_stats(path)
-        return total if count >= 0 else -1
-
-    return -1
-
-
-def _dir_file_count(path: Path) -> int:
-    """Return the number of regular files under *path* (recursive).
-
-    Returns ``-1`` when the count cannot be determined.
-    """
-    if not path.is_dir():
-        return -1
-    count, _total = _dir_stats(path)
-    return count
-
-
 # ---------------------------------------------------------------------------
 # Differ class
 # ---------------------------------------------------------------------------
@@ -232,23 +197,10 @@ class Differ:
         )
 
     def _metadata_differs(self, item: Item) -> bool:
-        """Quick metadata comparison to detect changed items.
+        """Conservative metadata check: returns True only when metadata clearly differs.
 
-        This is a **conservative** check: it only returns ``True`` when
-        metadata *clearly* indicates a difference.  When metadata cannot
-        be determined (permissions, missing files) it returns ``False``,
-        causing the caller to classify the item as UNCHANGED.
-
-        Strategy by item type:
-
-        * **File items** — compare ``st_size`` directly.
-        * **Directory items** — first compare recursive file counts, then
-          compare total byte sizes.
-
-        Returns:
-            ``True`` if metadata indicates source and target differ,
-            ``False`` otherwise (including when metadata is unavailable).
-
+        File items compare st_size; directory items compare file count then total bytes.
+        Returns False when metadata is unavailable (permissions, missing files).
         """
         target_path = _resolve_target_path(
             item,

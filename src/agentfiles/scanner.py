@@ -874,8 +874,8 @@ class SourceScanner:
 
         all_items.sort(key=lambda it: it.sort_key)
 
-        counts = self._count_by_type(all_items)
-        parts = [f"{counts.get(t, 0)} {t.plural}" for t in ItemType if counts.get(t, 0) > 0]
+        counts = Counter(item.item_type for item in all_items)
+        parts = [f"{counts[t]} {t.plural}" for t in ItemType if counts[t] > 0]
         logger.info("Found %s", ", ".join(parts))
 
         return all_items
@@ -975,8 +975,3 @@ class SourceScanner:
             logger.warning("No scanner registered for %s — skipping", item_type.value)
             return []
         return scanner(dir_path, gitignore=self._gitignore)
-
-    @staticmethod
-    def _count_by_type(items: list[Item]) -> dict[ItemType, int]:
-        """Count items grouped by their type."""
-        return dict(Counter(item.item_type for item in items))

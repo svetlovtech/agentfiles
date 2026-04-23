@@ -161,23 +161,6 @@ def _opencode_candidates(home: Path) -> list[Path]:
 
 
 # ---------------------------------------------------------------------------
-# OpenCode project candidate resolver
-# ---------------------------------------------------------------------------
-
-
-def _opencode_project_candidates(project_dir: Path) -> list[Path]:
-    """Return candidate OpenCode PROJECT config directories.
-
-    OpenCode stores project-level configuration in ``<project>/.opencode/``.
-
-    Args:
-        project_dir: Root directory of the project.
-
-    """
-    return [project_dir / ".opencode"]
-
-
-# ---------------------------------------------------------------------------
 # OpenCode subdir resolver
 # ---------------------------------------------------------------------------
 
@@ -444,14 +427,10 @@ class TargetManager:
             )
             return None
 
-        candidates = _opencode_project_candidates(project_dir)
-        if not candidates:
-            return None
-
-        # Use the first (highest-priority) candidate path directly.
-        # Unlike global discovery, we do NOT require the directory to
-        # exist on disk — the caller may be installing for the first time.
-        config_dir = candidates[0]
+        # OpenCode stores project-level config in <project>/.opencode/.
+        # The directory does NOT need to exist on disk — the caller may be
+        # installing for the first time.
+        config_dir = project_dir / ".opencode"
 
         if item_type == ItemType.CONFIG:
             return config_dir

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """agentfiles — Sync AI tool configurations for OpenCode.
 
 Architecture Overview
@@ -12,13 +10,13 @@ single source of truth and propagating changes through a three-stage pipeline::
     │  Source Resolution │─▶│     Scanner      │─▶│     Differ      │
     │   (source.py)     │   │  (scanner.py)    │   │  (differ.py)    │
     └─────────────────┘    └─────────────────┘    └─────────────────┘
-                                                          │
-                                                          ▼
-                                                   ┌─────────────────┐
-    ┌─────────────────┐    ┌─────────────────┐    │     Engine      │
-    │   SyncReport    │◀── │  SyncResult[]   │◀── │  (engine.py)    │
-    │  (engine.py)    │    │  (engine.py)    │    │  plan → execute │
-    └─────────────────┘    └─────────────────┘    └─────────────────┘
+                                                           │
+                                                           ▼
+                                                    ┌─────────────────┐
+     ┌─────────────────┐    ┌─────────────────┐    │     Engine      │
+     │   SyncReport    │◀── │  SyncResult[]   │◀── │  (engine.py)    │
+     │  (engine.py)    │    │  (engine.py)    │    │  plan → execute │
+     └─────────────────┘    └─────────────────┘    └─────────────────┘
 
 Data flow::
 
@@ -63,6 +61,8 @@ Add a new item type:
 
 No other modules need modification (Open/Closed Principle).
 """
+
+from __future__ import annotations
 
 import importlib
 

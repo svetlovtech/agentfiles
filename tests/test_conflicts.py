@@ -17,7 +17,6 @@ from agentfiles.engine import (
 from agentfiles.models import (
     Item,
     ItemState,
-    ItemType,
     SyncState,
 )
 from tests.conftest import make_item

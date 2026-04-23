@@ -757,10 +757,7 @@ def _format_list_text(items: list[Item], show_tokens: bool, *, show_scope: bool 
         ver = f" v{item.version}" if item.version != _DEFAULT_VERSION else ""
         # Scope display — only show when show_scope is True and multiple scopes exist
         item_scope = getattr(item, "scope", None) or Scope.GLOBAL
-        scope_parts: list[str] = []
-        if show_scope:
-            scope_parts.append(item_scope.marker)
-        scope_prefix = f"{scope_parts[0]} " if scope_parts else ""
+        scope_prefix = f"{item_scope.marker} " if show_scope else ""
         scope_suffix = (
             f" {colorize(f'[{item_scope.display_name}]', Colors.DIM)}" if show_scope else ""
         )
@@ -1507,17 +1504,14 @@ def cmd_clean(args: argparse.Namespace) -> int:
     installed_keys: set[str] = {item.item_key for item in installed_items}
 
     # Orphans = installed items whose source no longer exists.
-    orphan_keys = sorted(installed_keys - source_keys)
+    # installed_items already filtered by item_types via _discover_installed_from_targets.
+    orphan_key_set = installed_keys - source_keys
 
-    if not orphan_keys:
+    if not orphan_key_set:
         info("No orphaned items found.")
         return 0
 
-    # Filter orphans by requested item types.
-    orphan_items: list[Item] = []
-    for item in installed_items:
-        if item.item_key in orphan_keys and item.item_type in item_types:
-            orphan_items.append(item)
+    orphan_items = [item for item in installed_items if item.item_key in orphan_key_set]
 
     # Apply --item key filters
     item_keys: list[str] | None = getattr(args, "item", None)
@@ -1546,15 +1540,11 @@ def cmd_clean(args: argparse.Namespace) -> int:
         ):
             return 0
 
-    # Reuse the uninstall pipeline.
+    # Reuse the uninstall pipeline — batch all orphans in one call.
     engine = SyncEngine(target_manager=target_manager)
+    report = engine.uninstall(orphan_items)
 
-    total_removed = 0
-
-    for item in orphan_items:
-        report = engine.uninstall([item])
-        if report.is_success:
-            total_removed += sum(1 for r in report.uninstalled if r.is_success)
+    total_removed = sum(1 for r in report.uninstalled if r.is_success)
 
     print()
     if total_removed:
@@ -1562,7 +1552,7 @@ def cmd_clean(args: argparse.Namespace) -> int:
     else:
         warning("No items were removed.")
 
-    return 0
+    return 0 if report.is_success else 1
 
 
 def cmd_init(args: argparse.Namespace) -> int:

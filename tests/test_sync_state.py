@@ -1,4 +1,8 @@
-"""Tests for sync state models and I/O — ItemState, SyncState."""
+"""Tests for sync state models and I/O — SyncState load/save.
+
+Note: ItemState dataclass tests are in test_models.py alongside other model
+tests. This file focuses on SyncState I/O (load/save) and round-trip behavior.
+"""
 
 from __future__ import annotations
 
@@ -9,35 +13,6 @@ import yaml
 
 from agentfiles.config import load_sync_state, save_sync_state
 from agentfiles.models import ItemState, SyncState
-
-# ---------------------------------------------------------------------------
-# ItemState
-# ---------------------------------------------------------------------------
-
-
-class TestItemState:
-    """Tests for ItemState dataclass."""
-
-    def test_default_values(self) -> None:
-        state = ItemState()
-        assert state.synced_at == ""
-
-    def test_custom_values(self) -> None:
-        state = ItemState(
-            synced_at="2025-01-01T00:00:00Z",
-        )
-        assert state.synced_at == "2025-01-01T00:00:00Z"
-
-    def test_frozen(self) -> None:
-        state = ItemState(synced_at="abc")
-        with pytest.raises(AttributeError):
-            state.synced_at = "changed"  # type: ignore[misc]
-
-    def test_equality(self) -> None:
-        a = ItemState(synced_at="2025-01-01T00:00:00Z")
-        b = ItemState(synced_at="2025-01-01T00:00:00Z")
-        assert a == b
-
 
 # ---------------------------------------------------------------------------
 # SyncState

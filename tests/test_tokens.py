@@ -1,4 +1,9 @@
-"""Tests for agentfiles.tokens — TUI-focused token counting utilities."""
+"""Tests for agentfiles.tokens — TUI-focused token counting utilities.
+
+Note: estimate_tokens_from_content is tested in test_token_estimate.py
+(alongside the models-level token helpers). This file covers only the
+tokens-module-specific functions: count_item_tokens and format_token_count.
+"""
 
 from __future__ import annotations
 
@@ -6,60 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from agentfiles.tokens import count_item_tokens, estimate_tokens_from_content, format_token_count
-
-
-class TestEstimateTokensFromContent:
-    """Tests for estimate_tokens_from_content function."""
-
-    def test_empty_string_returns_zero(self) -> None:
-        assert estimate_tokens_from_content("") == 0
-
-    def test_short_string_returns_one(self) -> None:
-        # "abc" -> len=3 // 4 = 0, but max(1, 0) = 1
-        assert estimate_tokens_from_content("abc") == 1
-
-    def test_exact_four_chars(self) -> None:
-        assert estimate_tokens_from_content("abcd") == 1
-
-    def test_eight_chars(self) -> None:
-        assert estimate_tokens_from_content("abcdefgh") == 2
-
-    def test_long_text(self) -> None:
-        text = "a" * 400
-        assert estimate_tokens_from_content(text) == 100
-
-    def test_one_char_returns_one(self) -> None:
-        # 1 // 4 = 0, but max(1, 0) = 1
-        assert estimate_tokens_from_content("a") == 1
-
-    def test_five_chars_returns_one(self) -> None:
-        # 5 // 4 = 1, max(1, 1) = 1
-        assert estimate_tokens_from_content("abcde") == 1
-
-    def test_seven_chars_returns_one(self) -> None:
-        # 7 // 4 = 1
-        assert estimate_tokens_from_content("abcdefg") == 1
-
-    def test_unicode_text(self) -> None:
-        # len() counts characters, not bytes
-        text = "héllo wörld"  # 11 chars -> 11 // 4 = 2
-        assert estimate_tokens_from_content(text) == 2
-
-    def test_emoji_text(self) -> None:
-        # Emoji are single characters in len()
-        text = "🎉🎉🎉🎉"  # 4 chars -> max(1, 4 // 4) = 1
-        assert estimate_tokens_from_content(text) == 1
-
-    def test_very_long_text(self) -> None:
-        text = "x" * 10_000
-        assert estimate_tokens_from_content(text) == 2500
-
-    def test_returns_at_least_one_for_nonempty(self) -> None:
-        # Even 1-char strings should return >= 1
-        assert estimate_tokens_from_content("a") >= 1
-        assert estimate_tokens_from_content("ab") >= 1
-        assert estimate_tokens_from_content("abc") >= 1
+from agentfiles.tokens import count_item_tokens, format_token_count
 
 
 class TestCountItemTokens:

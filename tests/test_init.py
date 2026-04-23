@@ -26,7 +26,6 @@ from agentfiles.models import (
     AgentfilesError,
     Item,
     ItemType,
-    TARGET_PLATFORM,
     TargetPaths,
     TokenEstimate,
 )

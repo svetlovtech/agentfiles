@@ -40,7 +40,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any, TextIO
+from typing import TextIO
 
 from agentfiles.models import DiffEntry, DiffStatus, ItemType
 
@@ -746,6 +746,5 @@ def format_diff_json(diff_results: list[DiffEntry]) -> str:
         }
         for entry in diff_results
     ]
-    output: dict[str, Any] = {"items": items}
 
-    return json.dumps(output, indent=2)
+    return json.dumps({"items": items}, indent=2)

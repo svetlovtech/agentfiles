@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable, Generator
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -18,7 +18,6 @@ from agentfiles.models import (
     SyncPlan,
     SyncResult,
     SyncState,
-    resolve_target_name,
 )
 from agentfiles.target import TargetManager
 
@@ -115,28 +114,6 @@ class TestSyncReport:
 # ---------------------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------------------
-
-
-class TestResolveDestName:
-    """Tests for resolve_target_name."""
-
-    def test_file_item_returns_filename(self) -> None:
-        item = Item(
-            item_type=ItemType.AGENT,
-            name="python-reviewer",
-            source_path=Path("/src/agents/python-reviewer.md"),
-            files=("python-reviewer.md",),
-        )
-        assert resolve_target_name(item) == "python-reviewer.md"
-
-    def test_dir_item_returns_directory_name(self) -> None:
-        item = Item(
-            item_type=ItemType.SKILL,
-            name="python-stylist",
-            source_path=Path("/src/skills/python-stylist"),
-            files=("SKILL.md",),
-        )
-        assert resolve_target_name(item) == "python-stylist"
 
 
 class TestCopyItem:

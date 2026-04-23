@@ -615,13 +615,12 @@ def item_from_directory(
     """
     resolved = path.resolve()
 
-    if not resolved.exists():
-        raise SourceError(
-            f"cannot create item from directory: path does not exist: '{path}'. "
-            f"Ensure the directory is present before scanning"
-        )
-
     if not resolved.is_dir():
+        if not resolved.exists():
+            raise SourceError(
+                f"cannot create item from directory: path does not exist: '{path}'. "
+                f"Ensure the directory is present before scanning"
+            )
         raise SourceError(
             f"expected a directory for {item_type.value}, got a file: '{path}'. "
             f"Provide a directory path instead"

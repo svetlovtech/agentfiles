@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,8 +11,6 @@ import pytest
 
 from agentfiles.differ import (
     Differ,
-    _dir_file_count,
-    _path_total_size,
     _resolve_target_path,
     compute_content_diff,
 )
@@ -23,7 +20,6 @@ from agentfiles.models import (
     Item,
     ItemType,
 )
-from agentfiles.output import format_diff, format_diff_json
 from agentfiles.target import TargetDiscovery, TargetManager
 from tests.conftest import make_item
 
@@ -366,83 +362,6 @@ class TestResolveTargetPath:
         item = make_item(item_type=ItemType.PLUGIN, name="p1")
         result = _resolve_target_path(item, empty_manager)
         assert result is None
-
-
-# ---------------------------------------------------------------------------
-# _path_total_size — direct unit tests
-# ---------------------------------------------------------------------------
-
-
-class TestPathTotalSize:
-    """Tests for the _path_total_size helper."""
-
-    def test_file_size(self, tmp_path: Path) -> None:
-        f = tmp_path / "file.txt"
-        f.write_text("hello", encoding="utf-8")
-        assert _path_total_size(f) == 5
-
-    def test_directory_size(self, tmp_path: Path) -> None:
-        d = tmp_path / "dir"
-        d.mkdir()
-        (d / "a.txt").write_text("aaa", encoding="utf-8")
-        (d / "b.txt").write_text("bb", encoding="utf-8")
-        assert _path_total_size(d) == 5
-
-    def test_nonexistent_returns_minus_one(self, tmp_path: Path) -> None:
-        result = _path_total_size(tmp_path / "nope")
-        assert result == -1
-
-    def test_empty_directory_returns_zero(self, tmp_path: Path) -> None:
-        d = tmp_path / "empty_dir"
-        d.mkdir()
-        assert _path_total_size(d) == 0
-
-    def test_nested_directory_size(self, tmp_path: Path) -> None:
-        d = tmp_path / "nested"
-        d.mkdir()
-        sub = d / "sub"
-        sub.mkdir()
-        (d / "a.txt").write_text("12345", encoding="utf-8")
-        (sub / "b.txt").write_text("67890", encoding="utf-8")
-        assert _path_total_size(d) == 10
-
-
-# ---------------------------------------------------------------------------
-# _dir_file_count — direct unit tests
-# ---------------------------------------------------------------------------
-
-
-class TestDirFileCount:
-    """Tests for the _dir_file_count helper."""
-
-    def test_counts_files_in_directory(self, tmp_path: Path) -> None:
-        d = tmp_path / "dir"
-        d.mkdir()
-        (d / "a.txt").write_text("a", encoding="utf-8")
-        (d / "b.txt").write_text("b", encoding="utf-8")
-        assert _dir_file_count(d) == 2
-
-    def test_counts_nested_files(self, tmp_path: Path) -> None:
-        d = tmp_path / "dir"
-        d.mkdir()
-        sub = d / "sub"
-        sub.mkdir()
-        (d / "a.txt").write_text("a", encoding="utf-8")
-        (sub / "b.txt").write_text("b", encoding="utf-8")
-        assert _dir_file_count(d) == 2
-
-    def test_empty_directory_returns_zero(self, tmp_path: Path) -> None:
-        d = tmp_path / "empty"
-        d.mkdir()
-        assert _dir_file_count(d) == 0
-
-    def test_file_path_returns_minus_one(self, tmp_path: Path) -> None:
-        f = tmp_path / "file.txt"
-        f.write_text("x", encoding="utf-8")
-        assert _dir_file_count(f) == -1
-
-    def test_nonexistent_returns_minus_one(self, tmp_path: Path) -> None:
-        assert _dir_file_count(tmp_path / "nope") == -1
 
 
 # ---------------------------------------------------------------------------

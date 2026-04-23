@@ -10,7 +10,6 @@ Covers:
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 import pytest
 
@@ -18,7 +17,7 @@ from agentfiles.cli import (
     _apply_item_key_filter,
     build_parser,
 )
-from agentfiles.models import Item, ItemType
+from agentfiles.models import Item
 from tests.conftest import make_items
 
 # ---------------------------------------------------------------------------

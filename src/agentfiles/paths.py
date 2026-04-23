@@ -135,22 +135,7 @@ def read_item_content(path: Path) -> tuple[str, Path] | None:
 
 
 def _read_dir_content(dir_path: Path) -> tuple[str, Path] | None:
-    """Read content from a directory, trying SKILL.md first.
-
-    Skips the extra ``is_file()`` probe before reading SKILL.md by
-    catching ``FileNotFoundError`` directly, saving one stat syscall.
-
-    For the fallback scan, filters to ``.md`` candidates *before*
-    sorting so the sort operates on a smaller set.
-
-    Args:
-        dir_path: Directory to scan for content files.
-
-    Returns:
-        A ``(content_text, file_path)`` tuple, or ``None`` when the
-        directory contains no readable ``.md`` files.
-
-    """
+    """Read content from a directory: tries SKILL.md first, then first non-hidden .md."""
     # Try SKILL.md — avoid a separate stat() probe; let read_text()
     # raise FileNotFoundError when absent.
     skill_md = dir_path / SKILL_MAIN_FILE

@@ -14,7 +14,6 @@ from agentfiles.models import Item, ItemType, TARGET_PLATFORM, Scope, TargetErro
 from agentfiles.target import (
     TargetDiscovery,
     TargetManager,
-    _opencode_project_candidates,
     build_target_manager,
 )
 from tests.conftest import make_item
@@ -875,21 +874,6 @@ class TestFindExistingEdgeCases:
         """_item_type_from_plural returns None for unrecognised keys."""
         result = TargetManager._item_type_from_plural("unknown_type")
         assert result is None
-
-
-# ---------------------------------------------------------------------------
-# Project candidate resolvers
-# ---------------------------------------------------------------------------
-
-
-class TestProjectCandidateResolvers:
-    """Direct unit tests for project-level candidate resolver functions."""
-
-    def test_opencode_project_candidates(self) -> None:
-        """OpenCode project candidate points to <project>/.opencode."""
-        project_dir = Path("/my/project")
-        candidates = _opencode_project_candidates(project_dir)
-        assert candidates == [project_dir / ".opencode"]
 
 
 # ---------------------------------------------------------------------------

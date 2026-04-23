@@ -357,7 +357,7 @@ def _check_push_conflict(
 
     # If they are identical, no conflict.
     push_status = _compare_push_item(local_path, dest_path)
-    if push_status == "unchanged":
+    if push_status == _PUSH_UNCHANGED:
         return None
 
     # Check if source repo version was modified after last sync.
@@ -934,7 +934,12 @@ class SyncEngine:
         source = plan.item.source_path
         dest = self._dest_path(plan.item, plan.target_dir)
 
-        plan.target_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            plan.target_dir.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError) as exc:
+            msg = f"Cannot create target directory {plan.target_dir}: {exc}"
+            logger.error(msg)
+            return SyncResult(plan=plan, is_success=False, message=msg)
 
         files_copied, err = self._atomic_copy_to(
             source,
@@ -957,7 +962,7 @@ class SyncEngine:
 
         removed, error = _remove_item(dest)
         if not removed:
-            return SyncResult(plan=plan, is_success=False, message=error or "Unknown error")
+            return SyncResult(plan=plan, is_success=False, message=error)
 
         return SyncResult(
             plan=plan,

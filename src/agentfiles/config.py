@@ -52,23 +52,9 @@ _FIELD_COERCERS: dict[str, type] = {
 
 
 def _read_yaml_file(path: Path) -> dict[str, Any]:
-    """Read and parse a YAML file into a dictionary.
+    """Read and parse a YAML file. Returns empty dict for non-mapping top-level.
 
-    Centralises the ``open`` + ``yaml.safe_load`` pattern so that config
-    loading and sync-state loading share a single implementation.
-
-    Args:
-        path: Path to the YAML file.
-
-    Returns:
-        Parsed YAML data.  Returns an empty dict when the file
-        contains only comments, is effectively empty, or when the
-        top-level value is not a YAML mapping.
-
-    Raises:
-        ConfigError: When the file cannot be read, has invalid encoding,
-            or contains malformed YAML.
-
+    Raises ConfigError on read failures, encoding errors, or malformed YAML.
     """
     try:
         with open(path, encoding="utf-8") as fh:
@@ -89,27 +75,12 @@ def _read_yaml_file(path: Path) -> dict[str, Any]:
 
 
 def _iter_config_search_paths(config_path: Path | None) -> Iterator[Path]:
-    """Yield config file paths in priority order (lazy generator).
+    """Yield config file paths in priority order.
 
-    When *config_path* is provided only that single path is yielded
-    (after validating its existence).  Otherwise paths are yielded
-    lazily from standard search locations (CWD then home), avoiding
-    construction of paths that are never probed.
+    Explicit path is validated for existence; otherwise standard locations
+    (CWD, then home) are yielded lazily.
 
-    Separated from :meth:`AgentfilesConfig.load` so that path resolution
-    logic can be reasoned about and tested independently of file I/O.
-
-    Args:
-        config_path: Explicit config file path, or ``None`` for
-            auto-discovery.
-
-    Yields:
-        Paths to probe, in priority order.
-
-    Raises:
-        ConfigError: When *config_path* is given but the file
-            does not exist on disk.
-
+    Raises ConfigError when *config_path* is given but does not exist.
     """
     if config_path is not None:
         explicit = Path(config_path)
@@ -221,17 +192,7 @@ class AgentfilesConfig:
 def _validate_config_dict(data: dict[str, Any], path: Path) -> None:
     """Validate config value types before coercion.
 
-    Catches common mistakes like providing a value of the wrong type
-    (e.g. a string where a mapping is expected for ``custom_paths``),
-    which would otherwise silently produce wrong results.
-
-    Args:
-        data: Parsed YAML dictionary to validate.
-        path: Config file path (included in error messages).
-
-    Raises:
-        ConfigError: When a config value has an unexpected type.
-
+    Raises ConfigError when a config value has an unexpected type.
     """
     if "custom_paths" in data:
         value = data["custom_paths"]
@@ -249,21 +210,9 @@ def _validate_config_dict(data: dict[str, Any], path: Path) -> None:
 
 @lru_cache(maxsize=8)
 def _load_config_from_file(path: Path) -> AgentfilesConfig:
-    """Load and parse a config file, caching results by resolved path.
+    """Load, validate, and parse a config file. Results are cached by path.
 
-    Avoids redundant YAML parsing when the same config file is
-    requested multiple times within a single process.
-
-    Args:
-        path: Path to the YAML config file.
-
-    Returns:
-        A populated :class:`AgentfilesConfig` instance.
-
-    Raises:
-        ConfigError: When the file contains malformed YAML or
-            invalid config values.
-
+    Raises ConfigError on malformed YAML or invalid config values.
     """
     data = _read_yaml_file(path)
     _validate_config_dict(data, path)
@@ -348,16 +297,8 @@ def _parse_item_state(raw: dict[str, Any]) -> ItemState:
 def _parse_sync_state(data: dict[str, Any]) -> SyncState:
     """Construct a SyncState from a parsed YAML dictionary.
 
-    Supports both the current flat format and the legacy nested format
-    for backward compatibility.  The legacy format (key ``platforms`` present,
-    ``items`` absent) is automatically migrated.
-
-    Args:
-        data: Raw dictionary loaded from the state YAML file.
-
-    Returns:
-        A fully populated SyncState instance.
-
+    Supports both the current flat ``items`` format and the legacy nested
+    ``platforms`` format (auto-migrated on load).
     """
     # New flat format: items key present at top level.
     if "items" in data:

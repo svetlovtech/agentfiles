@@ -89,15 +89,18 @@ def _format_status_json(summary: dict[str, int]) -> int:
     commands = summary.get("commands", 0)
     plugins = summary.get("plugins", 0)
 
-    output: dict[str, Any] = {
-        "agents": agents,
-        "skills": skills,
-        "commands": commands,
-        "plugins": plugins,
-        "total_items": agents + skills + commands + plugins,
-    }
-
-    print(json.dumps(output, indent=2))
+    print(
+        json.dumps(
+            {
+                "agents": agents,
+                "skills": skills,
+                "commands": commands,
+                "plugins": plugins,
+                "total_items": agents + skills + commands + plugins,
+            },
+            indent=2,
+        )
+    )
     return 0
 
 
@@ -129,12 +132,16 @@ def _format_plan_json(
             }
         )
 
-    output = {
-        "plans": plan_list,
-        "total": len(plan_list),
-        "dry_run": dry_run,
-    }
-    print(json.dumps(output, indent=2))
+    print(
+        json.dumps(
+            {
+                "plans": plan_list,
+                "total": len(plan_list),
+                "dry_run": dry_run,
+            },
+            indent=2,
+        )
+    )
     return 0
 
 
@@ -168,15 +175,20 @@ def _format_results_json(
         if r.push_detail:
             entry["push_detail"] = r.push_detail
         result_entries.append(entry)
-    output = {
-        "results": result_entries,
-        "summary": {
-            "installed": len(report.installed),
-            "updated": len(report.updated),
-            "skipped": len(report.skipped),
-            "failed": len(report.failed),
-        },
-        "dry_run": dry_run,
-    }
-    print(json.dumps(output, indent=2))
+
+    print(
+        json.dumps(
+            {
+                "results": result_entries,
+                "summary": {
+                    "installed": len(report.installed),
+                    "updated": len(report.updated),
+                    "skipped": len(report.skipped),
+                    "failed": len(report.failed),
+                },
+                "dry_run": dry_run,
+            },
+            indent=2,
+        )
+    )
     return 0 if report.is_success else 1

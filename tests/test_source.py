@@ -8,7 +8,6 @@ from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
-from agentfiles.git import is_git_repo
 from agentfiles.models import SourceError, SourceInfo, SourceType
 from agentfiles.source import (
     GitBackend,
@@ -100,26 +99,6 @@ class TestRepoNameFromUrl:
     def test_should_return_unknown_for_edge_case(self) -> None:
         # A URL that resolves to an empty basename after stripping.
         assert _repo_name_from_url("https://github.com/.git") == "unknown_repo"
-
-
-# ---------------------------------------------------------------------------
-# is_git_repo
-# ---------------------------------------------------------------------------
-
-
-class TestIsGitRepo:
-    """Tests for the is_git_repo helper."""
-
-    def test_should_return_true_when_git_dir_exists(self, tmp_path: Path) -> None:
-        (tmp_path / ".git").mkdir()
-        assert is_git_repo(tmp_path) is True
-
-    def test_should_return_true_when_git_file_exists(self, tmp_path: Path) -> None:
-        (tmp_path / ".git").write_text("gitdir: …")
-        assert is_git_repo(tmp_path) is True
-
-    def test_should_return_false_when_no_git(self, tmp_path: Path) -> None:
-        assert is_git_repo(tmp_path) is False
 
 
 # ---------------------------------------------------------------------------

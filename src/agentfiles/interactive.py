@@ -103,8 +103,6 @@ def _parse_ranges(input_str: str, max_value: int) -> list[int]:
     for token in tokens:
         if "-" in token:
             parts = token.split("-", maxsplit=1)
-            if len(parts) != 2:
-                continue
             try:
                 start, end = int(parts[0]), int(parts[1])
             except ValueError:
@@ -194,14 +192,14 @@ class MenuRenderer:
             by_type[item.item_type].append(item)
 
         # Pre-compute push statuses when source_dir is given.
-        push_statuses: dict[int, str] = {}
+        _push_status: dict[int, str] = {}
         if source_dir is not None:
             from agentfiles.engine import _compare_push_item
             from agentfiles.paths import get_push_dest_path
 
-            for idx, item in enumerate(items):
+            for item in items:
                 dest = get_push_dest_path(source_dir, item)
-                push_statuses[idx] = _compare_push_item(item.source_path, dest)
+                _push_status[id(item)] = _compare_push_item(item.source_path, dest)
 
         index_map: dict[int, Item] = {}
         counter = 1
@@ -226,15 +224,13 @@ class MenuRenderer:
                     token_str = f"  ~{tokens:,} tokens"
                 # Push-status marker
                 status_marker = ""
-                item_idx = next((i for i, it in enumerate(items) if it is item), None)
-                if item_idx is not None and item_idx in push_statuses:
-                    status = push_statuses[item_idx]
-                    if status == "new":
-                        status_marker = " " + self._c("+", Colors.GREEN)
-                    elif status == "changed":
-                        status_marker = " " + self._c("~", Colors.YELLOW)
-                    else:  # unchanged
-                        status_marker = " " + self._c("·", Colors.DIM)
+                status = _push_status.get(id(item))
+                if status == "new":
+                    status_marker = " " + self._c("+", Colors.GREEN)
+                elif status == "changed":
+                    status_marker = " " + self._c("~", Colors.YELLOW)
+                elif status is not None:  # unchanged
+                    status_marker = " " + self._c("·", Colors.DIM)
                 buf.append(
                     f"    [{counter}]{status_marker} {item.name}{token_str}"
                     f"  {self._c(str(location), Colors.DIM)}"
@@ -504,7 +500,7 @@ class InteractiveSession:
                 warning("No valid selection found. Using defaults.")
                 return fallback
 
-        return fallback
+        return fallback  # unreachable; satisfies type checkers
 
     # -- public API: selection prompts -------------------------------------
 
