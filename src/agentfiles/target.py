@@ -29,13 +29,13 @@ from pathlib import Path
 from typing import ClassVar
 
 from agentfiles.models import (
+    _PLUGIN_EXTENSIONS,
     TARGET_PLATFORM,
     Item,
     ItemType,
     Scope,
     TargetError,
     TargetPaths,
-    _PLUGIN_EXTENSIONS,
 )
 from agentfiles.paths import get_item_dest_path
 

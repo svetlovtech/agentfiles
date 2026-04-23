@@ -70,6 +70,8 @@ from dataclasses import replace
 from pathlib import Path
 
 from agentfiles.models import (
+    _PLUGIN_EXTENSIONS,
+    _SKIP_NAMES,
     SKILL_MAIN_FILE,
     TARGET_PLATFORM,
     AgentfilesError,
@@ -77,8 +79,6 @@ from agentfiles.models import (
     ItemType,
     Scope,
     SourceError,
-    _PLUGIN_EXTENSIONS,
-    _SKIP_NAMES,
     item_from_directory,
     item_from_file,
 )
