@@ -20,42 +20,14 @@ from agentfiles.models import (
     SyncState,
     resolve_target_name,
 )
-from agentfiles.target import TargetDiscovery, TargetManager
+from agentfiles.target import TargetManager
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture
-def fake_home(tmp_path: Path) -> SimpleNamespace:
-    """Create a fake home with OpenCode config directory."""
-    home = tmp_path / "home"
-    home.mkdir()
-
-    oc_dir = home / ".config" / "opencode"
-    (oc_dir / "agent").mkdir(parents=True)
-    (oc_dir / "skill").mkdir(parents=True)
-    (oc_dir / "command").mkdir(parents=True)
-    (oc_dir / "plugin").mkdir(parents=True)
-
-    return SimpleNamespace(home=home, opencode=oc_dir)
-
-
-@pytest.fixture
-def target_manager(fake_home: SimpleNamespace) -> Generator[TargetManager, None, None]:
-    """Return a TargetManager backed by fake_home.
-
-    Patches ``Path.home`` and clears ``os.environ`` for the full test
-    lifetime so that no code path can accidentally touch the real home
-    directory or read stale env vars.
-    """
-    with (
-        mock.patch.object(Path, "home", return_value=fake_home.home),
-        mock.patch.dict(os.environ, {}, clear=True),
-    ):
-        targets = TargetDiscovery().discover_all()
-        yield TargetManager(targets)
+# fake_home and target_manager are provided by conftest.py.
 
 
 def _make_dir_item(

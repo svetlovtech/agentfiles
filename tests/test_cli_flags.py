@@ -28,35 +28,20 @@ from agentfiles.cli import (
     build_parser,
 )
 from agentfiles.models import Item, ItemType, Scope
+from tests.conftest import make_item, make_items
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _make_item(
+def _make_scoped_item(
     name: str,
     item_type: ItemType = ItemType.AGENT,
     scope: Scope = Scope.GLOBAL,
 ) -> Item:
-    """Create a minimal Item for testing."""
-    return Item(
-        item_type=item_type,
-        name=name,
-        source_path=Path("/fake/source"),
-        scope=scope,
-    )
-
-
-def _make_items() -> list[Item]:
-    """Create a standard set of test items."""
-    return [
-        _make_item("coder", ItemType.AGENT),
-        _make_item("debugger", ItemType.AGENT),
-        _make_item("solid-principles", ItemType.SKILL),
-        _make_item("dry-principle", ItemType.SKILL),
-        _make_item("autopilot", ItemType.COMMAND),
-    ]
+    """Create a minimal Item with explicit scope for testing."""
+    return make_item(name, item_type=item_type, scope=scope)
 
 
 # ---------------------------------------------------------------------------
@@ -131,18 +116,18 @@ class TestApplyItemFilter:
     """Tests for _apply_item_filter() helper."""
 
     def test_no_filters_returns_all_items(self) -> None:
-        items = _make_items()
+        items = make_items()
         result = _apply_item_filter(items, None, None)
         assert result == items
 
     def test_only_filters_to_matching_names(self) -> None:
-        items = _make_items()
+        items = make_items()
         result = _apply_item_filter(items, {"coder", "solid-principles"}, None)
         names = [i.name for i in result]
         assert names == ["coder", "solid-principles"]
 
     def test_except_removes_matching_names(self) -> None:
-        items = _make_items()
+        items = make_items()
         result = _apply_item_filter(items, None, {"debugger", "dry-principle"})
         names = [i.name for i in result]
         assert "debugger" not in names
@@ -153,18 +138,18 @@ class TestApplyItemFilter:
 
     def test_only_and_except_combined(self) -> None:
         """--only limits scope, then --except further excludes."""
-        items = _make_items()
+        items = make_items()
         result = _apply_item_filter(items, {"coder", "debugger"}, {"debugger"})
         names = [i.name for i in result]
         assert names == ["coder"]
 
     def test_only_with_no_match_returns_empty(self) -> None:
-        items = _make_items()
+        items = make_items()
         result = _apply_item_filter(items, {"nonexistent"}, None)
         assert result == []
 
     def test_except_with_all_match_returns_empty(self) -> None:
-        items = _make_items()
+        items = make_items()
         all_names = {i.name for i in items}
         result = _apply_item_filter(items, None, all_names)
         assert result == []
@@ -175,13 +160,13 @@ class TestApplyItemFilter:
 
     def test_only_empty_set_returns_empty(self) -> None:
         """An empty only_set (from whitespace-only input) matches nothing."""
-        items = _make_items()
+        items = make_items()
         result = _apply_item_filter(items, set(), None)
         assert result == []
 
     def test_except_empty_set_returns_all(self) -> None:
         """An empty except_set excludes nothing."""
-        items = _make_items()
+        items = make_items()
         result = _apply_item_filter(items, None, set())
         assert result == items
 
@@ -350,7 +335,7 @@ class TestFilterPipelineIntegration:
         parser = build_parser()
         args = parser.parse_args(["pull", "--only", "coder,debugger"])
         only_set, except_set = _resolve_item_filter(args)
-        items = _make_items()
+        items = make_items()
         filtered = _apply_item_filter(items, only_set, except_set)
         names = [i.name for i in filtered]
         assert names == ["coder", "debugger"]
@@ -360,7 +345,7 @@ class TestFilterPipelineIntegration:
         parser = build_parser()
         args = parser.parse_args(["pull", "--except", "autopilot"])
         only_set, except_set = _resolve_item_filter(args)
-        items = _make_items()
+        items = make_items()
         filtered = _apply_item_filter(items, only_set, except_set)
         names = [i.name for i in filtered]
         assert "autopilot" not in names
@@ -371,7 +356,7 @@ class TestFilterPipelineIntegration:
         parser = build_parser()
         args = parser.parse_args(["pull"])
         only_set, except_set = _resolve_item_filter(args)
-        items = _make_items()
+        items = make_items()
         filtered = _apply_item_filter(items, only_set, except_set)
         assert len(filtered) == len(items)
 
@@ -415,10 +400,10 @@ class TestResolveScope:
 def _make_mixed_scope_items() -> list[Item]:
     """Create items with mixed scopes for testing."""
     return [
-        _make_item("global-agent", ItemType.AGENT, Scope.GLOBAL),
-        _make_item("project-skill", ItemType.SKILL, Scope.PROJECT),
-        _make_item("local-command", ItemType.COMMAND, Scope.LOCAL),
-        _make_item("another-global", ItemType.AGENT, Scope.GLOBAL),
+        _make_scoped_item("global-agent", ItemType.AGENT, Scope.GLOBAL),
+        _make_scoped_item("project-skill", ItemType.SKILL, Scope.PROJECT),
+        _make_scoped_item("local-command", ItemType.COMMAND, Scope.LOCAL),
+        _make_scoped_item("another-global", ItemType.AGENT, Scope.GLOBAL),
     ]
 
 
@@ -463,7 +448,7 @@ class TestFilterItemsByScope:
         assert result == []
 
     def test_no_matching_scope_returns_empty(self) -> None:
-        items = [_make_item("global-agent", scope=Scope.GLOBAL)]
+        items = [_make_scoped_item("global-agent", scope=Scope.GLOBAL)]
         result = _filter_items_by_scope(items, [Scope.LOCAL])
         assert result == []
 

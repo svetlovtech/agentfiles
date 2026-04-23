@@ -64,6 +64,8 @@ Add a new item type:
 No other modules need modification (Open/Closed Principle).
 """
 
+import importlib
+
 try:
     from importlib.metadata import PackageNotFoundError, version
 
@@ -129,8 +131,6 @@ def __getattr__(name: str) -> object:
     spec = _EXPORT_MAP.get(name)
     if spec is not None:
         module_path, attr_name = spec
-        import importlib
-
         module = importlib.import_module(module_path)
         value = getattr(module, attr_name)
         # Cache in module globals so future access bypasses __getattr__.

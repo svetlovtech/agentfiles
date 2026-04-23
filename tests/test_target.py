@@ -17,26 +17,14 @@ from agentfiles.target import (
     _opencode_project_candidates,
     build_target_manager,
 )
+from tests.conftest import make_item
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture
-def fake_home(tmp_path: Path) -> SimpleNamespace:
-    """Create a fake home directory with platform configs."""
-    home = tmp_path / "home"
-    home.mkdir()
-
-    # OpenCode layout (singular dir names).
-    oc_dir = home / ".config" / "opencode"
-    (oc_dir / "agent").mkdir(parents=True)
-    (oc_dir / "skill").mkdir(parents=True)
-    (oc_dir / "command").mkdir(parents=True)
-    (oc_dir / "plugin").mkdir(parents=True)
-
-    return SimpleNamespace(home=home, opencode=oc_dir)
+# fake_home is provided by conftest.py.
 
 
 # ---------------------------------------------------------------------------
@@ -162,17 +150,7 @@ class TestSubdirectoryResolution:
 # ---------------------------------------------------------------------------
 
 
-def _make_item(
-    item_type: ItemType,
-    name: str,
-) -> Item:
-    """Create a minimal Item for testing."""
-    ext = ".md" if item_type.is_file_based else ""
-    return Item(
-        item_type=item_type,
-        name=name,
-        source_path=Path("/src") / f"{name}{ext}",
-    )
+# make_item from conftest is used below.
 
 
 class TestTargetManager:
@@ -207,7 +185,7 @@ class TestTargetManager:
             targets = TargetDiscovery().discover_all()
 
         manager = TargetManager(targets)
-        item = _make_item(ItemType.AGENT, "python-reviewer")
+        item = make_item("python-reviewer", ItemType.AGENT)
 
         assert manager.is_item_installed(item) is True
 
@@ -219,13 +197,13 @@ class TestTargetManager:
             targets = TargetDiscovery().discover_all()
 
         manager = TargetManager(targets)
-        item = _make_item(ItemType.AGENT, "nonexistent")
+        item = make_item("nonexistent", ItemType.AGENT)
 
         assert manager.is_item_installed(item) is False
 
     def test_is_item_installed_false_for_missing_platform(self) -> None:
         manager = TargetManager(None)
-        item = _make_item(ItemType.AGENT, "anything")
+        item = make_item("anything", ItemType.AGENT)
 
         assert manager.is_item_installed(item) is False
 
@@ -502,7 +480,7 @@ class TestPermissionErrorHandling:
             targets = TargetDiscovery().discover_all()
 
         manager = TargetManager(targets)
-        item = _make_item(ItemType.AGENT, "test-agent")
+        item = make_item("test-agent", ItemType.AGENT)
 
         with mock.patch.object(
             Path,
@@ -523,7 +501,7 @@ class TestPermissionErrorHandling:
             targets = TargetDiscovery().discover_all()
 
         manager = TargetManager(targets)
-        item = _make_item(ItemType.AGENT, "test-agent")
+        item = make_item("test-agent", ItemType.AGENT)
 
         with mock.patch.object(
             Path,
@@ -820,7 +798,7 @@ class TestInstalledItemsEdgeCases:
             subdirs={"skills": Path("/fake/skill")},
         )
         manager = TargetManager(targets)
-        item = _make_item(ItemType.AGENT, "test")
+        item = make_item("test", ItemType.AGENT)
 
         # No "agents" in subdirs, so get_target_dir returns None.
         assert manager.is_item_installed(item) is False

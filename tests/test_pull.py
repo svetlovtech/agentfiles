@@ -212,7 +212,7 @@ class TestCmdPullIntegration:
             result = cmd_pull(args)
 
         assert result == 0
-        mock_fmt.assert_called_once_with([plan], target_manager, dry_run=True)
+        mock_fmt.assert_called_once_with([plan], dry_run=True)
         engine.execute_plan.assert_not_called()
 
     def test_pull_with_failure_returns_1(

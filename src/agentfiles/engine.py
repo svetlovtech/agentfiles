@@ -64,6 +64,19 @@ from agentfiles.paths import get_item_dest_path, get_push_dest_path
 
 logger = logging.getLogger(__name__)
 
+# Named constants for push comparison statuses used across helper functions.
+_PUSH_NEW = "new"
+_PUSH_UNCHANGED = "unchanged"
+_PUSH_CHANGED = "changed"
+
+# Named constants for sync-plan action strings returned by compute_sync_plan.
+_PLAN_PULL = "pull"
+_PLAN_SKIP = "skip"
+
+# Suffixes used by the atomic-copy swap pattern.
+_TMP_SUFFIX = ".agentfiles_tmp"
+_BACKUP_SUFFIX = ".bak"
+
 
 # ---------------------------------------------------------------------------
 # SyncReport
@@ -232,23 +245,24 @@ def _human_size(size_bytes: int) -> str:
 def _compare_push_item(local_path: Path, dest_path: Path) -> str:
     """Compare local (target) item with destination (source repo) item.
 
-    Returns "new", "unchanged", or "changed".
+    Returns one of :data:`_PUSH_NEW`, :data:`_PUSH_UNCHANGED`, or
+    :data:`_PUSH_CHANGED`.
     """
     if not dest_path.exists():
-        return "new"
+        return _PUSH_NEW
     try:
         if local_path.is_file() and dest_path.is_file():
             if filecmp.cmp(local_path, dest_path, shallow=False):
-                return "unchanged"
-            return "changed"
+                return _PUSH_UNCHANGED
+            return _PUSH_CHANGED
         if local_path.is_dir() and dest_path.is_dir():
             dcmp = filecmp.dircmp(local_path, dest_path)
             if _dir_differs(dcmp):
-                return "changed"
-            return "unchanged"
+                return _PUSH_CHANGED
+            return _PUSH_UNCHANGED
     except OSError:
         pass
-    return "changed"
+    return _PUSH_CHANGED
 
 
 @dataclass(frozen=True)
@@ -376,9 +390,7 @@ def _check_push_conflict(
 
 def _get_mtime(path: Path) -> datetime:
     """Return the modification time of a file or directory as a datetime."""
-    if path.is_file():
-        ts = path.stat().st_mtime
-    elif path.is_dir():
+    if path.is_dir():
         # Use the most recent mtime among all files.
         ts = max(
             (f.stat().st_mtime for f in path.rglob("*") if f.is_file()),
@@ -624,7 +636,7 @@ class SyncEngine:
             and action == SyncAction.INSTALL
             and any(r.is_success for r in results)
         ):
-            self._update_sync_state(results, source_dir)
+            self._persist_sync_state(results, source_dir, skip_uninstalls=True)
 
         return report
 
@@ -714,9 +726,10 @@ class SyncEngine:
         # Update state file after successful push.
         has_successful_push = any(r.is_success for r in results)
         if not dry_run and has_successful_push:
-            self._update_push_state(
+            self._persist_sync_state(
                 results,
                 source_dir,
+                skip_uninstalls=False,
             )
 
         return report
@@ -739,11 +752,11 @@ class SyncEngine:
 
         Returns:
             List of ``(item, action)`` tuples where *action* is
-            ``"pull"`` or ``"skip"``.
+            :data:`_PLAN_PULL` or :data:`_PLAN_SKIP`.
 
         Logic:
-            - item not at target → ``"pull"``
-            - item exists at target → ``"skip"``
+            - item not at target → :data:`_PLAN_PULL`
+            - item exists at target → :data:`_PLAN_SKIP`
 
         """
         plan: list[tuple[Item, str]] = []
@@ -755,8 +768,8 @@ class SyncEngine:
         counts = Counter(action for _, action in plan)
         logger.info(
             "Sync plan: %d pull, %d skip",
-            counts["pull"],
-            counts["skip"],
+            counts[_PLAN_PULL],
+            counts[_PLAN_SKIP],
         )
         return plan
 
@@ -984,14 +997,16 @@ class SyncEngine:
 
         # Compute diff status before any early returns.
         push_status = _compare_push_item(local_path, dest_path)
-        push_detail = _format_size_diff(local_path, dest_path) if push_status == "changed" else ""
+        push_detail = (
+            _format_size_diff(local_path, dest_path) if push_status == _PUSH_CHANGED else ""
+        )
 
-        if push_status == "unchanged":
+        if push_status == _PUSH_UNCHANGED:
             return SyncResult(
                 plan=plan,
                 is_success=True,
                 message=f"Unchanged {item.name}",
-                push_status="unchanged",
+                push_status=_PUSH_UNCHANGED,
                 push_detail=push_detail,
             )
 
@@ -1031,18 +1046,27 @@ class SyncEngine:
             push_detail=push_detail,
         )
 
-    def _update_sync_state(
+    def _persist_sync_state(
         self,
         results: list[SyncResult],
         source_dir: Path,
+        *,
+        skip_uninstalls: bool = True,
     ) -> None:
-        """Update the state file after a successful pull (install/update).
+        """Update the state file after a successful sync or push operation.
 
-        Records the sync timestamp for each successful result.
+        Records the sync timestamp for each successful result.  When
+        *skip_uninstalls* is ``True`` (pull mode), uninstalled items are
+        excluded from the state update.
+
+        Args:
+            results: Execution results to record.
+            source_dir: Root of the source repository (state file location).
+            skip_uninstalls: Exclude ``UNINSTALL`` results from recording.
         """
         try:
             state = load_sync_state(source_dir)
-        except Exception:
+        except (AgentfilesError, OSError):
             logger.warning(
                 "Failed to load sync state from %s — state will not be updated",
                 source_dir,
@@ -1055,63 +1079,16 @@ class SyncEngine:
         for result in results:
             if not result.is_success:
                 continue
-
-            plan = result.plan
-            if plan.action == SyncAction.UNINSTALL:
+            if skip_uninstalls and result.plan.action == SyncAction.UNINSTALL:
                 continue
 
-            item = plan.item
-            item_key = item.item_key
-
-            state.items[item_key] = ItemState(
-                synced_at=now,
-            )
+            state.items[result.plan.item.item_key] = ItemState(synced_at=now)
 
         state.last_sync = now
 
         try:
             save_sync_state(source_dir, state)
-        except Exception:
-            logger.warning(
-                "Failed to save sync state to %s — state file may be stale",
-                source_dir,
-                exc_info=True,
-            )
-
-    def _update_push_state(
-        self,
-        results: list[SyncResult],
-        source_dir: Path,
-    ) -> None:
-        """Update the state file after a successful push operation."""
-        try:
-            state = load_sync_state(source_dir)
-        except Exception:
-            logger.warning(
-                "Failed to load sync state from %s — push state will not be updated",
-                source_dir,
-                exc_info=True,
-            )
-            return
-
-        now = datetime.now(tz=timezone.utc).isoformat()
-
-        for result in results:
-            if not result.is_success:
-                continue
-
-            item = result.plan.item
-            item_key = item.item_key
-
-            state.items[item_key] = ItemState(
-                synced_at=now,
-            )
-
-        state.last_sync = now
-
-        try:
-            save_sync_state(source_dir, state)
-        except Exception:
+        except (AgentfilesError, OSError):
             logger.warning(
                 "Failed to save sync state to %s — state file may be stale",
                 source_dir,
@@ -1149,7 +1126,7 @@ class SyncEngine:
         """
         # Place the temp file next to dest so that rename() stays within the
         # same filesystem — cross-device renames are not atomic on POSIX.
-        tmp_dest = dest.with_suffix(dest.suffix + ".agentfiles_tmp")
+        tmp_dest = dest.with_suffix(dest.suffix + _TMP_SUFFIX)
 
         # Clean stale tmp from a previous interrupted operation.
         if os.path.lexists(tmp_dest):
@@ -1166,7 +1143,7 @@ class SyncEngine:
                 _remove_item(tmp_dest)
             return 0, err
 
-        backup = dest.with_suffix(dest.suffix + ".bak")
+        backup = dest.with_suffix(dest.suffix + _BACKUP_SUFFIX)
         backup_existed = False
         if os.path.lexists(dest):
             try:
@@ -1223,17 +1200,18 @@ class SyncEngine:
         """Determine the sync action for a single item.
 
         Checks if the item exists at the target.
-        Returns ``"pull"`` if not installed, ``"skip"`` if installed.
+        Returns :data:`_PLAN_PULL` if not installed, :data:`_PLAN_SKIP`
+        if installed.
         """
         target_dir = self._target_manager.get_target_dir(item.item_type)
         if target_dir is None:
-            return "skip"
+            return _PLAN_SKIP
 
         target_path = get_item_dest_path(target_dir, item)
         if not target_path.exists():
-            return "pull"
+            return _PLAN_PULL
 
-        return "skip"
+        return _PLAN_SKIP
 
     @staticmethod
     def aggregate(results: list[SyncResult]) -> SyncReport:

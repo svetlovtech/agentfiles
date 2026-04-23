@@ -18,9 +18,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
-import yaml
-
-from agentfiles.models import TARGET_PLATFORM_DISPLAY
+from agentfiles.config import _iter_config_search_paths, _read_yaml_file, get_state_path
+from agentfiles.models import TARGET_PLATFORM_DISPLAY, ConfigError
 
 logger = logging.getLogger(__name__)
 
@@ -84,32 +83,18 @@ class DoctorReport:
 
 def _check_config_file(config_path: Path | None) -> CheckResult:
     """Check that the agentfiles config file exists and is valid YAML."""
-    from agentfiles.config import _CONFIG_FILENAMES, _read_yaml_file
-    from agentfiles.models import ConfigError
-
     label = "Config file"
 
-    if config_path is not None:
-        explicit = Path(config_path)
-        if not explicit.is_file():
-            return CheckResult(label, CheckStatus.ERROR, f"{explicit} (NOT FOUND)")
-        try:
-            _read_yaml_file(explicit)
-            return CheckResult(label, CheckStatus.OK, f"{explicit} (found, valid)")
-        except (OSError, ValueError, ConfigError) as exc:
-            return CheckResult(label, CheckStatus.ERROR, f"{explicit} (INVALID: {exc})")
-
-    for base in (Path.cwd(), Path.home()):
-        for filename in _CONFIG_FILENAMES:
-            candidate = base / filename
-            if candidate.is_file():
+    try:
+        for path in _iter_config_search_paths(config_path):
+            if path.is_file():
                 try:
-                    _read_yaml_file(candidate)
-                    return CheckResult(label, CheckStatus.OK, f"{_short(candidate)} (found, valid)")
-                except (OSError, ValueError, ConfigError) as exc:
-                    return CheckResult(
-                        label, CheckStatus.ERROR, f"{_short(candidate)} (INVALID: {exc})"
-                    )
+                    _read_yaml_file(path)
+                    return CheckResult(label, CheckStatus.OK, f"{_short(path)} (found, valid)")
+                except ConfigError as exc:
+                    return CheckResult(label, CheckStatus.ERROR, f"{_short(path)} (INVALID: {exc})")
+    except ConfigError:
+        return CheckResult(label, CheckStatus.ERROR, f"{config_path} (NOT FOUND)")
 
     return CheckResult(label, CheckStatus.WARNING, "not found (using defaults)")
 
@@ -166,7 +151,7 @@ def _check_state_file(source_dir: Path | None) -> CheckResult:
     if source_dir is None:
         return CheckResult(label, CheckStatus.WARNING, "no source directory")
 
-    state_path = source_dir / ".agentfiles.state.yaml"
+    state_path = get_state_path(source_dir)
     short = _short(state_path)
 
     if not state_path.is_file():
@@ -175,12 +160,11 @@ def _check_state_file(source_dir: Path | None) -> CheckResult:
         )
 
     try:
-        with open(state_path, encoding="utf-8") as fh:
-            data = yaml.safe_load(fh)
-        if isinstance(data, dict) and ("version" in data or "items" in data):
+        data = _read_yaml_file(state_path)
+        if "version" in data or "items" in data:
             return CheckResult(label, CheckStatus.OK, f"{short} (found, valid)")
         return CheckResult(label, CheckStatus.WARNING, f"{short} (found, missing expected keys)")
-    except (OSError, yaml.YAMLError) as exc:
+    except ConfigError as exc:
         return CheckResult(label, CheckStatus.ERROR, f"{short} (INVALID: {exc})")
 
 
@@ -198,7 +182,7 @@ def _check_platform_tools() -> list[CheckResult]:
 
 
 def _short(path: Path) -> str:
-    """Replace home directory prefix with ``~``."""
+    """Replace home directory prefix with ``~`` for display."""
     home = str(Path.home())
     full = str(path)
     if full.startswith(home + "/"):

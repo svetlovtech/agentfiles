@@ -92,8 +92,8 @@ class TestCheckConfigFile:
 
     def test_auto_discover_none(self) -> None:
         with (
-            mock.patch("agentfiles.doctor.Path.cwd", return_value=Path("/nonexistent")),
-            mock.patch("agentfiles.doctor.Path.home", return_value=Path("/nonexistent2")),
+            mock.patch("agentfiles.config.Path.cwd", return_value=Path("/nonexistent")),
+            mock.patch("agentfiles.config.Path.home", return_value=Path("/nonexistent2")),
         ):
             result = _check_config_file(None)
         assert result.status == CheckStatus.WARNING

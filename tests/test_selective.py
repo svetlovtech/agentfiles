@@ -19,30 +19,13 @@ from agentfiles.cli import (
     build_parser,
 )
 from agentfiles.models import Item, ItemType
+from tests.conftest import make_items
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-
-def _make_item(name: str, item_type: ItemType = ItemType.AGENT) -> Item:
-    """Create a minimal Item for testing."""
-    return Item(
-        item_type=item_type,
-        name=name,
-        source_path=Path("/fake/source"),
-    )
-
-
-def _make_items() -> list[Item]:
-    """Create a standard set of test items."""
-    return [
-        _make_item("coder", ItemType.AGENT),
-        _make_item("debugger", ItemType.AGENT),
-        _make_item("solid-principles", ItemType.SKILL),
-        _make_item("dry-principle", ItemType.SKILL),
-        _make_item("autopilot", ItemType.COMMAND),
-    ]
+# make_items() from conftest provides the standard test item set.
 
 
 # ---------------------------------------------------------------------------
@@ -55,30 +38,30 @@ class TestApplyItemKeyFilter:
     """Tests for _apply_item_key_filter() helper."""
 
     def test_none_returns_all(self) -> None:
-        items = _make_items()
+        items = make_items()
         result = _apply_item_key_filter(items, None)
         assert result == items
 
     def test_empty_list_returns_all(self) -> None:
-        items = _make_items()
+        items = make_items()
         result = _apply_item_key_filter(items, [])
         assert result == items
 
     def test_single_key(self) -> None:
-        items = _make_items()
+        items = make_items()
         result = _apply_item_key_filter(items, ["agent/coder"])
         assert len(result) == 1
         assert result[0].name == "coder"
 
     def test_multiple_keys(self) -> None:
-        items = _make_items()
+        items = make_items()
         result = _apply_item_key_filter(items, ["agent/coder", "skill/solid-principles"])
         assert len(result) == 2
         names = {i.name for i in result}
         assert names == {"coder", "solid-principles"}
 
     def test_key_not_found_returns_empty(self, caplog: pytest.LogCaptureFixture) -> None:
-        items = _make_items()
+        items = make_items()
         with caplog.at_level(logging.WARNING):
             result = _apply_item_key_filter(items, ["agent/nonexistent"])
         assert result == []
@@ -86,13 +69,13 @@ class TestApplyItemKeyFilter:
 
     def test_partial_match(self) -> None:
         """Only exact key matches should work, not partial name matches."""
-        items = _make_items()
+        items = make_items()
         # "coder" alone is not a valid key — must be "agent/coder"
         result = _apply_item_key_filter(items, ["coder"])
         assert result == []
 
     def test_mixed_types(self) -> None:
-        items = _make_items()
+        items = make_items()
         result = _apply_item_key_filter(items, ["agent/debugger", "command/autopilot"])
         assert len(result) == 2
         names = {i.name for i in result}
@@ -156,7 +139,7 @@ class TestItemWithOnlyFilter:
         """--only filters by name, --item filters by key; both narrow."""
         from agentfiles.cli import _apply_item_filter
 
-        items = _make_items()
+        items = make_items()
         # --only coder,debugger keeps both agents
         filtered = _apply_item_filter(items, {"coder", "debugger"}, None)
         # --item agent/coder narrows to just coder

@@ -1,7 +1,7 @@
 """Interactive prompts for the agentfiles CLI.
 
-Provides terminal-based selection menus, confirmation dialogs, and diff
-resolution using only the standard library.  All prompts use raw
+Provides terminal-based selection menus, confirmation dialogs, and push
+conflict resolution using only the standard library.  All prompts use raw
 ``input()`` calls with optional ANSI colour output.
 
 The module is organised into focused classes that follow the
@@ -27,14 +27,12 @@ from pathlib import Path
 from typing import Any
 
 from agentfiles.models import (
-    DiffStatus,
     Item,
     ItemType,
     SyncAction,
     SyncPlan,
 )
 from agentfiles.output import (
-    DIFF_STATUS_STYLES,
     Colors,
     colorize,
     error,
@@ -58,11 +56,6 @@ _ACTION_SYMBOLS: dict[SyncAction, tuple[str, str]] = {
     SyncAction.UPDATE: ("~", Colors.YELLOW),
     SyncAction.SKIP: ("-", Colors.DIM),
     SyncAction.UNINSTALL: ("x", Colors.RED),
-}
-
-# DiffStatus display — derived from the canonical DIFF_STATUS_STYLES.
-_STATUS_SYMBOLS: dict[DiffStatus, tuple[str, str]] = {
-    status: (style.symbol, style.ansi_color) for status, style in DIFF_STATUS_STYLES.items()
 }
 
 # Menu definitions used by InteractiveSession.
@@ -164,13 +157,6 @@ class MenuRenderer:
         ]
         print_banner(lines)
         print()
-
-    def show_diff_header(self) -> None:
-        """Display the diff resolution header."""
-        sys.stdout.write(
-            f"\n{self._c('Resolve differences:', Colors.BOLD)}\n"
-            "  [i]nstall  [u]pdate  [s]kip  [a]ll  [q]uit\n\n"
-        )
 
     # -- selection lists ---------------------------------------------------
 
@@ -322,13 +308,6 @@ class MenuRenderer:
 
         sys.stdout.write("\n".join(buf) + "\n")
 
-    # -- diff formatting ---------------------------------------------------
-
-    def format_diff_status(self, status: DiffStatus) -> str:
-        """Return a colour-formatted diff status label."""
-        symbol, colour = _STATUS_SYMBOLS[status]
-        return self._c(f"{symbol} {status.value}", colour)
-
 
 # ---------------------------------------------------------------------------
 # InputParser — user input collection and parsing
@@ -390,10 +369,6 @@ class InputParser:
         indices = _parse_ranges(raw, len(types))
         return [types[i - 1] for i in indices if 1 <= i <= len(types)]
 
-    def parse_ranges(self, raw: str, max_value: int) -> list[int]:
-        """Delegate to module-level ``_parse_ranges``."""
-        return _parse_ranges(raw, max_value)
-
     def parse_sync_mode(self, raw: str) -> str:
         """Parse user input into a sync mode key.
 
@@ -439,27 +414,6 @@ class InputParser:
 
         return "status"
 
-    _DIFF_CHOICE_MAP: dict[str, SyncAction | None] = {
-        "i": SyncAction.INSTALL,
-        "install": SyncAction.INSTALL,
-        "u": SyncAction.UPDATE,
-        "update": SyncAction.UPDATE,
-        "s": SyncAction.SKIP,
-        "skip": SyncAction.SKIP,
-        "a": SyncAction.INSTALL,
-        "all": SyncAction.INSTALL,
-        "q": None,
-        "quit": None,
-    }
-
-    def resolve_diff_choice(self, raw: str) -> SyncAction | None:
-        """Map user input to a :class:`SyncAction`.
-
-        Returns ``None`` when the user quits.
-        """
-        key = raw.strip().lower() or "skip"
-        return self._DIFF_CHOICE_MAP.get(key)
-
 
 # ---------------------------------------------------------------------------
 # InteractiveSession — thin facade (preserves public API)
@@ -478,14 +432,11 @@ class InteractiveSession:
     **Selection prompts** — used by pull/push commands::
 
         choose_sync_mode()      → str              # cmd_pull
-        select_platforms(...)   → list[str]         # cmd_pull (no-op)
         select_item_types()     → list[ItemType]   # cmd_pull
         select_items(...)       → list[Item]       # cmd_pull, cmd_push
 
     **Confirmation prompts** — used by most commands that modify state::
 
-        confirm_action(...)              → bool  # internal base method
-        confirm_plans(...)               → bool  # internal base method
         confirm_action_or_abort(...)     → bool  # cmd_clean, cmd_init
         confirm_plans_or_abort(...)      → bool  # cmd_pull
 
@@ -557,13 +508,6 @@ class InteractiveSession:
 
     # -- public API: selection prompts -------------------------------------
 
-    def select_platforms(self, available: list[str]) -> list[str]:
-        """Return all available platforms unchanged.
-
-        Since only OpenCode is supported, platform selection is a no-op.
-        """
-        return list(available)
-
     def select_item_types(self) -> list[ItemType]:
         """Let the user pick one or more item types to sync.
 
@@ -623,7 +567,7 @@ class InteractiveSession:
             return list(items)
 
         def _parse(raw_input: str) -> list[Item]:
-            indices = self._parser.parse_ranges(raw_input, total)
+            indices = _parse_ranges(raw_input, total)
             return [index_map[i] for i in indices]
 
         return self._retry_selection(
@@ -634,19 +578,6 @@ class InteractiveSession:
         )
 
     # -- public API: confirmation prompts ----------------------------------
-
-    def confirm_action(self, message: str, default: bool = False) -> bool:
-        """Ask a yes/no confirmation question.
-
-        The prompt shows ``[y/N]`` when *default* is ``False``,
-        or ``[Y/n]`` when *default* is ``True``.
-
-        Returns:
-            ``True`` on confirmation, ``False`` on rejection or
-            cancellation (Ctrl+C).
-
-        """
-        return self._parser.confirm(message, default)
 
     def confirm_plans(self, plans: list[SyncPlan]) -> bool:
         """Display a human-readable summary of sync plans and ask to proceed.
@@ -671,7 +602,7 @@ class InteractiveSession:
     ) -> bool:
         """Confirm an action; print abort message on rejection.
 
-        Convenience method that combines :meth:`confirm_action` with
+        Convenience method that combines a yes/no prompt with
         the standard "Aborted." feedback so callers can write::
 
             if not session.confirm_action_or_abort("Continue?"):
@@ -682,7 +613,7 @@ class InteractiveSession:
             printing the abort message).
 
         """
-        if self.confirm_action(message, default):
+        if self._parser.confirm(message, default):
             return True
         info(_ABORTED_MESSAGE)
         return False
@@ -739,11 +670,7 @@ class InteractiveSession:
 
     _PUSH_CONFLICT_MAP: dict[str, str] = {
         "t": "keep-target",
-        "keep-target": "keep-target",
         "s": "keep-source",
-        "keep-source": "keep-source",
-        "d": "show-diff",
-        "show-diff": "show-diff",
     }
 
     def prompt_push_conflicts(

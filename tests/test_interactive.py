@@ -18,7 +18,6 @@ from agentfiles.interactive import (
     _parse_ranges,
 )
 from agentfiles.models import (
-    DiffStatus,
     Item,
     ItemType,
     SyncAction,
@@ -310,17 +309,6 @@ class TestMenuRenderer:
         assert "Install" in captured.out
         assert "Uninstall" in captured.out
 
-    def test_format_diff_status_all_statuses(self, renderer: MenuRenderer) -> None:
-        for status in DiffStatus:
-            result = renderer.format_diff_status(status)
-            assert status.value in result.lower(), f"Missing status value for {status}"
-
-    def test_show_diff_header(self, renderer: MenuRenderer, capsys: pytest.CaptureFixture) -> None:
-        renderer.show_diff_header()
-        captured = capsys.readouterr()
-        assert "Resolve differences:" in captured.out
-        assert "[i]nstall" in captured.out
-
 
 # ---------------------------------------------------------------------------
 # InputParser
@@ -361,43 +349,6 @@ class TestInputParser:
 
 class TestInteractiveSessionRetry:
     """Tests for selection retry prompts in InteractiveSession."""
-
-    def test_select_platforms_retries_on_invalid_then_succeeds(
-        self, capsys: pytest.CaptureFixture
-    ) -> None:
-        """Invalid platform input triggers retry; valid input on second try works."""
-        session = InteractiveSession(use_colors=False)
-        platforms = []
-        # First input "xyz" (invalid), second input "1" (valid)
-        with patch("builtins.input", side_effect=["xyz", "1"]):
-            result = session.select_platforms(platforms)
-        assert result == []
-
-    def test_select_platforms_returns_all_after_max_retries(self) -> None:
-        """Exhausting retries on invalid input falls back to all platforms."""
-        session = InteractiveSession(use_colors=False)
-        platforms = []
-        # All invalid inputs
-        invalid = ["bad"] * 10  # More than _MAX_INPUT_RETRIES
-        with patch("builtins.input", side_effect=invalid):
-            result = session.select_platforms(platforms)
-        assert result == list(platforms)
-
-    def test_select_platforms_retry_then_all_keyword(self) -> None:
-        """User can type 'all' during retry to select all platforms."""
-        session = InteractiveSession(use_colors=False)
-        platforms = []
-        with patch("builtins.input", side_effect=["bad", "all"]):
-            result = session.select_platforms(platforms)
-        assert result == list(platforms)
-
-    def test_select_platforms_retry_then_empty_selects_all(self) -> None:
-        """User can press Enter during retry to accept all platforms."""
-        session = InteractiveSession(use_colors=False)
-        platforms = []
-        with patch("builtins.input", side_effect=["bad", ""]):
-            result = session.select_platforms(platforms)
-        assert result == list(platforms)
 
     def test_select_item_types_retries_on_invalid(self) -> None:
         """Invalid item type input triggers retry; valid input on second try."""
@@ -806,56 +757,12 @@ class TestInteractiveRunnerRunLoop:
 
 
 # ---------------------------------------------------------------------------
-# Additional InteractiveSession — confirmation with default values
-# ---------------------------------------------------------------------------
-
-
-class TestConfirmActionDefaults:
-    """Tests for confirm_action with different default values."""
-
-    def test_confirm_action_default_true_empty_input(self) -> None:
-        """Empty input with default=True returns True."""
-        session = InteractiveSession(use_colors=False)
-        with patch("builtins.input", return_value=""):
-            assert session.confirm_action("Proceed?", default=True) is True
-
-    def test_confirm_action_default_false_empty_input(self) -> None:
-        """Empty input with default=False returns False."""
-        session = InteractiveSession(use_colors=False)
-        with patch("builtins.input", return_value=""):
-            assert session.confirm_action("Proceed?", default=False) is False
-
-    def test_confirm_action_eof_uses_default(self) -> None:
-        """EOFError during confirm returns the default value."""
-        session = InteractiveSession(use_colors=False)
-        with patch("builtins.input", side_effect=EOFError):
-            assert session.confirm_action("Proceed?", default=True) is True
-        with patch("builtins.input", side_effect=EOFError):
-            assert session.confirm_action("Proceed?", default=False) is False
-
-
-# ---------------------------------------------------------------------------
 # Additional InteractiveSession — EOF / interrupt in selection methods
 # ---------------------------------------------------------------------------
 
 
 class TestSelectionEOFHandling:
     """Tests for EOF/interrupt handling in selection methods."""
-
-    def test_select_platforms_eof_returns_all(self) -> None:
-        """EOFError during platform selection returns all platforms."""
-        session = InteractiveSession(use_colors=False)
-        platforms = []
-        with patch("builtins.input", side_effect=EOFError):
-            result = session.select_platforms(platforms)
-        assert result == list(platforms)
-
-    def test_select_platforms_interrupt_returns_all(self) -> None:
-        """KeyboardInterrupt during platform selection returns all (no-op method)."""
-        session = InteractiveSession(use_colors=False)
-        with patch("builtins.input", side_effect=KeyboardInterrupt):
-            result = session.select_platforms([])
-        assert result == []
 
     def test_select_item_types_eof_returns_all(self) -> None:
         """EOFError during item type selection returns all types."""

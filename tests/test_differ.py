@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Generator
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -26,51 +25,14 @@ from agentfiles.models import (
 )
 from agentfiles.output import format_diff, format_diff_json
 from agentfiles.target import TargetDiscovery, TargetManager
+from tests.conftest import make_item
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture
-def fake_home(tmp_path: Path) -> SimpleNamespace:
-    """Create a fake home directory with platform configs."""
-    home = tmp_path / "home"
-    home.mkdir()
-
-    oc_dir = home / ".config" / "opencode"
-    (oc_dir / "agent").mkdir(parents=True)
-    (oc_dir / "skill").mkdir(parents=True)
-
-    return SimpleNamespace(home=home, opencode=oc_dir)
-
-
-@pytest.fixture
-def manager(fake_home: SimpleNamespace) -> Generator[TargetManager, None, None]:
-    """Create a TargetManager using fake home directories.
-
-    Patches Path.home(), Path.cwd(), and os.environ for the full
-    test duration so no real filesystem paths leak in.
-    """
-    with (
-        mock.patch.object(Path, "home", return_value=fake_home.home),
-        mock.patch.object(Path, "cwd", return_value=fake_home.home),
-        mock.patch.dict(os.environ, {}, clear=True),
-    ):
-        targets = TargetDiscovery().discover_all()
-        yield TargetManager(targets)
-
-
-def _make_item(
-    item_type: ItemType = ItemType.AGENT,
-    name: str = "test-item",
-) -> Item:
-    """Create a minimal Item for testing."""
-    return Item(
-        item_type=item_type,
-        name=name,
-        source_path=Path("/src") / item_type.plural / name,
-    )
+# fake_home and target_manager are provided by conftest.py.
 
 
 # ---------------------------------------------------------------------------
@@ -81,9 +43,9 @@ def _make_item(
 class TestDifferDiff:
     """Tests for the Differ.diff method."""
 
-    def test_new_item_not_installed(self, manager: TargetManager) -> None:
-        item = _make_item(name="new-agent")
-        differ = Differ(manager)
+    def test_new_item_not_installed(self, target_manager: TargetManager) -> None:
+        item = make_item(name="new-agent")
+        differ = Differ(target_manager)
 
         results = differ.diff([item])
 
@@ -93,11 +55,11 @@ class TestDifferDiff:
 
     def test_unchanged_item_same_content(
         self,
-        manager: TargetManager,
+        target_manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
         # Create an installed item with known content.
-        target_dir = manager.get_target_dir(ItemType.AGENT)
+        target_dir = target_manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         item_dir = target_dir / "stable-agent"
@@ -113,7 +75,7 @@ class TestDifferDiff:
             name="stable-agent",
             source_path=source_dir,
         )
-        differ = Differ(manager)
+        differ = Differ(target_manager)
         results = differ.diff([item])
 
         assert len(results) == 1
@@ -121,11 +83,11 @@ class TestDifferDiff:
 
     def test_updated_item_different_sizes(
         self,
-        manager: TargetManager,
+        target_manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
         """Different file sizes are detected as UPDATED by metadata comparison."""
-        target_dir = manager.get_target_dir(ItemType.AGENT)
+        target_dir = target_manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         item_dir = target_dir / "changed-agent"
@@ -142,35 +104,35 @@ class TestDifferDiff:
             name="changed-agent",
             source_path=source_dir,
         )
-        differ = Differ(manager)
+        differ = Differ(target_manager)
         results = differ.diff([item])
 
         assert len(results) == 1
         assert results[0].status == DiffStatus.UPDATED
 
-    def test_empty_items_returns_empty(self, manager: TargetManager) -> None:
-        differ = Differ(manager)
+    def test_empty_items_returns_empty(self, target_manager: TargetManager) -> None:
+        differ = Differ(target_manager)
         results = differ.diff([])
 
         assert results == []
 
-    def test_multiple_items(self, manager: TargetManager) -> None:
+    def test_multiple_items(self, target_manager: TargetManager) -> None:
         items = [
-            _make_item(name="agent-a"),
-            _make_item(name="skill-b", item_type=ItemType.SKILL),
+            make_item(name="agent-a"),
+            make_item(name="skill-b", item_type=ItemType.SKILL),
         ]
-        differ = Differ(manager)
+        differ = Differ(target_manager)
         results = differ.diff(items)
 
         assert len(results) == 2
 
     def test_size_precheck_detects_update(
         self,
-        manager: TargetManager,
+        target_manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
         """When file sizes differ, metadata check detects UPDATED."""
-        target_dir = manager.get_target_dir(ItemType.AGENT)
+        target_dir = target_manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         item_dir = target_dir / "size-diff-agent"
@@ -189,7 +151,7 @@ class TestDifferDiff:
             name="size-diff-agent",
             source_path=source_dir,
         )
-        differ = Differ(manager)
+        differ = Differ(target_manager)
         results = differ.diff([item])
 
         assert len(results) == 1
@@ -198,11 +160,11 @@ class TestDifferDiff:
 
     def test_directory_file_count_precheck(
         self,
-        manager: TargetManager,
+        target_manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
         """Directory items with different file counts are detected as updated."""
-        target_dir = manager.get_target_dir(ItemType.SKILL)
+        target_dir = target_manager.get_target_dir(ItemType.SKILL)
         assert target_dir is not None
 
         skill_dir = target_dir / "count-skill"
@@ -219,7 +181,7 @@ class TestDifferDiff:
             name="count-skill",
             source_path=source_dir,
         )
-        differ = Differ(manager)
+        differ = Differ(target_manager)
 
         results = differ.diff([item])
 
@@ -229,11 +191,11 @@ class TestDifferDiff:
 
     def test_same_size_different_content_marked_unchanged(
         self,
-        manager: TargetManager,
+        target_manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
         """Same file size but different content → UNCHANGED (metadata matches)."""
-        target_dir = manager.get_target_dir(ItemType.AGENT)
+        target_dir = target_manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         item_dir = target_dir / "same-size-agent"
@@ -249,7 +211,7 @@ class TestDifferDiff:
             name="same-size-agent",
             source_path=source_dir,
         )
-        differ = Differ(manager)
+        differ = Differ(target_manager)
         results = differ.diff([item])
 
         assert len(results) == 1
@@ -267,11 +229,11 @@ class TestErrorHandling:
 
     def test_unreadable_target_returns_clear_error(
         self,
-        manager: TargetManager,
+        target_manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
         """Target file exists but metadata comparison fails → UNCHANGED (conservative)."""
-        target_dir = manager.get_target_dir(ItemType.AGENT)
+        target_dir = target_manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         item_dir = target_dir / "locked-agent"
@@ -287,7 +249,7 @@ class TestErrorHandling:
             name="locked-agent",
             source_path=source_dir,
         )
-        differ = Differ(manager)
+        differ = Differ(target_manager)
 
         # Metadata check fails (PermissionError) — conservative approach
         # returns False, so the item is classified as UNCHANGED.
@@ -303,13 +265,13 @@ class TestErrorHandling:
 
     def test_unexpected_exception_skips_item(
         self,
-        manager: TargetManager,
+        target_manager: TargetManager,
     ) -> None:
         """One item raising an exception should not prevent others from being diffed."""
-        good_item = _make_item(name="good-agent")
-        bad_item = _make_item(name="bad-agent")
+        good_item = make_item(name="good-agent")
+        bad_item = make_item(name="bad-agent")
 
-        differ = Differ(manager)
+        differ = Differ(target_manager)
 
         with mock.patch.object(
             differ,
@@ -329,11 +291,11 @@ class TestErrorHandling:
 
     def test_permission_error_during_metadata_comparison(
         self,
-        manager: TargetManager,
+        target_manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
         """PermissionError during stat() should not crash, falls through to content comparison."""
-        target_dir = manager.get_target_dir(ItemType.AGENT)
+        target_dir = target_manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         item_dir = target_dir / "perm-agent"
@@ -349,7 +311,7 @@ class TestErrorHandling:
             name="perm-agent",
             source_path=source_dir,
         )
-        differ = Differ(manager)
+        differ = Differ(target_manager)
 
         # Simulate PermissionError only on target stat, not source.
         real_stat = Path.stat
@@ -376,148 +338,6 @@ class TestErrorHandling:
 
 
 # ---------------------------------------------------------------------------
-# format_diff
-# ---------------------------------------------------------------------------
-
-
-class TestFormatDiff:
-    """Tests for the format_diff formatting function."""
-
-    def test_empty_results(self) -> None:
-        result = format_diff([])
-        assert "No differences" in result
-
-    def test_includes_updated_entry(self) -> None:
-        item = _make_item(name="changed")
-        entries = [
-            DiffEntry(
-                item=item,
-                status=DiffStatus.UPDATED,
-                details="size differs",
-            ),
-        ]
-
-        output = format_diff(entries, use_colors=False)
-        assert "~ changed" in output
-        assert "content differs" in output
-
-    def test_includes_unchanged_entry(self) -> None:
-        item = _make_item(name="stable")
-        entries = [
-            DiffEntry(item=item, status=DiffStatus.UNCHANGED),
-        ]
-
-        output = format_diff(entries, use_colors=False)
-        assert "= stable" in output
-        assert "unchanged" in output
-
-    def test_use_colors_true_includes_ansi(self) -> None:
-        """When use_colors=True, ANSI codes appear."""
-        item = _make_item(name="a")
-        entries = [DiffEntry(item=item, status=DiffStatus.NEW)]
-
-        with (
-            mock.patch("agentfiles.output._use_colors", True),
-            mock.patch.dict(os.environ, {}, clear=True),
-        ):
-            output = format_diff(entries, use_colors=True)
-
-        assert "\033" in output
-
-    def test_includes_deleted_status(self) -> None:
-        """Verify DiffStatus.DELETED shows '-' symbol in output."""
-        item = _make_item(name="deleted-agent")
-        entry = DiffEntry(item=item, status=DiffStatus.DELETED, details="removed from source")
-        output = format_diff([entry], use_colors=False)
-        assert "deleted-agent" in output
-        assert "- deleted-agent" in output
-
-    def test_includes_conflict_status(self) -> None:
-        """Verify DiffStatus.CONFLICT shows '!' symbol in output."""
-        item = _make_item(name="conflict-agent")
-        entry = DiffEntry(item=item, status=DiffStatus.CONFLICT, details="both sides modified")
-        output = format_diff([entry], use_colors=False)
-        assert "conflict-agent" in output
-        assert "! conflict-agent" in output
-
-    def test_includes_item_type_summary(self) -> None:
-        agent = _make_item(item_type=ItemType.AGENT, name="a1")
-        skill = _make_item(item_type=ItemType.SKILL, name="s1")
-        entries = [
-            DiffEntry(item=agent, status=DiffStatus.NEW),
-            DiffEntry(item=skill, status=DiffStatus.NEW),
-        ]
-
-        output = format_diff(entries, use_colors=False)
-        assert "agents:" in output
-        assert "skills:" in output
-
-
-# ---------------------------------------------------------------------------
-# format_diff_json
-# ---------------------------------------------------------------------------
-
-
-class TestFormatDiffJson:
-    """Tests for the format_diff_json formatting function."""
-
-    def test_valid_json(self) -> None:
-        item = _make_item(name="a")
-        entries = [DiffEntry(item=item, status=DiffStatus.NEW)]
-
-        output = format_diff_json(entries)
-        parsed = json.loads(output)
-
-        assert "items" in parsed
-        assert len(parsed["items"]) == 1
-
-    def test_item_fields(self) -> None:
-        item = _make_item(item_type=ItemType.SKILL, name="my-skill")
-        entries = [DiffEntry(item=item, status=DiffStatus.UPDATED)]
-
-        output = format_diff_json(entries)
-        parsed = json.loads(output)
-
-        items = parsed["items"]
-        assert len(items) == 1
-        assert items[0]["name"] == "my-skill"
-        assert items[0]["type"] == "skill"
-        assert items[0]["status"] == "updated"
-
-    def test_empty_results(self) -> None:
-        output = format_diff_json([])
-        parsed = json.loads(output)
-
-        assert parsed == {"items": []}
-
-    def test_multiple_entries(self) -> None:
-        item_a = _make_item(name="a")
-        item_b = _make_item(name="b")
-        entries = [
-            DiffEntry(item=item_a, status=DiffStatus.NEW),
-            DiffEntry(item=item_b, status=DiffStatus.UNCHANGED),
-        ]
-
-        output = format_diff_json(entries)
-        parsed = json.loads(output)
-
-        assert len(parsed["items"]) == 2
-
-    def test_json_includes_conflict_and_deleted(self) -> None:
-        """Verify JSON output includes CONFLICT and DELETED status values."""
-        item = _make_item(name="test-item")
-        entries = [
-            DiffEntry(item=item, status=DiffStatus.CONFLICT, details="conflict"),
-            DiffEntry(item=item, status=DiffStatus.DELETED, details="deleted"),
-        ]
-        output = format_diff_json(entries)
-        data = json.loads(output)
-        statuses = [e["status"] for e in data["items"]]
-        assert "conflict" in statuses
-        assert "deleted" in statuses
-
-
-# ---------------------------------------------------------------------------
 # _resolve_target_path — direct unit tests
 # ---------------------------------------------------------------------------
 
@@ -527,23 +347,23 @@ class TestResolveTargetPath:
 
     def test_returns_path_for_valid_platform(
         self,
-        manager: TargetManager,
+        target_manager: TargetManager,
     ) -> None:
-        item = _make_item(name="test-agent")
-        result = _resolve_target_path(item, manager)
+        item = make_item(name="test-agent")
+        result = _resolve_target_path(item, target_manager)
         assert result is not None
         assert "test-agent" in str(result)
 
     def test_returns_none_for_empty_manager(self) -> None:
         empty_manager = TargetManager(None)
-        item = _make_item(name="anything")
+        item = make_item(name="anything")
         result = _resolve_target_path(item, empty_manager)
         assert result is None
 
     def test_returns_none_for_wrong_platform_type(self) -> None:
         """Item type AGENT but platform has no agent dir → None."""
         empty_manager = TargetManager(None)
-        item = _make_item(item_type=ItemType.PLUGIN, name="p1")
+        item = make_item(item_type=ItemType.PLUGIN, name="p1")
         result = _resolve_target_path(item, empty_manager)
         assert result is None
 
@@ -635,11 +455,11 @@ class TestMixedStatusResults:
 
     def test_mixed_new_updated_unchanged(
         self,
-        manager: TargetManager,
+        target_manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
         """Single diff call yields NEW, UPDATED, and UNCHANGED entries."""
-        target_dir = manager.get_target_dir(ItemType.AGENT)
+        target_dir = target_manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         # UPDATED: installed with different content (different sizes)
@@ -681,7 +501,7 @@ class TestMixedStatusResults:
             ),
         ]
 
-        differ = Differ(manager)
+        differ = Differ(target_manager)
         results = differ.diff(items)
 
         status_map = {e.item.name: e.status for e in results}
@@ -691,11 +511,11 @@ class TestMixedStatusResults:
 
     def test_single_platform_unchanged(
         self,
-        manager: TargetManager,
+        target_manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
         """Items with same content are UNCHANGED."""
-        oc_dir = manager.get_target_dir(ItemType.AGENT)
+        oc_dir = target_manager.get_target_dir(ItemType.AGENT)
         assert oc_dir is not None
         item_dir = oc_dir / "split-agent"
         item_dir.mkdir()
@@ -710,7 +530,7 @@ class TestMixedStatusResults:
             name="split-agent",
             source_path=source_dir,
         )
-        differ = Differ(manager)
+        differ = Differ(target_manager)
         results = differ.diff([item])
 
         assert results[0].status == DiffStatus.UNCHANGED
@@ -726,11 +546,11 @@ class TestMetadataDiffEdgeCases:
 
     def test_source_file_target_not_file(
         self,
-        manager: TargetManager,
+        target_manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
         """Source is a file but target is a directory → metadata differs."""
-        target_dir = manager.get_target_dir(ItemType.AGENT)
+        target_dir = target_manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         # Create a directory at target with the item name
@@ -747,7 +567,7 @@ class TestMetadataDiffEdgeCases:
             name="type-mismatch-agent",
             source_path=source_file,
         )
-        differ = Differ(manager)
+        differ = Differ(target_manager)
         results = differ.diff([item])
 
         assert len(results) == 1
@@ -756,11 +576,11 @@ class TestMetadataDiffEdgeCases:
 
     def test_metadata_differs_returns_false_for_none_target_path(
         self,
-        manager: TargetManager,
+        target_manager: TargetManager,
     ) -> None:
         """When _resolve_target_path returns None, metadata check returns False."""
         empty_manager = TargetManager(None)
-        item = _make_item(name="orphan")
+        item = make_item(name="orphan")
         differ = Differ(empty_manager)
 
         result = differ._metadata_differs(item)
@@ -768,14 +588,14 @@ class TestMetadataDiffEdgeCases:
 
     def test_same_file_count_same_total_size_marked_unchanged(
         self,
-        manager: TargetManager,
+        target_manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
         """Directory items with same count and total size → UNCHANGED.
 
         Without checksum comparison, metadata match means unchanged.
         """
-        target_dir = manager.get_target_dir(ItemType.SKILL)
+        target_dir = target_manager.get_target_dir(ItemType.SKILL)
         assert target_dir is not None
 
         skill_dir = target_dir / "tricky-skill"
@@ -791,7 +611,7 @@ class TestMetadataDiffEdgeCases:
             name="tricky-skill",
             source_path=source_dir,
         )
-        differ = Differ(manager)
+        differ = Differ(target_manager)
         results = differ.diff([item])
 
         assert len(results) == 1
@@ -808,13 +628,13 @@ class TestSinglePlatformDiff:
 
     def test_item_on_target_appears_in_results(
         self,
-        manager: TargetManager,
+        target_manager: TargetManager,
     ) -> None:
         """Item supporting OpenCode should appear in results."""
-        item = _make_item(
+        item = make_item(
             name="oc-only",
         )
-        differ = Differ(manager)
+        differ = Differ(target_manager)
         results = differ.diff([item])
 
         assert len(results) == 1
@@ -836,10 +656,10 @@ class TestConflictStatus:
 
     def test_conflict_entry_in_diff_results(
         self,
-        manager: TargetManager,
+        target_manager: TargetManager,
     ) -> None:
         """Manually created CONFLICT entry passes through diff result flow."""
-        item = _make_item(name="conflict-item")
+        item = make_item(name="conflict-item")
         conflict_entry = DiffEntry(
             item=item,
             status=DiffStatus.CONFLICT,
@@ -860,11 +680,11 @@ class TestComputeContentDiff:
 
     def test_returns_diff_for_updated_file(
         self,
-        manager: TargetManager,
+        target_manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
         """Unified diff should show added/removed lines for changed content."""
-        target_dir = manager.get_target_dir(ItemType.AGENT)
+        target_dir = target_manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         # Create target with old content
@@ -892,7 +712,7 @@ class TestComputeContentDiff:
             item=item,
             status=DiffStatus.UPDATED,
         )
-        result = compute_content_diff(entry, manager)
+        result = compute_content_diff(entry, target_manager)
 
         assert len(result) > 0
         # Should contain unified diff markers
@@ -905,11 +725,11 @@ class TestComputeContentDiff:
 
     def test_returns_empty_for_identical_content(
         self,
-        manager: TargetManager,
+        target_manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
         """No diff lines when source and target have identical content."""
-        target_dir = manager.get_target_dir(ItemType.AGENT)
+        target_dir = target_manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         content = "identical content\nline2\n"
@@ -927,7 +747,7 @@ class TestComputeContentDiff:
             source_path=source_dir,
         )
         entry = DiffEntry(item=item, status=DiffStatus.UPDATED)
-        result = compute_content_diff(entry, manager)
+        result = compute_content_diff(entry, target_manager)
 
         assert result == []
 
@@ -959,11 +779,11 @@ class TestComputeContentDiff:
 
     def test_handles_binary_file_gracefully(
         self,
-        manager: TargetManager,
+        target_manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
         """Binary content should produce a 'binary file' notice."""
-        target_dir = manager.get_target_dir(ItemType.AGENT)
+        target_dir = target_manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         item_dir = target_dir / "binary-agent"
@@ -988,14 +808,14 @@ class TestComputeContentDiff:
             source_path=source_dir,
         )
         entry = DiffEntry(item=item, status=DiffStatus.UPDATED)
-        result = compute_content_diff(entry, manager)
+        result = compute_content_diff(entry, target_manager)
 
         assert len(result) == 1
         assert "binary file" in result[0]
 
     def test_returns_empty_for_non_updated_status(
         self,
-        manager: TargetManager,
+        target_manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
         """Even for NEW entries, content diff on missing target returns empty."""
@@ -1009,16 +829,16 @@ class TestComputeContentDiff:
             source_path=source_dir,
         )
         entry = DiffEntry(item=item, status=DiffStatus.NEW)
-        result = compute_content_diff(entry, manager)
+        result = compute_content_diff(entry, target_manager)
         assert result == []
 
     def test_unified_diff_includes_context_lines(
         self,
-        manager: TargetManager,
+        target_manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
         """Diff should include context lines around the change."""
-        target_dir = manager.get_target_dir(ItemType.AGENT)
+        target_dir = target_manager.get_target_dir(ItemType.AGENT)
         assert target_dir is not None
 
         target_content = "line1\nline2\nline3\nline4\nline5\n"
@@ -1038,7 +858,7 @@ class TestComputeContentDiff:
             source_path=source_dir,
         )
         entry = DiffEntry(item=item, status=DiffStatus.UPDATED)
-        result = compute_content_diff(entry, manager)
+        result = compute_content_diff(entry, target_manager)
 
         result_text = "\n".join(result)
         # Context lines (unchanged) should appear

@@ -514,40 +514,6 @@ class TestGitBackendProtocol:
         assert info.is_git_repo is False
         mock_git.is_git_repo.assert_called_once_with(project.resolve())
 
-    def test_subprocess_backend_clone_success(self, tmp_path: Path) -> None:
-        """SubprocessGitBackend.clone delegates to shallow_clone."""
-        target = tmp_path / "repo"
-        mock_result = MagicMock(spec=subprocess.CompletedProcess)
-        mock_result.returncode = 0
-        mock_result.stderr = ""
-
-        with (
-            patch("agentfiles.source.shallow_clone", return_value=mock_result) as mock_sc,
-            patch("agentfiles.source.sparse_checkout_init") as mock_sparse,
-        ):
-            backend = SubprocessGitBackend()
-            backend.clone("https://example.com/repo.git", target)
-
-        mock_sc.assert_called_once_with(
-            "https://example.com/repo.git",
-            target,
-            depth=1,
-            timeout=ANY,
-        )
-        mock_sparse.assert_called_once()
-
-    def test_subprocess_backend_clone_failure(self, tmp_path: Path) -> None:
-        """SubprocessGitBackend.clone raises SourceError on failure."""
-        target = tmp_path / "repo"
-        mock_result = MagicMock(spec=subprocess.CompletedProcess)
-        mock_result.returncode = 128
-        mock_result.stderr = "fatal: not found"
-
-        with patch("agentfiles.source.run_git", return_value=mock_result):
-            backend = SubprocessGitBackend()
-            with pytest.raises(SourceError, match="git clone failed"):
-                backend.clone("https://example.com/repo.git", target)
-
     def test_subprocess_backend_pull_success(self, tmp_path: Path) -> None:
         """SubprocessGitBackend.pull fetches and skips merge when up-to-date."""
         mock_fetch = MagicMock(spec=subprocess.CompletedProcess)

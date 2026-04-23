@@ -73,11 +73,11 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from agentfiles.config import AgentfilesConfig
-    from agentfiles.engine import SyncEngine
+    from agentfiles.engine import SyncEngine, SyncReport
     from agentfiles.models import (
         Item,
         ItemType,
@@ -183,9 +183,9 @@ def _filter_items_by_scope(
         Filtered list of ``Item`` objects.
 
     """
-    from agentfiles.models import Scope as _Scope
+    from agentfiles.models import Scope
 
-    if set(scopes) == set(_Scope):
+    if set(scopes) == set(Scope):
         return items
     return [i for i in items if i.scope in scopes]
 
@@ -264,9 +264,7 @@ def _apply_item_filter(
     if only_set is not None:
         items = [i for i in items if i.name in only_set]
         if not items:
-            logging.getLogger(__name__).warning(
-                "No items matched --only filter: %s", ", ".join(sorted(only_set))
-            )
+            logger.warning("No items matched --only filter: %s", ", ".join(sorted(only_set)))
     if except_set is not None:
         items = [i for i in items if i.name not in except_set]
     return items
@@ -293,9 +291,7 @@ def _apply_item_key_filter(
     key_set = set(item_keys)
     filtered = [i for i in items if i.item_key in key_set]
     if not filtered:
-        logging.getLogger(__name__).warning(
-            "No items matched --item filter: %s", ", ".join(sorted(key_set))
-        )
+        logger.warning("No items matched --item filter: %s", ", ".join(sorted(key_set)))
     return filtered
 
 
@@ -729,7 +725,7 @@ def _print_token_summary(
         print(f"  Name + Description tokens: ~{name_desc_total:,}")
 
 
-def _format_list_text(items: list[Any], show_tokens: bool, *, show_scope: bool = False) -> int:
+def _format_list_text(items: list[Item], show_tokens: bool, *, show_scope: bool = False) -> int:
     """Format items as grouped, colourised text and print to stdout.
 
     Items are grouped by type (agents, skills, …) and sorted alphabetically
@@ -944,7 +940,7 @@ def cmd_pull(args: argparse.Namespace) -> int:
 
     # JSON dry-run: output plan and return early.
     if fmt == "json" and ctx.dry_run:
-        return _format_plan_json(plans, target_manager, dry_run=True)
+        return _format_plan_json(plans, dry_run=True)
 
     # Show plan and confirm (unless --yes or --dry-run)
     needs_confirmation = plans and not args.non_interactive and not ctx.dry_run
@@ -983,7 +979,7 @@ def cmd_pull(args: argparse.Namespace) -> int:
     return 0 if report.is_success else 1
 
 
-def _print_push_report(report: object, dry_run: bool) -> None:
+def _print_push_report(report: SyncReport, dry_run: bool) -> None:
     """Display a detailed push report grouped by diff status.
 
     Args:
@@ -992,7 +988,7 @@ def _print_push_report(report: object, dry_run: bool) -> None:
     """
     from agentfiles.output import bold, error, success, warning
 
-    all_results = report.installed + report.updated + report.skipped + report.failed  # type: ignore[attr-defined]
+    all_results = report.installed + report.updated + report.skipped + report.failed
 
     # Group by push_status.
     new_items: list[str] = []
@@ -1301,7 +1297,6 @@ def cmd_push(args: argparse.Namespace) -> int:
         if args.dry_run:
             return _format_plan_json(
                 [r.plan for r in all_results if r.is_success],
-                target_manager,
                 dry_run=True,
             )
         return _format_results_json(all_results, report, dry_run=False)
@@ -1371,9 +1366,9 @@ def cmd_status(args: argparse.Namespace) -> int:
         items = _filter_items_by_scope(items, scopes)
 
         # Show scope markers only when items have mixed scopes
-        from agentfiles.models import Scope as _Scope
+        from agentfiles.models import Scope
 
-        has_mixed_scopes = len({getattr(i, "scope", _Scope.GLOBAL) for i in items}) > 1
+        has_mixed_scopes = len({getattr(i, "scope", Scope.GLOBAL) for i in items}) > 1
         # Also show when user explicitly filtered by scope
         explicit_scope = getattr(args, "scope", None) is not None
 
@@ -1437,7 +1432,7 @@ def cmd_status(args: argparse.Namespace) -> int:
 
     fmt = getattr(args, "format", "text")
     if fmt == "json":
-        return _format_status_json(target_manager, summary)
+        return _format_status_json(summary)
 
     from agentfiles.models import TARGET_PLATFORM_DISPLAY
 
@@ -1667,19 +1662,16 @@ def _update_sync_state_from_results(
 
     from agentfiles.models import ItemState
 
+    now = datetime.now(timezone.utc).isoformat()
+
     for result in results:
         if not result.is_success:
             continue
 
-        plan = result.plan
-        item = plan.item
+        item_key = result.plan.item.item_key
+        state.items[item_key] = ItemState(synced_at=now)
 
-        item_key = item.item_key
-        state.items[item_key] = ItemState(
-            synced_at=datetime.now(timezone.utc).isoformat(),
-        )
-
-    state.last_sync = datetime.now(timezone.utc).isoformat()
+    state.last_sync = now
 
 
 # ---------------------------------------------------------------------------
@@ -2057,7 +2049,9 @@ examples:
     push_p = subs.add_parser(
         "push",
         help="Push items from local configs back to the source repository",
-        description="Discover installed items from the target platform and push them back to source.",
+        description=(
+            "Discover installed items from the target platform and push them back to source."
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 examples:
@@ -2332,7 +2326,7 @@ def main() -> None:
         warning("\nAborted.")
         code = 130
     except AgentfilesError as exc:
-        error(f"{exc}")
+        error(str(exc))
         code = 1
     except Exception as exc:
         logger.exception("Unexpected error")

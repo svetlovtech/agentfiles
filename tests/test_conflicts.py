@@ -20,23 +20,11 @@ from agentfiles.models import (
     ItemType,
     SyncState,
 )
+from tests.conftest import make_item
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _make_item(
-    name: str = "coder",
-    item_type: ItemType = ItemType.AGENT,
-    source_path: Path | None = None,
-) -> Item:
-    return Item(
-        item_type=item_type,
-        name=name,
-        source_path=source_path or Path("/tmp/agents") / f"{name}.md",
-        files=(f"{name}.md",),
-    )
 
 
 def _make_target_manager(
@@ -70,7 +58,7 @@ def _setup_push_scenario(
     target_file = target_dir / "coder.md"
     target_file.write_text(target_content, encoding="utf-8")
 
-    item = _make_item("coder", source_path=target_file)
+    item = make_item("coder", source_path=target_file, files=("coder.md",))
 
     if synced_at is not None:
         state = SyncState(
@@ -101,7 +89,7 @@ class TestDetectPushConflicts:
         target_dir = tmp_path / "target" / "agents"
         target_dir.mkdir(parents=True)
 
-        item = _make_item("coder")
+        item = make_item("coder")
         mgr = _make_target_manager(target_dir)
 
         result = detect_push_conflicts(
@@ -118,7 +106,7 @@ class TestDetectPushConflicts:
         state = SyncState(last_sync="")
         save_sync_state(source_dir, state)
 
-        item = _make_item("coder")
+        item = make_item("coder")
         target_dir = tmp_path / "target" / "agents"
         target_dir.mkdir(parents=True)
         mgr = _make_target_manager(target_dir)
@@ -196,7 +184,7 @@ class TestDetectPushConflicts:
         target_file = target_dir / "coder.md"
         target_file.write_text("local content", encoding="utf-8")
 
-        item = _make_item("coder", source_path=target_file)
+        item = make_item("coder", source_path=target_file)
         mgr = _make_target_manager(target_dir)
 
         state = SyncState(

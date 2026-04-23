@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+from collections.abc import Generator
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -9,6 +11,7 @@ from unittest import mock
 import pytest
 
 from agentfiles.models import Item, ItemType
+from agentfiles.target import TargetDiscovery, TargetManager
 
 # ---------------------------------------------------------------------------
 # Shared helper functions
@@ -26,6 +29,9 @@ def make_item(
     File-based items (agents, commands, plugins, configs) automatically get a
     ``.md`` extension on their source_path so that target resolution works
     correctly in clean/uninstall tests.
+
+    Additional Item fields (``version``, ``files``, ``scope``, ``meta``) can be
+    passed via ``**overrides``.
     """
     if source_path is None:
         base = Path("/src") / item_type.plural / name
@@ -40,6 +46,17 @@ def make_item(
     )
     defaults.update(overrides)
     return Item(**defaults)
+
+
+def make_items() -> list[Item]:
+    """Create a standard set of test items spanning multiple types."""
+    return [
+        make_item("coder", ItemType.AGENT),
+        make_item("debugger", ItemType.AGENT),
+        make_item("solid-principles", ItemType.SKILL),
+        make_item("dry-principle", ItemType.SKILL),
+        make_item("autopilot", ItemType.COMMAND),
+    ]
 
 
 def make_args(*, command: str, **overrides) -> SimpleNamespace:
@@ -68,18 +85,44 @@ def make_args(*, command: str, **overrides) -> SimpleNamespace:
 
 @pytest.fixture
 def fake_home(tmp_path: Path) -> SimpleNamespace:
-    """Create a fake home directory with platform config directories."""
+    """Create a fake home directory with OpenCode config directories.
+
+    Creates all standard subdirectories (agent, skill, command, plugin) under
+    the OpenCode config dir so that TargetDiscovery and TargetManager work
+    correctly without touching the real filesystem.
+
+    Returns a namespace with ``.home`` (the fake home root) and
+    ``.opencode`` (the OpenCode config directory) attributes.
+    """
     home = tmp_path / "home"
     home.mkdir()
 
-    # OpenCode
     oc_dir = home / ".config" / "opencode"
-    oc_dir.mkdir(parents=True)
+    (oc_dir / "agent").mkdir(parents=True)
+    (oc_dir / "skill").mkdir(parents=True)
+    (oc_dir / "command").mkdir(parents=True)
+    (oc_dir / "plugin").mkdir(parents=True)
 
     return SimpleNamespace(
-        root=home,
-        oc_dir=oc_dir,
+        home=home,
+        opencode=oc_dir,
     )
+
+
+@pytest.fixture
+def target_manager(fake_home: SimpleNamespace) -> Generator[TargetManager, None, None]:
+    """Return a TargetManager backed by the ``fake_home`` fixture.
+
+    Patches ``Path.home`` and clears ``os.environ`` for the full test
+    lifetime so that no code path can accidentally touch the real home
+    directory or read stale env vars.
+    """
+    with (
+        mock.patch.object(Path, "home", return_value=fake_home.home),
+        mock.patch.dict(os.environ, {}, clear=True),
+    ):
+        targets = TargetDiscovery().discover_all()
+        yield TargetManager(targets)
 
 
 @pytest.fixture

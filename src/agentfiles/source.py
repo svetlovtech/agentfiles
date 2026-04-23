@@ -699,7 +699,8 @@ class SourceResolver:
             raise SourceError(
                 "cannot auto-detect source from current directory. "
                 "Navigate to a project with at least 2 of: "
-                "agents/, skills/, commands/, plugins/, configs/, workflows/ — or provide an explicit path"
+                "agents/, skills/, commands/, plugins/, configs/, workflows/"
+                " — or provide an explicit path"
             )
 
         return self._classify_dir(found, original_input="")

@@ -20,29 +20,15 @@ from agentfiles.engine import SyncReport
 from agentfiles.models import (
     Item,
     ItemType,
-    TARGET_PLATFORM,
     SyncAction,
     SyncPlan,
     SyncResult,
 )
+from tests.conftest import make_item
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-
-def _make_item(
-    name: str = "test-agent",
-    item_type: ItemType = ItemType.AGENT,
-) -> Item:
-    """Create a minimal Item for testing."""
-    return Item(
-        item_type=item_type,
-        name=name,
-        source_path=Path(f"/fake/{item_type.plural}/{name}.md"),
-        version="1.0.0",
-        files=("file.md",),
-    )
 
 
 def _make_plan(
@@ -52,7 +38,7 @@ def _make_plan(
 ) -> SyncPlan:
     """Create a minimal SyncPlan for testing."""
     if item is None:
-        item = _make_item()
+        item = make_item(version="1.0.0", files=("file.md",))
     return SyncPlan(
         item=item,
         action=action,
@@ -87,14 +73,9 @@ class TestFormatStatusJson:
 
     def test_basic_output_structure(self, capsys: pytest.CaptureFixture[str]) -> None:
         """JSON output has item type counts and total_items."""
-        target_manager = MagicMock()
-        target_manager.targets = MagicMock(
-            platform=TARGET_PLATFORM,
-            config_dir=Path("/oc"),
-        )
         summary = {"agents": 3, "skills": 5, "commands": 2, "plugins": 1}
 
-        result = _format_status_json(target_manager, summary)
+        result = _format_status_json(summary)
         assert result == 0
 
         output = json.loads(capsys.readouterr().out)
@@ -105,14 +86,9 @@ class TestFormatStatusJson:
 
     def test_item_counts(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Output has agents, skills, commands, plugins, and total."""
-        target_manager = MagicMock()
-        target_manager.targets = MagicMock(
-            platform=TARGET_PLATFORM,
-            config_dir=Path("/oc"),
-        )
         summary = {"agents": 3, "skills": 5, "commands": 2, "plugins": 1}
 
-        _format_status_json(target_manager, summary)
+        _format_status_json(summary)
 
         output = json.loads(capsys.readouterr().out)
         assert output["agents"] == 3
@@ -126,14 +102,7 @@ class TestFormatStatusJson:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """Missing item types default to 0 in the output."""
-        target_manager = MagicMock()
-        target_manager.targets = MagicMock(
-            platform=TARGET_PLATFORM,
-            config_dir=Path("/oc"),
-        )
-        summary = {}
-
-        _format_status_json(target_manager, summary)
+        _format_status_json({})
 
         output = json.loads(capsys.readouterr().out)
         assert output["agents"] == 0
@@ -144,11 +113,7 @@ class TestFormatStatusJson:
 
     def test_snake_case_keys(self, capsys: pytest.CaptureFixture[str]) -> None:
         """All JSON keys use snake_case convention."""
-        target_manager = MagicMock()
-        target_manager.targets = None
-        summary = {}
-
-        _format_status_json(target_manager, summary)
+        _format_status_json({})
 
         output = json.loads(capsys.readouterr().out)
         # Verify no camelCase or hyphenated keys
@@ -168,13 +133,10 @@ class TestFormatPlanJson:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """JSON output has plans list, total count, and dry_run flag."""
-        item = _make_item("coder", ItemType.AGENT)
+        item = make_item("coder", ItemType.AGENT, version="1.0.0", files=("file.md",))
         plan = _make_plan(item, SyncAction.INSTALL, "not installed")
 
-        target_manager = MagicMock()
-        target_manager.owns_target_dir.return_value = True
-
-        result = _format_plan_json([plan], target_manager, dry_run=True)
+        result = _format_plan_json([plan], dry_run=True)
         assert result == 0
 
         output = json.loads(capsys.readouterr().out)
@@ -185,13 +147,10 @@ class TestFormatPlanJson:
 
     def test_plan_entry_fields(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Each plan entry has item, action, and reason."""
-        item = _make_item("coder", ItemType.AGENT)
+        item = make_item("coder", ItemType.AGENT, version="1.0.0", files=("file.md",))
         plan = _make_plan(item, SyncAction.INSTALL, "not installed")
 
-        target_manager = MagicMock()
-        target_manager.owns_target_dir.return_value = True
-
-        _format_plan_json([plan], target_manager, dry_run=True)
+        _format_plan_json([plan], dry_run=True)
 
         output = json.loads(capsys.readouterr().out)
         entry = output["plans"][0]
@@ -201,13 +160,10 @@ class TestFormatPlanJson:
 
     def test_action_uppercase(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Actions are always uppercase in JSON output."""
-        item = _make_item("old-agent", ItemType.AGENT)
+        item = make_item("old-agent", ItemType.AGENT, version="1.0.0", files=("file.md",))
         plan = _make_plan(item, SyncAction.UPDATE, "content differs")
 
-        target_manager = MagicMock()
-        target_manager.owns_target_dir.return_value = True
-
-        _format_plan_json([plan], target_manager, dry_run=False)
+        _format_plan_json([plan], dry_run=False)
 
         output = json.loads(capsys.readouterr().out)
         assert output["plans"][0]["action"] == "UPDATE"
@@ -216,20 +172,17 @@ class TestFormatPlanJson:
     def test_skip_actions_excluded(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Plans with SKIP action are excluded from JSON output."""
         install_plan = _make_plan(
-            _make_item("new-agent"),
+            make_item("new-agent", version="1.0.0", files=("file.md",)),
             SyncAction.INSTALL,
             "not installed",
         )
         skip_plan = _make_plan(
-            _make_item("up-to-date-agent"),
+            make_item("up-to-date-agent", version="1.0.0", files=("file.md",)),
             SyncAction.SKIP,
             "already up-to-date",
         )
 
-        target_manager = MagicMock()
-        target_manager.owns_target_dir.return_value = True
-
-        _format_plan_json([install_plan, skip_plan], target_manager, dry_run=True)
+        _format_plan_json([install_plan, skip_plan], dry_run=True)
 
         output = json.loads(capsys.readouterr().out)
         assert output["total"] == 1
@@ -240,7 +193,7 @@ class TestFormatPlanJson:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """Plans for the same item+action are recorded."""
-        item = _make_item("shared-agent")
+        item = make_item("shared-agent", version="1.0.0", files=("file.md",))
         plan1 = SyncPlan(
             item=item,
             action=SyncAction.INSTALL,
@@ -248,10 +201,7 @@ class TestFormatPlanJson:
             reason="not installed",
         )
 
-        target_manager = MagicMock()
-        target_manager.owns_target_dir.return_value = True
-
-        _format_plan_json([plan1], target_manager, dry_run=True)
+        _format_plan_json([plan1], dry_run=True)
 
         output = json.loads(capsys.readouterr().out)
         assert output["total"] == 1
@@ -259,9 +209,8 @@ class TestFormatPlanJson:
 
     def test_empty_plans(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Empty plan list produces valid JSON with total 0."""
-        target_manager = MagicMock()
 
-        _format_plan_json([], target_manager, dry_run=True)
+        _format_plan_json([], dry_run=True)
 
         output = json.loads(capsys.readouterr().out)
         assert output["plans"] == []
@@ -304,7 +253,7 @@ class TestFormatResultsJson:
 
         output = json.loads(capsys.readouterr().out)
         entry = output["results"][0]
-        assert entry["item"] == "agent/test-agent"
+        assert entry["item"] == "agent/coder"
         assert entry["action"] == "install"
         assert entry["status"] == "success"
         assert entry["message"] == "Installed test-agent"
@@ -312,8 +261,8 @@ class TestFormatResultsJson:
 
     def test_summary_counts(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Summary correctly counts installed, updated, skipped, failed."""
-        plan1 = _make_plan(_make_item("a"))
-        plan2 = _make_plan(_make_item("b"))
+        plan1 = _make_plan(make_item("a", version="1.0.0", files=("file.md",)))
+        plan2 = _make_plan(make_item("b", version="1.0.0", files=("file.md",)))
         result1 = _make_result(plan1, is_success=True)
         result2 = _make_result(plan2, is_success=False, message="Permission denied")
 
@@ -379,14 +328,7 @@ class TestJsonValidity:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """Status JSON has no trailing commas."""
-        target_manager = MagicMock()
-        target_manager.targets = MagicMock(
-            platform=TARGET_PLATFORM,
-            config_dir=Path("/oc"),
-        )
-        summary = {"agents": 1}
-
-        _format_status_json(target_manager, summary)
+        _format_status_json({"agents": 1})
 
         raw = capsys.readouterr().out
         assert ",]" not in raw
@@ -403,7 +345,7 @@ class TestJsonValidity:
         target_manager.owns_target_dir.return_value = True
 
         plan = _make_plan()
-        _format_plan_json([plan], target_manager, dry_run=True)
+        _format_plan_json([plan], dry_run=True)
 
         raw = capsys.readouterr().out
         json.loads(raw)  # Will fail if trailing commas present

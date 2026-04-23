@@ -11,27 +11,12 @@ import pytest
 
 from agentfiles.engine import SyncEngine
 from agentfiles.models import ItemType
-from agentfiles.target import TargetDiscovery, TargetManager
+from agentfiles.target import TargetManager
 from tests.conftest import make_item
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def fake_home(tmp_path: Path) -> SimpleNamespace:
-    """Create a fake home with OpenCode config directories."""
-    home = tmp_path / "home"
-    home.mkdir()
-
-    oc_dir = home / ".config" / "opencode"
-    (oc_dir / "agent").mkdir(parents=True)
-    (oc_dir / "skill").mkdir(parents=True)
-    (oc_dir / "command").mkdir(parents=True)
-    (oc_dir / "plugin").mkdir(parents=True)
-
-    return SimpleNamespace(home=home, opencode=oc_dir)
 
 
 @pytest.fixture
@@ -61,17 +46,6 @@ def source_repo(tmp_path: Path) -> Path:
     )
 
     return repo
-
-
-@pytest.fixture
-def target_manager(fake_home: SimpleNamespace) -> TargetManager:
-    """Return a TargetManager backed by fake_home."""
-    with (
-        mock.patch.object(Path, "home", return_value=fake_home.home),
-        mock.patch.dict(os.environ, {}, clear=True),
-    ):
-        targets = TargetDiscovery().discover_all()
-        return TargetManager(targets)
 
 
 def _install_agent(fake_home: SimpleNamespace, name: str, content: str = "# Agent\n") -> None:

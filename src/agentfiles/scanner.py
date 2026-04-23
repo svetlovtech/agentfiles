@@ -71,10 +71,10 @@ from pathlib import Path
 
 from agentfiles.models import (
     SKILL_MAIN_FILE,
+    TARGET_PLATFORM,
     AgentfilesError,
     Item,
     ItemType,
-    TARGET_PLATFORM,
     Scope,
     SourceError,
     item_from_directory,
@@ -217,13 +217,13 @@ class GitIgnoreMatcher:
 # ---------------------------------------------------------------------------
 
 # Names to always skip during scanning (hidden names handled separately).
-_SKIP_NAMES = frozenset({"__pycache__", "__init__.py"})
+_SKIP_NAMES = ("__pycache__", "__init__.py")
 
 # Scope subdirectory names inside content directories (e.g. agents/global/).
 _SCOPE_DIR_NAMES: frozenset[str] = frozenset(s.value for s in Scope)
 
 # File extensions recognised for single-file plugin items.
-_PLUGIN_EXTENSIONS = frozenset({".ts", ".yaml", ".yml", ".py", ".js"})
+_PLUGIN_EXTENSIONS = (".ts", ".yaml", ".yml", ".py", ".js")
 
 # Maximum directory nesting depth for _has_plugin_file recursion.
 _PLUGIN_SCAN_MAX_DEPTH = 10
@@ -291,6 +291,18 @@ def _scandir_sorted(dir_path: Path) -> list[os.DirEntry[str]]:
         return []
 
 
+def _resolve_content_dir(source_dir: Path, item_type: ItemType) -> Path | None:
+    """Return the base content directory for *item_type* (plural before singular).
+
+    Checks ``source_dir / item_type.plural`` then ``source_dir / item_type.value``,
+    returning the first one that exists on disk.
+    """
+    for candidate in (source_dir / item_type.plural, source_dir / item_type.value):
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
 def _find_item_dirs(
     source_dir: Path,
     item_type: ItemType,
@@ -334,15 +346,7 @@ def _find_item_dirs(
         content directory comes first (for deduplication priority).
 
     """
-    # Resolve the base content directory (plural before singular).
-    plural = source_dir / item_type.plural
-    singular = source_dir / item_type.value
-
-    content_dir: Path | None = None
-    for candidate in (plural, singular):
-        if candidate.is_dir():
-            content_dir = candidate
-            break
+    content_dir = _resolve_content_dir(source_dir, item_type)
 
     if content_dir is None:
         return []
@@ -901,7 +905,7 @@ class SourceScanner:
         # deduplicated against them.  The key is ``(name, scope)``.
         base_dir_keys: set[tuple[str, Scope]] = set()
 
-        base_dir = self._resolve_content_dir(item_type)
+        base_dir = _resolve_content_dir(self._source_dir, item_type)
 
         for dir_path, discovered_scope in scope_dirs:
             items = self._dispatch_scan(item_type, dir_path)
@@ -912,7 +916,8 @@ class SourceScanner:
             # is scanned as its own entry).
             is_base = base_dir is not None and dir_path == base_dir
             if is_base:
-                assert base_dir is not None  # narrowed by is_base guard
+                # Narrow type for mypy: is_base guarantees base_dir is not None.
+                assert base_dir is not None
                 items = [
                     item for item in items if not _is_in_scope_subdir(item.source_path, base_dir)
                 ]
@@ -940,20 +945,6 @@ class SourceScanner:
                     all_items.append(scoped_item)
 
         return all_items
-
-    def _resolve_content_dir(self, item_type: ItemType) -> Path | None:
-        """Return the base content directory for *item_type* (no scope logic).
-
-        Checks plural then singular directory names.  Used by
-        :meth:`scan_type` to determine whether a scanned directory is
-        the base content dir (which needs scope-subdir filtering).
-        """
-        plural = self._source_dir / item_type.plural
-        singular = self._source_dir / item_type.value
-        for candidate in (plural, singular):
-            if candidate.is_dir():
-                return candidate
-        return None
 
     def get_summary(self) -> dict[ItemType, int]:
         """Return item counts per type.

@@ -74,47 +74,35 @@ def _format_list_json(items: list[Item], show_tokens: bool) -> int:
     return 0
 
 
-def _format_status_json(
-    target_manager: Any,
-    summary: dict[str, int],
-) -> int:
+def _format_status_json(summary: dict[str, int]) -> int:
     """Format status output as JSON and print to stdout.
 
     Args:
-        target_manager: Provides access to the discovered target platform.
-        summary: Item counts from ``platform_summary()``.
+        summary: Item counts from ``platform_summary()`` (empty when
+            no target is discovered).
 
     Returns:
         Exit code (always ``0``).
     """
-    if target_manager.targets is None:
-        print(
-            json.dumps(
-                {"agents": 0, "skills": 0, "commands": 0, "plugins": 0, "total_items": 0}, indent=2
-            )
-        )
-        return 0
-
     agents = summary.get("agents", 0)
     skills = summary.get("skills", 0)
     commands = summary.get("commands", 0)
     plugins = summary.get("plugins", 0)
-    total_items = agents + skills + commands + plugins
 
-    output = {
+    output: dict[str, Any] = {
         "agents": agents,
         "skills": skills,
         "commands": commands,
         "plugins": plugins,
-        "total_items": total_items,
+        "total_items": agents + skills + commands + plugins,
     }
+
     print(json.dumps(output, indent=2))
     return 0
 
 
 def _format_plan_json(
     plans: list[SyncPlan],
-    _target_manager: Any,
     *,
     dry_run: bool,
 ) -> int:
@@ -122,7 +110,6 @@ def _format_plan_json(
 
     Args:
         plans: Planned sync operations from the engine.
-        _target_manager: Unused.  Kept for call-site compatibility.
         dry_run: Whether this is a dry-run preview.
 
     Returns:
@@ -167,7 +154,7 @@ def _format_results_json(
     Returns:
         ``0`` when all operations succeeded, ``1`` otherwise.
     """
-    result_entries = []
+    result_entries: list[dict[str, Any]] = []
     for r in results:
         entry: dict[str, Any] = {
             "item": r.plan.item.item_key,

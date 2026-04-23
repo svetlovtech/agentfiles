@@ -35,21 +35,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_item_dest_path(target_dir: Path, item: Item) -> Path:
-    """Return the on-disk destination path for *item* within *target_dir*.
-
-    Delegates to :func:`agentfiles.models.resolve_target_name` to determine
-    the correct filename for the item type.
-
-    Args:
-        target_dir: Platform configuration directory (e.g.
-            ``~/.config/opencode/agents``).
-        item: The :class:`Item` whose destination path is needed.
-
-    Returns:
-        Absolute ``Path`` combining *target_dir* with the item's
-        resolved target name.
-
-    """
+    """Return the on-disk destination path for *item* within *target_dir*."""
     return target_dir / resolve_target_name(item)
 
 
@@ -100,9 +86,7 @@ def get_push_dest_path(source_dir: Path, item: Item) -> Path:
     """
     if item.item_type in (ItemType.AGENT, ItemType.COMMAND):
         return source_dir / item.item_type.plural / item.name / item.source_path.name
-    if item.item_type == ItemType.CONFIG and item.source_path.is_file():
-        return source_dir / item.item_type.plural / item.source_path.name
-    if item.item_type == ItemType.PLUGIN and item.source_path.is_file():
+    if item.item_type in (ItemType.CONFIG, ItemType.PLUGIN):
         return source_dir / item.item_type.plural / item.source_path.name
     return source_dir / item.item_type.plural / item.name
 

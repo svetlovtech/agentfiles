@@ -31,6 +31,7 @@ from agentfiles.models import (
     TokenEstimate,
 )
 from agentfiles.target import TargetManager
+from tests.conftest import make_item
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -45,23 +46,6 @@ def _make_args(
     return argparse.Namespace(
         path=path,
         non_interactive=non_interactive,
-    )
-
-
-def _make_item(
-    name: str = "test-item",
-    item_type: ItemType = ItemType.AGENT,
-    version: str = "1.0.0",
-    files: tuple[str, ...] = ("test-item.md",),
-    source_path: Path | None = None,
-) -> Item:
-    """Create a minimal Item for testing."""
-    return Item(
-        item_type=item_type,
-        name=name,
-        source_path=source_path or Path(f"/fake/{item_type.value}/{name}"),
-        version=version,
-        files=files,
     )
 
 
@@ -335,9 +319,9 @@ class TestFilterItems:
 
     def test_filters_by_single_type(self) -> None:
         items = [
-            _make_item("agent-1", ItemType.AGENT),
-            _make_item("skill-1", ItemType.SKILL),
-            _make_item("command-1", ItemType.COMMAND),
+            make_item("agent-1", ItemType.AGENT),
+            make_item("skill-1", ItemType.SKILL),
+            make_item("command-1", ItemType.COMMAND),
         ]
         result = _filter_items(items, [ItemType.AGENT])
         assert len(result) == 1
@@ -345,9 +329,9 @@ class TestFilterItems:
 
     def test_filters_by_multiple_types(self) -> None:
         items = [
-            _make_item("agent-1", ItemType.AGENT),
-            _make_item("skill-1", ItemType.SKILL),
-            _make_item("command-1", ItemType.COMMAND),
+            make_item("agent-1", ItemType.AGENT),
+            make_item("skill-1", ItemType.SKILL),
+            make_item("command-1", ItemType.COMMAND),
         ]
         result = _filter_items(items, [ItemType.AGENT, ItemType.COMMAND])
         assert len(result) == 2
@@ -358,12 +342,12 @@ class TestFilterItems:
         assert result == []
 
     def test_no_matching_type_returns_empty(self) -> None:
-        items = [_make_item("agent-1", ItemType.AGENT)]
+        items = [make_item("agent-1", ItemType.AGENT)]
         result = _filter_items(items, [ItemType.PLUGIN])
         assert result == []
 
     def test_all_types_returns_everything(self) -> None:
-        items = [_make_item(f"item-{t.value}", t) for t in ItemType]
+        items = [make_item(f"item-{t.value}", t) for t in ItemType]
         result = _filter_items(items, list(ItemType))
         assert len(result) == len(ItemType)
 
@@ -391,7 +375,7 @@ class TestFilterItemsByInstalled:
         return manager
 
     def test_returns_only_installed_items(self) -> None:
-        items = [_make_item("installed"), _make_item("not-installed")]
+        items = [make_item("installed"), make_item("not-installed")]
         tm = self._make_mock_target_manager(
             {"installed": True, "not-installed": False},
         )
@@ -404,7 +388,7 @@ class TestFilterItemsByInstalled:
         assert result[0].name == "installed"
 
     def test_returns_only_not_installed_items(self) -> None:
-        items = [_make_item("installed"), _make_item("not-installed")]
+        items = [make_item("installed"), make_item("not-installed")]
         tm = self._make_mock_target_manager(
             {"installed": True, "not-installed": False},
         )
@@ -422,7 +406,7 @@ class TestFilterItemsByInstalled:
         assert result == []
 
     def test_all_installed_returns_all_when_filter_installed(self) -> None:
-        items = [_make_item("a"), _make_item("b")]
+        items = [make_item("a"), make_item("b")]
         tm = self._make_mock_target_manager({"a": True, "b": True})
         result = _filter_items_by_installed(
             items,
@@ -441,7 +425,7 @@ class TestFormatListJson:
     """Tests for _format_list_json helper."""
 
     def test_outputs_valid_json(self, capsys: pytest.CaptureFixture[str]) -> None:
-        items = [_make_item("my-agent")]
+        items = [make_item("my-agent")]
         result = _format_list_json(items, show_tokens=False)
         captured = capsys.readouterr()
         assert result == 0
@@ -452,7 +436,7 @@ class TestFormatListJson:
         assert output["items"][0]["type"] == "agent"
 
     def test_json_includes_expected_fields(self, capsys: pytest.CaptureFixture[str]) -> None:
-        items = [_make_item("my-skill", ItemType.SKILL, version="2.0.0")]
+        items = [make_item("my-skill", ItemType.SKILL, version="2.0.0")]
         _format_list_json(items, show_tokens=False)
         output = json.loads(capsys.readouterr().out)
         entry = output["items"][0]
@@ -463,14 +447,14 @@ class TestFormatListJson:
         assert entry["version"] == "2.0.0"
 
     def test_json_without_tokens_has_no_estimate(self, capsys: pytest.CaptureFixture[str]) -> None:
-        items = [_make_item()]
+        items = [make_item()]
         _format_list_json(items, show_tokens=False)
         output = json.loads(capsys.readouterr().out)
         assert "token_estimate" not in output["items"][0]
 
     def test_json_with_tokens_includes_estimate(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Token estimation requires real files; mock token_estimate."""
-        items = [_make_item()]
+        items = [make_item()]
         estimate = TokenEstimate(
             name="test-item",
             item_type=ItemType.AGENT,
@@ -494,7 +478,7 @@ class TestFormatListJson:
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """Token estimates are only computed for agents and skills."""
-        items = [_make_item("my-cmd", ItemType.COMMAND)]
+        items = [make_item("my-cmd", ItemType.COMMAND)]
         estimate = TokenEstimate(
             name="my-cmd",
             item_type=ItemType.COMMAND,
@@ -512,8 +496,8 @@ class TestFormatListJson:
     def test_json_token_summary_aggregate(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Token summary aggregates across agents and skills."""
         items = [
-            _make_item("a1", ItemType.AGENT),
-            _make_item("s1", ItemType.SKILL),
+            make_item("a1", ItemType.AGENT),
+            make_item("s1", ItemType.SKILL),
         ]
         est_agent = TokenEstimate("a1", ItemType.AGENT, (), 100, 50, 10, 60)
         est_skill = TokenEstimate("s1", ItemType.SKILL, (), 200, 80, 20, 100)
@@ -538,9 +522,9 @@ class TestFormatListJson:
 
     def test_items_sorted_by_type_then_name(self, capsys: pytest.CaptureFixture[str]) -> None:
         items = [
-            _make_item("zebra", ItemType.SKILL),
-            _make_item("alpha", ItemType.AGENT),
-            _make_item("beta", ItemType.AGENT),
+            make_item("zebra", ItemType.SKILL),
+            make_item("alpha", ItemType.AGENT),
+            make_item("beta", ItemType.AGENT),
         ]
         _format_list_json(items, show_tokens=False)
         output = json.loads(capsys.readouterr().out)
@@ -558,7 +542,7 @@ class TestFormatListText:
     """Tests for _format_list_text helper."""
 
     def test_outputs_item_names(self, capsys: pytest.CaptureFixture[str]) -> None:
-        items = [_make_item("reviewer", ItemType.AGENT)]
+        items = [make_item("reviewer", ItemType.AGENT)]
         result = _format_list_text(items, show_tokens=False)
         captured = capsys.readouterr()
         assert result == 0
@@ -566,8 +550,8 @@ class TestFormatListText:
 
     def test_groups_by_type(self, capsys: pytest.CaptureFixture[str]) -> None:
         items = [
-            _make_item("a1", ItemType.AGENT),
-            _make_item("s1", ItemType.SKILL),
+            make_item("a1", ItemType.AGENT),
+            make_item("s1", ItemType.SKILL),
         ]
         _format_list_text(items, show_tokens=False)
         output = capsys.readouterr().out
@@ -580,7 +564,7 @@ class TestFormatListText:
         assert result == 0
 
     def test_with_tokens_shows_token_count(self, capsys: pytest.CaptureFixture[str]) -> None:
-        items = [_make_item("agent-x")]
+        items = [make_item("agent-x")]
         estimate = TokenEstimate(
             name="agent-x",
             item_type=ItemType.AGENT,
@@ -603,7 +587,7 @@ class TestFormatListText:
 
     def test_non_agent_skill_items_skip_tokens(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Commands and plugins never show per-item token counts."""
-        items = [_make_item("build", ItemType.COMMAND)]
+        items = [make_item("build", ItemType.COMMAND)]
         estimate = TokenEstimate(
             name="build",
             item_type=ItemType.COMMAND,

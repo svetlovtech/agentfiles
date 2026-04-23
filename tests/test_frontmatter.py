@@ -1,18 +1,15 @@
 """Tests for agentfiles.frontmatter — edge cases not covered by test_models.py.
 
-test_models.py already covers parse_frontmatter, _quote_colon_values,
-_meta_from_frontmatter, and _validate_field_type basics. This file focuses
-on edge cases: _is_quoted, unicode, delimiter oddities, retry paths.
+test_models.py already covers _is_quoted, _quote_colon_values basics,
+parse_frontmatter, _meta_from_frontmatter, and _validate_field_type.
+This file focuses on edge cases unique to frontmatter parsing.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from agentfiles.frontmatter import (
-    _is_quoted,
-    _quote_colon_values,
-)
+from agentfiles.frontmatter import _quote_colon_values
 from agentfiles.models import (
     AgentfilesError,
     ItemMeta,
@@ -21,55 +18,11 @@ from agentfiles.models import (
 )
 
 # ---------------------------------------------------------------------------
-# _is_quoted
-# ---------------------------------------------------------------------------
-
-
-class TestIsQuoted:
-    def test_double_quoted(self) -> None:
-        assert _is_quoted('"hello"') is True
-
-    def test_single_quoted(self) -> None:
-        assert _is_quoted("'hello'") is True
-
-    def test_not_quoted(self) -> None:
-        assert _is_quoted("hello") is False
-
-    def test_empty_string(self) -> None:
-        assert _is_quoted("") is False
-
-    def test_single_char(self) -> None:
-        assert _is_quoted('"') is False
-
-    def test_mismatched_quotes(self) -> None:
-        assert _is_quoted("\"hello'") is False
-
-    def test_minimal_quoted(self) -> None:
-        assert _is_quoted('""') is True
-
-    def test_inner_quotes(self) -> None:
-        assert _is_quoted('"it\'s a test"') is True
-
-
-# ---------------------------------------------------------------------------
-# _quote_colon_values — edge cases
+# _quote_colon_values — unique edge cases not in test_models.py
 # ---------------------------------------------------------------------------
 
 
 class TestQuoteColonValuesEdgeCases:
-    def test_nested_mapping_line_untouched(self) -> None:
-        """Lines that don't match key: value pattern are passed through."""
-        inp = "  nested_key: nested_value"
-        assert _quote_colon_values(inp) == inp
-
-    def test_hyphenated_key(self) -> None:
-        inp = "my-key: value: with: colons"
-        assert _quote_colon_values(inp) == 'my-key: "value: with: colons"'
-
-    def test_underscored_key(self) -> None:
-        inp = "my_key: A: B"
-        assert _quote_colon_values(inp) == 'my_key: "A: B"'
-
     def test_value_with_hash(self) -> None:
         """Hash in value — not a colon, so not quoted."""
         inp = "name: test # comment"
@@ -82,9 +35,6 @@ class TestQuoteColonValuesEdgeCases:
         assert lines[0] == 'a: "x: y"'
         assert lines[1] == "b: plain"
         assert lines[2] == 'c: "p: q"'
-
-    def test_empty_input(self) -> None:
-        assert _quote_colon_values("") == ""
 
 
 # ---------------------------------------------------------------------------

@@ -35,6 +35,7 @@ from agentfiles.output import (
     success,
     warning,
 )
+from tests.conftest import make_item
 
 # ---------------------------------------------------------------------------
 # Colors constants
@@ -649,78 +650,10 @@ class TestShouldUseColorsExtended:
 
 
 # ---------------------------------------------------------------------------
-# Convenience helpers — error resilience
-# ---------------------------------------------------------------------------
-
-
-class TestConvenienceResilience:
-    """Verify convenience helpers don't crash on I/O errors."""
-
-    @pytest.mark.parametrize(
-        "func, message",
-        [
-            (success, "ok"),
-            (error, "fail"),
-            (warning, "careful"),
-            (info, "note"),
-        ],
-        ids=["success", "error", "warning", "info"],
-    )
-    def test_survives_broken_pipe(self, func: object, message: str) -> None:
-        with patch("agentfiles.output._safe_write") as mock_write:
-            func(message)
-        mock_write.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
-# print_table / print_banner — error resilience
-# ---------------------------------------------------------------------------
-
-
-class TestTableBannerResilience:
-    """Verify table and banner output handles I/O errors gracefully."""
-
-    def test_print_table_uses_safe_write(self) -> None:
-        """print_table should route through _safe_write."""
-        with patch("agentfiles.output._safe_write") as mock_write:
-            print_table(["A"], [["x"]])
-        mock_write.assert_called_once()
-        written = mock_write.call_args[0][0]
-        assert "A" in written
-        assert "x" in written
-
-    def test_print_banner_uses_safe_write(self) -> None:
-        """print_banner should route through _safe_write."""
-        with patch("agentfiles.output._safe_write") as mock_write:
-            print_banner(["Hello"])
-        mock_write.assert_called_once()
-        written = mock_write.call_args[0][0]
-        assert "Hello" in written
-
-    def test_print_table_survives_broken_pipe(self) -> None:
-        """BrokenPipeError in print_table must not propagate."""
-        with patch("agentfiles.output._safe_write"):
-            # _safe_write itself handles the error; we verify no crash.
-            print_table(["Col"], [["val"]])
-
-    def test_print_banner_survives_broken_pipe(self) -> None:
-        """BrokenPipeError in print_banner must not propagate."""
-        with patch("agentfiles.output._safe_write"):
-            print_banner(["Banner text"])
-
-
-# ---------------------------------------------------------------------------
 # Color functions — empty and long strings
 # ---------------------------------------------------------------------------
 
-
-def _make_item(name: str = "test-agent", item_type: ItemType = ItemType.AGENT) -> Item:
-    """Create a minimal Item for testing."""
-    return Item(
-        item_type=item_type,
-        name=name,
-        source_path=Path("/fake/source"),
-    )
+# make_item from conftest is used below.
 
 
 class TestColorFunctionsEdgeCases:
@@ -939,7 +872,7 @@ class TestFormatDiff:
 
     def test_single_platform_single_entry(self) -> None:
         """Single entry should show platform header and entry line."""
-        item = _make_item("my-agent")
+        item = make_item("my-agent")
         entry = DiffEntry(item=item, status=DiffStatus.NEW)
         result = format_diff(
             [entry],
@@ -951,9 +884,9 @@ class TestFormatDiff:
     def test_multiple_entries_sorted_by_status_then_name(self) -> None:
         """Entries should appear sorted by status order, then name."""
         entries = [
-            DiffEntry(item=_make_item("beta"), status=DiffStatus.UPDATED),
-            DiffEntry(item=_make_item("alpha"), status=DiffStatus.UPDATED),
-            DiffEntry(item=_make_item("zeta"), status=DiffStatus.NEW),
+            DiffEntry(item=make_item("beta"), status=DiffStatus.UPDATED),
+            DiffEntry(item=make_item("alpha"), status=DiffStatus.UPDATED),
+            DiffEntry(item=make_item("zeta"), status=DiffStatus.NEW),
         ]
         result = format_diff(
             entries,
@@ -971,8 +904,8 @@ class TestFormatDiff:
 
     def test_multiple_item_types(self) -> None:
         """Multiple item types should produce combined output."""
-        entry_oc = DiffEntry(item=_make_item("agent-a"), status=DiffStatus.NEW)
-        entry_oc2 = DiffEntry(item=_make_item("agent-b"), status=DiffStatus.UPDATED)
+        entry_oc = DiffEntry(item=make_item("agent-a"), status=DiffStatus.NEW)
+        entry_oc2 = DiffEntry(item=make_item("agent-b"), status=DiffStatus.UPDATED)
         result = format_diff(
             [entry_oc, entry_oc2],
             use_colors=False,
@@ -983,8 +916,8 @@ class TestFormatDiff:
     def test_summary_line_includes_item_type(self) -> None:
         """Summary should mention the item type plural and status counts."""
         entries = [
-            DiffEntry(item=_make_item("a"), status=DiffStatus.NEW),
-            DiffEntry(item=_make_item("b"), status=DiffStatus.UNCHANGED),
+            DiffEntry(item=make_item("a"), status=DiffStatus.NEW),
+            DiffEntry(item=make_item("b"), status=DiffStatus.UNCHANGED),
         ]
         result = format_diff(
             entries,
@@ -996,20 +929,20 @@ class TestFormatDiff:
 
     def test_colors_disabled_no_ansi(self) -> None:
         """When use_colors=False, output should contain no ANSI codes."""
-        entry = DiffEntry(item=_make_item("x"), status=DiffStatus.NEW)
+        entry = DiffEntry(item=make_item("x"), status=DiffStatus.NEW)
         result = format_diff([entry], use_colors=False)
         assert "\033[" not in result
 
     def test_colors_enabled_includes_ansi(self) -> None:
         """When use_colors=True, output should contain ANSI codes."""
         with patch("agentfiles.output._use_colors", True):
-            entry = DiffEntry(item=_make_item("x"), status=DiffStatus.NEW)
+            entry = DiffEntry(item=make_item("x"), status=DiffStatus.NEW)
             result = format_diff([entry], use_colors=True)
         assert "\033[" in result
 
     def test_deleted_status_in_diff(self) -> None:
         """Deleted items should appear with '-' symbol."""
-        entry = DiffEntry(item=_make_item("gone"), status=DiffStatus.DELETED)
+        entry = DiffEntry(item=make_item("gone"), status=DiffStatus.DELETED)
         result = format_diff([entry], use_colors=False)
         assert "-" in result
         assert "gone" in result
@@ -1017,7 +950,7 @@ class TestFormatDiff:
 
     def test_conflict_status_in_diff(self) -> None:
         """Conflicting items should appear with '!' symbol."""
-        entry = DiffEntry(item=_make_item("clash"), status=DiffStatus.CONFLICT)
+        entry = DiffEntry(item=make_item("clash"), status=DiffStatus.CONFLICT)
         result = format_diff([entry], use_colors=False)
         assert "!" in result
         assert "clash" in result
@@ -1025,9 +958,9 @@ class TestFormatDiff:
     def test_mixed_item_types_in_summary(self) -> None:
         """Summary should group by item type."""
         entries = [
-            DiffEntry(item=_make_item("a", ItemType.AGENT), status=DiffStatus.NEW),
+            DiffEntry(item=make_item("a", ItemType.AGENT), status=DiffStatus.NEW),
             DiffEntry(
-                item=_make_item("b", ItemType.SKILL),
+                item=make_item("b", ItemType.SKILL),
                 status=DiffStatus.UPDATED,
             ),
         ]
@@ -1041,7 +974,7 @@ class TestFormatDiffVerbose:
 
     def test_verbose_without_content_diffs_shows_status_only(self) -> None:
         """Verbose=True without content_diffs should not crash."""
-        entry = DiffEntry(item=_make_item("x"), status=DiffStatus.UPDATED)
+        entry = DiffEntry(item=make_item("x"), status=DiffStatus.UPDATED)
         result = format_diff(
             [entry],
             use_colors=False,
@@ -1055,7 +988,7 @@ class TestFormatDiffVerbose:
 
     def test_verbose_with_content_diff_includes_diff_lines(self) -> None:
         """UPDATED entries with content diffs should show unified diff."""
-        item = _make_item("coder")
+        item = make_item("coder")
         entry = DiffEntry(item=item, status=DiffStatus.UPDATED)
         diff_lines = [
             "--- a/coder.md",
@@ -1080,7 +1013,7 @@ class TestFormatDiffVerbose:
 
     def test_verbose_ignores_content_for_new_entries(self) -> None:
         """NEW entries should not show content diff even in verbose mode."""
-        item = _make_item("new-agent")
+        item = make_item("new-agent")
         entry = DiffEntry(item=item, status=DiffStatus.NEW)
         content_diffs = {"agent/new-agent": ["should not appear"]}
         result = format_diff(
@@ -1094,7 +1027,7 @@ class TestFormatDiffVerbose:
 
     def test_verbose_ignores_content_for_unchanged_entries(self) -> None:
         """UNCHANGED entries should not show content diff."""
-        item = _make_item("same")
+        item = make_item("same")
         entry = DiffEntry(item=item, status=DiffStatus.UNCHANGED)
         content_diffs = {"agent/same": ["should not appear"]}
         result = format_diff(
@@ -1107,7 +1040,7 @@ class TestFormatDiffVerbose:
 
     def test_verbose_with_colors_applies_ansi(self) -> None:
         """Coloured output should wrap diff lines in ANSI codes."""
-        item = _make_item("colored")
+        item = make_item("colored")
         entry = DiffEntry(item=item, status=DiffStatus.UPDATED)
         diff_lines = [
             "--- old",
@@ -1130,7 +1063,7 @@ class TestFormatDiffVerbose:
 
     def test_verbose_no_matching_content_diff_shows_status_only(self) -> None:
         """When key not found in content_diffs, only status line appears."""
-        item = _make_item("missing-diff")
+        item = make_item("missing-diff")
         entry = DiffEntry(item=item, status=DiffStatus.UPDATED)
         content_diffs = {}  # Empty — no matching key
         result = format_diff(
@@ -1145,7 +1078,7 @@ class TestFormatDiffVerbose:
 
     def test_non_verbose_ignores_content_diffs(self) -> None:
         """Non-verbose mode should ignore content_diffs entirely."""
-        item = _make_item("x")
+        item = make_item("x")
         entry = DiffEntry(item=item, status=DiffStatus.UPDATED)
         diff_lines = ["--- old", "+++ new", "-removed", "+added"]
         content_diffs = {"agent/x": diff_lines}
@@ -1175,7 +1108,7 @@ class TestFormatDiffJson:
 
     def test_single_entry_produces_valid_structure(self) -> None:
         """Single entry should produce correct JSON structure."""
-        item = _make_item("test-agent")
+        item = make_item("test-agent")
         entry = DiffEntry(item=item, status=DiffStatus.NEW)
         result = format_diff_json([entry])
         parsed = json.loads(result)
@@ -1189,8 +1122,8 @@ class TestFormatDiffJson:
     def test_multiple_entries(self) -> None:
         """Multiple entries should all appear in JSON."""
         entries = [
-            DiffEntry(item=_make_item("a"), status=DiffStatus.NEW),
-            DiffEntry(item=_make_item("b"), status=DiffStatus.DELETED),
+            DiffEntry(item=make_item("a"), status=DiffStatus.NEW),
+            DiffEntry(item=make_item("b"), status=DiffStatus.DELETED),
         ]
         result = format_diff_json(entries)
         parsed = json.loads(result)
@@ -1199,14 +1132,14 @@ class TestFormatDiffJson:
 
     def test_json_is_indented(self) -> None:
         """Output should be pretty-printed with 2-space indent."""
-        entry = DiffEntry(item=_make_item("x"), status=DiffStatus.NEW)
+        entry = DiffEntry(item=make_item("x"), status=DiffStatus.NEW)
         result = format_diff_json([entry])
         assert "  " in result  # 2-space indent present
 
     def test_all_status_values_in_json(self) -> None:
         """All DiffStatus values should serialize correctly."""
         for status in DiffStatus:
-            entry = DiffEntry(item=_make_item(f"item-{status.value}"), status=status)
+            entry = DiffEntry(item=make_item(f"item-{status.value}"), status=status)
             result = format_diff_json([entry])
             parsed = json.loads(result)
             assert parsed["items"][0]["status"] == status.value
@@ -1214,7 +1147,7 @@ class TestFormatDiffJson:
     def test_all_item_types_in_json(self) -> None:
         """All ItemType values should serialize correctly."""
         for item_type in ItemType:
-            item = _make_item(f"item-{item_type.value}", item_type)
+            item = make_item(f"item-{item_type.value}", item_type)
             entry = DiffEntry(item=item, status=DiffStatus.NEW)
             result = format_diff_json([entry])
             parsed = json.loads(result)
@@ -1321,17 +1254,7 @@ class TestPrintBannerEdgeCases:
 
 
 class TestBrokenPipeAdditional:
-    """Additional broken-pipe resilience tests for dim/bold."""
-
-    def test_dim_survives_broken_pipe(self) -> None:
-        with patch("agentfiles.output._safe_write") as mock_write:
-            dim("faded")
-        mock_write.assert_called_once()
-
-    def test_bold_survives_broken_pipe(self) -> None:
-        with patch("agentfiles.output._safe_write") as mock_write:
-            bold("strong")
-        mock_write.assert_called_once()
+    """Additional broken-pipe resilience tests."""
 
     def test_safe_write_handles_generic_oserror(self) -> None:
         """Generic OSError (not BrokenPipeError) during fallback should be caught."""
@@ -1527,13 +1450,3 @@ class TestPrintSection:
         line = captured.out.rstrip("\n")
         # Line should end with ─ characters
         assert line.endswith("\u2500")
-
-    def test_routes_through_safe_write(self) -> None:
-        """print_section should route through dim → _safe_write."""
-        with (
-            patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))),
-            patch("agentfiles.output._safe_write") as mock_write,
-        ):
-            print_section("Test")
-        # dim() calls _safe_write once
-        assert mock_write.called

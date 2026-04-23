@@ -26,53 +26,30 @@ import os
 import sys
 from collections import Counter
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar
+from typing import ClassVar
 
 from agentfiles.models import (
+    TARGET_PLATFORM,
     Item,
     ItemType,
-    TARGET_PLATFORM,
+    Scope,
     TargetError,
     TargetPaths,
-    resolve_source_name_for_config,
 )
-
-if TYPE_CHECKING:
-    from agentfiles.models import Scope
-
 from agentfiles.paths import get_item_dest_path
 
 logger = logging.getLogger(__name__)
 
-# Well-known names that are NOT agentfiles items but may appear in platform
-# directories (e.g. node_modules in OpenCode's plugin dir).
-_IGNORED_NAMES: frozenset[str] = frozenset(
-    {
-        "node_modules",
-        "cache",
-        "marketplaces",
-        "package",
-        "package-lock",
-        "tsconfig",
-        "vitest.config",
-        "blocklist",
-        "installed_plugins",
-        "known_marketplaces",
-    }
-)
-
 # Files that are NOT agentfiles configs — skip them during CONFIG scanning.
 # These are common tool/IDE config files that happen to live in the same
 # directory but are unrelated to agentfiles.
-_NON_CONFIG_FILES: frozenset[str] = frozenset(
-    {
-        "package.json",
-        "package-lock.json",
-        "tsconfig.json",
-        "settings.json",
-        "settings.local.json",
-        "stats-cache.json",
-    }
+_NON_CONFIG_FILES = (
+    "package.json",
+    "package-lock.json",
+    "tsconfig.json",
+    "settings.json",
+    "settings.local.json",
+    "stats-cache.json",
 )
 
 
@@ -456,16 +433,14 @@ class TargetManager:
                 discovered.
 
         """
-        scope_value = scope.value if hasattr(scope, "value") else str(scope)
-
-        if scope_value == "global":
+        if scope == Scope.GLOBAL:
             return self.get_target_dir(item_type)
 
         # PROJECT or LOCAL scope — resolve relative to project_dir.
         if project_dir is None:
             logger.warning(
                 "project_dir is required for %s scope but was not provided",
-                scope_value,
+                scope.value,
             )
             return None
 
@@ -626,8 +601,7 @@ class TargetManager:
                         continue
                 except OSError:
                     continue
-                source_filename = resolve_source_name_for_config(entry.name)
-                name = Path(source_filename).stem
+                name = Path(entry.name).stem
                 items.append((ItemType.CONFIG, name))
 
         return items

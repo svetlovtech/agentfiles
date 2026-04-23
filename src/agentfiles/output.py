@@ -76,18 +76,6 @@ class Colors:
     RESET = "\033[0m"
 
 
-# Canonical display icons for each ItemType — single source of truth
-# used by CLI output, TUI tables, and interactive prompts.
-# Each icon is a single Unicode geometric shape chosen for visual
-# distinctiveness at small sizes.
-ITEM_TYPE_ICONS: dict[ItemType, str] = {
-    ItemType.AGENT: "\u25b2",  # ▲
-    ItemType.SKILL: "\u25c6",  # ◆
-    ItemType.COMMAND: "\u25b6",  # ▶
-    ItemType.PLUGIN: "\u25cf",  # ●
-}
-
-
 @dataclass(frozen=True)
 class StatusStyle:
     """Canonical display metadata for a DiffStatus value.
@@ -147,17 +135,6 @@ _SUMMARY_STATUSES: tuple[DiffStatus, ...] = (
 # Module-level flag controlling whether ANSI colours are emitted.
 # Set once by :func:`init_logging` via :func:`should_use_colors`.
 _use_colors: bool = True
-
-
-def set_colors_enabled(enabled: bool) -> None:
-    """Set whether color output is enabled."""
-    global _use_colors
-    _use_colors = enabled
-
-
-def colors_enabled() -> bool:
-    """Check whether color output is enabled."""
-    return _use_colors
 
 
 # ---------------------------------------------------------------------------
@@ -661,8 +638,6 @@ def format_diff(
         text = "No differences found."
         return colorize(text, Colors.DIM) if use_colors else text
 
-    sections: list[str] = []
-
     # Group by item type for the summary line.
     type_groups: dict[ItemType, list[DiffEntry]] = {}
     for entry in diff_results:
@@ -679,10 +654,10 @@ def format_diff(
         if parts:
             summary_parts.append(f"{item_type.plural}: {', '.join(parts)}")
 
-    section_lines: list[str] = []
+    lines: list[str] = []
 
     if summary_parts:
-        section_lines.append(f"  {'; '.join(summary_parts)}")
+        lines.append(f"  {'; '.join(summary_parts)}")
 
     sorted_entries = sorted(
         diff_results,
@@ -694,17 +669,15 @@ def format_diff(
             f"  {_diff_status_symbol(e.status, use_colors=use_colors)} "
             f"{e.item.name} ({DIFF_STATUS_DETAILS.get(e.status, e.status.value)})"
         )
-        section_lines.append(status_line)
+        lines.append(status_line)
 
         # Append content diff for UPDATED entries when verbose mode is on.
         if verbose and e.status == DiffStatus.UPDATED and content_diffs is not None:
             diff_lines = content_diffs.get(e.item.item_key)
             if diff_lines:
-                section_lines.extend(_format_content_diff_lines(diff_lines, use_colors))
+                lines.extend(_format_content_diff_lines(diff_lines, use_colors))
 
-    sections.append("\n".join(section_lines))
-
-    return "\n\n".join(sections)
+    return "\n".join(lines)
 
 
 def _format_content_diff_lines(
@@ -734,15 +707,17 @@ def _format_content_diff_lines(
 
     for line in diff_lines:
         if line.startswith("---") or line.startswith("+++"):
-            formatted.append(f"  {colorize(line, Colors.BOLD)}" if use_colors else f"  {line}")
+            color = Colors.BOLD
         elif line.startswith("@@"):
-            formatted.append(f"  {colorize(line, _cyan)}" if use_colors else f"  {line}")
+            color = _cyan
         elif line.startswith("+"):
-            formatted.append(f"  {colorize(line, Colors.GREEN)}" if use_colors else f"  {line}")
+            color = Colors.GREEN
         elif line.startswith("-"):
-            formatted.append(f"  {colorize(line, Colors.RED)}" if use_colors else f"  {line}")
+            color = Colors.RED
         else:
-            formatted.append(f"  {colorize(line, Colors.DIM)}" if use_colors else f"  {line}")
+            color = Colors.DIM
+        text = colorize(line, color) if use_colors else line
+        formatted.append(f"  {text}")
 
     return formatted
 

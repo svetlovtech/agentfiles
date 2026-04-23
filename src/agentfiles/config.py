@@ -271,11 +271,7 @@ def _load_config_from_file(path: Path) -> AgentfilesConfig:
 
 
 def clear_config_cache() -> None:
-    """Clear the config file loading cache.
-
-    Call this when the config file has been modified on disk and
-    the cached result should be invalidated.
-    """
+    """Invalidate the config file loading cache (call after on-disk changes)."""
     _load_config_from_file.cache_clear()
 
 
@@ -346,9 +342,7 @@ def save_sync_state(repo_path: Path, state: SyncState) -> None:
 
 def _parse_item_state(raw: dict[str, Any]) -> ItemState:
     """Construct an ItemState from a raw parsed dictionary."""
-    return ItemState(
-        synced_at=str(raw.get("synced_at", "")),
-    )
+    return ItemState(synced_at=str(raw.get("synced_at", "")))
 
 
 def _parse_sync_state(data: dict[str, Any]) -> SyncState:
@@ -381,19 +375,19 @@ def _parse_sync_state(data: dict[str, Any]) -> SyncState:
 
     # Legacy nested format: migrate platforms["opencode"]["items"] → items.
     raw_platforms = data.get("platforms") or {}
-    items: dict[str, ItemState] = {}
+    legacy_items: dict[str, ItemState] = {}
     for _name, pd in raw_platforms.items():
         if not isinstance(pd, dict):
             continue
         raw_items = pd.get("items") or {}
         for key, item_data in raw_items.items():
-            if isinstance(item_data, dict) and key not in items:
-                items[key] = _parse_item_state(item_data)
+            if isinstance(item_data, dict) and key not in legacy_items:
+                legacy_items[key] = _parse_item_state(item_data)
 
     return SyncState(
         version=str(data.get("version", "1.0")),
         last_sync=str(data.get("last_sync", "")),
-        items=items,
+        items=legacy_items,
     )
 
 
@@ -406,15 +400,7 @@ def _serialize_item_state(item: ItemState) -> dict[str, str]:
 
 
 def _serialize_sync_state(state: SyncState) -> dict[str, Any]:
-    """Convert a SyncState into a YAML-serializable dictionary.
-
-    Args:
-        state: SyncState instance to serialize.
-
-    Returns:
-        A dictionary suitable for ``yaml.dump``.
-
-    """
+    """Convert a SyncState into a YAML-serializable dictionary."""
     items = {key: _serialize_item_state(item) for key, item in state.items.items()}
 
     return {
@@ -425,17 +411,9 @@ def _serialize_sync_state(state: SyncState) -> dict[str, Any]:
 
 
 def _backup_corrupted_state(state_file: Path) -> Path:
-    """Rename a corrupted state file to preserve it for debugging.
+    """Rename corrupted state file with ``.corrupted`` suffix (``.corrupted.1``, etc.).
 
-    Appends a ``.corrupted`` suffix.  If that file already exists, a
-    numeric suffix is appended (``.corrupted.1``, ``.corrupted.2``, etc.).
-
-    Args:
-        state_file: Path to the corrupted state file.
-
-    Returns:
-        Path to the backup file.
-
+    Preserves the broken file for debugging while allowing a fresh start.
     """
     backup = Path(f"{state_file}.corrupted")
     counter = 1
@@ -452,13 +430,5 @@ def _backup_corrupted_state(state_file: Path) -> Path:
 
 
 def get_state_path(repo_path: Path) -> Path:
-    """Get the path to the state file.
-
-    Args:
-        repo_path: Path to the source repository.
-
-    Returns:
-        Path to the state YAML file.
-
-    """
+    """Return the path to ``.agentfiles.state.yaml`` within *repo_path*."""
     return repo_path / _STATE_FILENAME
