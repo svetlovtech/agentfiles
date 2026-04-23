@@ -302,7 +302,9 @@ def _parse_sync_state(data: dict[str, Any]) -> SyncState:
     """
     # New flat format: items key present at top level.
     if "items" in data:
-        raw_items = data["items"] or {}
+        raw_items = data["items"]
+        if not isinstance(raw_items, dict):
+            raw_items = {}
         items = {
             key: _parse_item_state(item_data)
             for key, item_data in raw_items.items()
@@ -315,7 +317,9 @@ def _parse_sync_state(data: dict[str, Any]) -> SyncState:
         )
 
     # Legacy nested format: migrate platforms["opencode"]["items"] → items.
-    raw_platforms = data.get("platforms") or {}
+    raw_platforms = data.get("platforms")
+    if not isinstance(raw_platforms, dict):
+        raw_platforms = {}
     legacy_items: dict[str, ItemState] = {}
     for _name, pd in raw_platforms.items():
         if not isinstance(pd, dict):

@@ -201,6 +201,9 @@ class MenuRenderer:
                 dest = get_push_dest_path(source_dir, item)
                 _push_status[id(item)] = _compare_push_item(item.source_path, dest)
 
+        # Deferred import — avoids circular dependency with engine module.
+        from agentfiles.tokens import count_item_tokens
+
         index_map: dict[int, Item] = {}
         counter = 1
         buf: list[str] = [""]
@@ -218,8 +221,6 @@ class MenuRenderer:
                 # Show token count for agents and skills (fast, size-based estimate)
                 token_str = ""
                 if item.item_type in (ItemType.AGENT, ItemType.SKILL):
-                    from agentfiles.tokens import count_item_tokens
-
                     tokens = count_item_tokens(item.source_path)
                     token_str = f"  ~{tokens:,} tokens"
                 # Push-status marker

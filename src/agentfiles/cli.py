@@ -868,7 +868,6 @@ def cmd_pull(args: argparse.Namespace) -> int:
     Returns:
         ``0`` on success, ``1`` if any operation failed.
     """
-    from agentfiles.engine import SyncEngine
     from agentfiles.interactive import InteractiveSession
     from agentfiles.output import bold, format_item_count, info, warning
 
@@ -947,14 +946,14 @@ def cmd_pull(args: argparse.Namespace) -> int:
         _display_update_indicators(plans)
 
     results = engine.execute_plan(plans)
-    report = SyncEngine.aggregate(results)
+    report = engine.aggregate(results)
 
     # Persist sync state for non-dry-run successful operations.
     if not ctx.dry_run and any(r.is_success for r in results):
         from agentfiles.config import load_sync_state, save_sync_state
 
         sync_state = load_sync_state(source_dir)
-        _update_sync_state_from_results(sync_state, results, target_manager)
+        _update_sync_state_from_results(sync_state, results)
         save_sync_state(source_dir, sync_state)
 
     # JSON non-dry-run: output results and return.
@@ -1628,7 +1627,6 @@ def cmd_init(args: argparse.Namespace) -> int:
 def _update_sync_state_from_results(
     state: SyncState,
     results: list[SyncResult],
-    target_manager: TargetManager,
 ) -> None:
     """Update sync state based on successful pull/push results.
 

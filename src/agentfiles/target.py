@@ -35,6 +35,7 @@ from agentfiles.models import (
     Scope,
     TargetError,
     TargetPaths,
+    _PLUGIN_EXTENSIONS,
 )
 from agentfiles.paths import get_item_dest_path
 
@@ -547,13 +548,7 @@ class TargetManager:
                     # Plugins: only accept known extensions to skip
                     # extensionless duplicates (e.g. "memory-compact"
                     # alongside "memory-compact.ts").
-                    if item_type == ItemType.PLUGIN and entry.suffix not in (
-                        ".ts",
-                        ".yaml",
-                        ".yml",
-                        ".py",
-                        ".js",
-                    ):
+                    if item_type == ItemType.PLUGIN and entry.suffix not in _PLUGIN_EXTENSIONS:
                         continue
                     name = entry.stem
                 else:

@@ -125,34 +125,6 @@ def target_manager(fake_home: SimpleNamespace) -> Generator[TargetManager, None,
         yield TargetManager(targets)
 
 
-@pytest.fixture
-def sample_source(tmp_path: Path) -> Path:
-    """Create a minimal source directory with agents and skills."""
-    source = tmp_path / "source"
-    agents_dir = source / "agents"
-    agents_dir.mkdir(parents=True)
-    skills_dir = source / "skills"
-    skills_dir.mkdir(parents=True)
-
-    # Create a sample agent
-    agent_dir = agents_dir / "test-agent"
-    agent_dir.mkdir()
-    (agent_dir / "test-agent.md").write_text(
-        "---\nname: test-agent\ndescription: Test agent\n---\nTest content\n",
-        encoding="utf-8",
-    )
-
-    # Create a sample skill
-    skill_dir = skills_dir / "test-skill"
-    skill_dir.mkdir()
-    (skill_dir / "SKILL.md").write_text(
-        "---\nname: test-skill\ndescription: Test skill\n---\nSkill content\n",
-        encoding="utf-8",
-    )
-
-    return source
-
-
 # ---------------------------------------------------------------------------
 # Shared mock-stack fixtures for push / pull integration tests
 # ---------------------------------------------------------------------------

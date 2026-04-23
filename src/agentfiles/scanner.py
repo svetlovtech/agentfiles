@@ -77,6 +77,8 @@ from agentfiles.models import (
     ItemType,
     Scope,
     SourceError,
+    _PLUGIN_EXTENSIONS,
+    _SKIP_NAMES,
     item_from_directory,
     item_from_file,
 )
@@ -239,13 +241,10 @@ class GitIgnoreMatcher:
 # ---------------------------------------------------------------------------
 
 # Names to always skip during scanning (hidden names handled separately).
-_SKIP_NAMES = ("__pycache__", "__init__.py")
+# _SKIP_NAMES is imported from agentfiles.models to avoid duplication.
 
 # Scope subdirectory names inside content directories (e.g. agents/global/).
 _SCOPE_DIR_NAMES: frozenset[str] = frozenset(s.value for s in Scope)
-
-# File extensions recognised for single-file plugin items.
-_PLUGIN_EXTENSIONS = (".ts", ".yaml", ".yml", ".py", ".js")
 
 # Maximum directory nesting depth for _has_plugin_file recursion.
 _PLUGIN_SCAN_MAX_DEPTH = 10
@@ -621,7 +620,7 @@ def _has_plugin_file(directory: Path, *, _depth: int = 0) -> bool:
 
     Called by :func:`_scan_plugins_dir` to decide whether a subdirectory
     qualifies as a plugin item.  A "plugin file" is any non-hidden file
-    whose extension is in :data:`_PLUGIN_EXTENSIONS` (``.ts``, ``.yaml``,
+    whose extension is in :data:`~agentfiles.models._PLUGIN_EXTENSIONS` (``.ts``, ``.yaml``,
     ``.py``, ``.yml``, ``.js``).
 
     Uses :func:`os.scandir` recursively so that ``DirEntry.is_file()``

@@ -286,6 +286,8 @@ class Scope(Enum):
 
 _SKIP_NAMES: Final[tuple[str, ...]] = ("__pycache__", "__init__.py")
 
+_PLUGIN_EXTENSIONS: Final[tuple[str, ...]] = (".ts", ".yaml", ".yml", ".py", ".js")
+
 
 def _is_item_file(rel_path: Path) -> bool:
     """Whether a relative path should be included in item content."""
@@ -698,19 +700,13 @@ def item_from_file(
 
 
 # ---------------------------------------------------------------------------
-# Lazy re-exports — backward-compatible symbols from agentfiles.frontmatter
-# and agentfiles.tokens
+# Lazy re-exports — backward-compatible symbols from agentfiles.tokens
 # ---------------------------------------------------------------------------
-# Imports are resolved lazily to break the circular dependency chain:
-# models.py ↔ frontmatter.py.  The public API is preserved so that
-# existing imports continue to work.
+# Frontmatter symbols (SKILL_MAIN_FILE, parse_frontmatter, _meta_from_frontmatter)
+# are eagerly imported above (line ~346) to break the circular dependency chain
+# with agentfiles.frontmatter.  Only the tokens module symbols need lazy loading
+# because they have no circular dependency concern.
 # ---------------------------------------------------------------------------
-
-_FRONTMATTER_NAMES = (
-    "SKILL_MAIN_FILE",
-    "_meta_from_frontmatter",
-    "parse_frontmatter",
-)
 
 _TOKEN_NAMES = (
     "CHARS_PER_TOKEN",
@@ -724,18 +720,12 @@ _TOKEN_NAMES = (
 
 
 def __getattr__(name: str) -> object:
-    """Lazy re-export of symbols from frontmatter and tokens modules."""
+    """Lazy re-export of symbols from the tokens module."""
     if name in _TOKEN_NAMES:
         from agentfiles import tokens as _tokens
 
         value = getattr(_tokens, name)
         # Cache in module globals so future access bypasses __getattr__.
-        globals()[name] = value
-        return value
-    if name in _FRONTMATTER_NAMES:
-        from agentfiles import frontmatter as _fm
-
-        value = getattr(_fm, name)
         globals()[name] = value
         return value
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

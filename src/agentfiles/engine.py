@@ -474,7 +474,6 @@ class SyncEngine:
         use_symlinks: bool = False,
         dry_run: bool = False,
     ) -> None:
-        """Initialise the SyncEngine."""
         self._target_manager = target_manager
         self._use_symlinks = use_symlinks
         self._dry_run = dry_run
@@ -966,7 +965,7 @@ class SyncEngine:
         return SyncResult(
             plan=plan,
             is_success=True,
-            message=f"uninstalled {plan.item.name}",
+            message=f"Uninstalled {plan.item.name}",
         )
 
     def _push_item(
