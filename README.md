@@ -14,6 +14,15 @@
   <a href="https://github.com/svetlovtech/agentfiles/actions">
     <img src="https://img.shields.io/github/actions/workflow/status/svetlovtech/agentfiles/ci.yml?branch=main&label=CI" alt="CI">
   </a>
+  <a href="https://docs.astral.sh/ruff/">
+    <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/charliermarsh/ruff/main/assets/badge/v2.json" alt="Ruff">
+  </a>
+  <a href="https://mypy.readthedocs.io/">
+    <img src="https://img.shields.io/badge/mypy-strict-blue" alt="mypy: strict">
+  </a>
+  <a href="https://github.com/PyCQA/bandit">
+    <img src="https://img.shields.io/badge/security-bandit-yellow" alt="Bandit">
+  </a>
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT">
   </a>
@@ -241,18 +250,16 @@ my-agents/
 
 ## Architecture
 
-```
-┌─────────────────┐    ┌──────────────┐    ┌──────────────┐
-│ Source Resolution│───▶│    Scanner    │───▶│    Differ    │
-│   (source.py)   │    │ (scanner.py) │    │ (differ.py)  │
-└─────────────────┘    └──────────────┘    └──────────────┘
-                                                    │
-                                                    ▼
-                                             ┌──────────────┐
-┌──────────────┐    ┌──────────────┐         │    Engine    │
-│  SyncReport  │◀──│ SyncResult[] │◀────────│ (engine.py)  │
-│              │    │              │         │ plan→execute │
-└──────────────┘    └──────────────┘         └──────────────┘
+```mermaid
+graph LR
+    A["Source Resolution<br/><code>source.py</code>"] --> B["Scanner<br/><code>scanner.py</code>"]
+    B --> C["Differ<br/><code>differ.py</code>"]
+    C --> D["Engine<br/><code>engine.py</code>"]
+    D --> E["SyncResult[]"]
+    E --> F["SyncReport"]
+
+    G["Target<br/><code>target.py</code>"] --> C
+    H["Config<br/><code>config.py</code>"] --> D
 ```
 
 | Module | Purpose |
@@ -264,6 +271,17 @@ my-agents/
 | `target.py` | Discover OpenCode config directory, manage installed items |
 | `config.py` | YAML config + sync-state persistence |
 | `cli.py` | Argparse CLI with all subcommands |
+
+### CI Pipeline
+
+```mermaid
+graph TD
+    Lint["ruff check + format"] --> Gate{"CI Gate"}
+    TypeCheck["mypy strict"] --> Gate
+    Security["bandit"] --> Gate
+    Test["pytest × 4 Pythons"] --> Gate
+    Gate -->|on Release| Publish["PyPI Publish"]
+```
 
 ### Extending
 
@@ -279,23 +297,26 @@ No other modules need changes (Open/Closed Principle).
 
 ```bash
 # Install with dev dependencies
-pip install -e ".[dev]"
+uv sync --dev
 
 # Lint & format
-ruff check src/ tests/
-ruff format --check src/ tests/
+uv run ruff check src/ tests/
+uv run ruff format --check src/ tests/
 
 # Type check
-mypy src/
+uv run mypy src/
+
+# Security scan
+uv run bandit -r src/ -c pyproject.toml
 
 # Test
-pytest tests/ -v
+uv run pytest tests/ -v
 
 # Test with coverage
-pytest tests/ -v --cov=agentfiles --cov-report=term-missing
+uv run pytest tests/ -v --cov=agentfiles --cov-report=term-missing
 
 # Build package
-python -m build
+uv run python -m build
 ```
 
 ## License
