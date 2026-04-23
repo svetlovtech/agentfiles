@@ -17,6 +17,7 @@ agentfiles manages six categories of items: **agents**, **skills**, **commands**
 - [Scopes](#scopes)
 - [Frontmatter Reference](#frontmatter-reference)
 - [Sync Behavior](#sync-behavior)
+- [Releasing & Deployment](#releasing--deployment)
 - [How to Contribute](#how-to-contribute)
 
 ---
@@ -365,6 +366,41 @@ All sync operations support surgical filtering:
 
 ---
 
+## Releasing & Deployment
+
+### Version Management
+
+- Version is defined in `pyproject.toml` under `[project]` → `version`
+- Uses semantic versioning (MAJOR.MINOR.PATCH)
+- **Always bump version when making changes** to the project
+
+### Release Process
+
+1. Update `version` in `pyproject.toml`
+2. Commit with a descriptive message
+3. Push to `main`
+4. Create a GitHub Release with tag `v<version>` (e.g., `v0.5.0`)
+5. The `publish.yml` workflow triggers automatically on release publication
+
+### CI Pipeline
+
+The CI pipeline runs on every push and pull request (defined in `.github/workflows/ci.yml`):
+
+- **Lint**: ruff check + ruff format (parallel job)
+- **Type check**: mypy strict (parallel job)
+- **Security**: bandit (parallel job)
+- **Tests**: pytest on Python 3.10, 3.11, 3.12, 3.13 (parallel job)
+- **Gate**: all jobs must pass
+
+### PyPI Publishing
+
+- Uses Trusted Publishing (OIDC) — no API tokens needed
+- Triggered automatically when a GitHub Release is published
+- Requires one-time setup: register the package on PyPI as a GitHub publisher
+- Environment: `pypi` in GitHub
+
+---
+
 ## How to Contribute
 
 ### Adding a new item
@@ -391,3 +427,4 @@ No other modules need changes.
 - Use semantic versioning in frontmatter
 - Include a `description` field for discoverability
 - Test with `agentfiles doctor` and `agentfiles verify` before submitting
+- **Always bump the version in `pyproject.toml`** when making any changes to the project. Even small fixes should get a patch bump. This ensures every change is traceable and deployable.
