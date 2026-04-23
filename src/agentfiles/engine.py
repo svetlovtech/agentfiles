@@ -42,7 +42,6 @@ import logging
 import os
 import shutil
 import stat
-from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -68,10 +67,6 @@ logger = logging.getLogger(__name__)
 _PUSH_NEW = "new"
 _PUSH_UNCHANGED = "unchanged"
 _PUSH_CHANGED = "changed"
-
-# Named constants for sync-plan action strings returned by compute_sync_plan.
-_PLAN_PULL = "pull"
-_PLAN_SKIP = "skip"
 
 # Suffixes used by the atomic-copy swap pattern.
 _TMP_SUFFIX = ".agentfiles_tmp"
@@ -618,17 +613,14 @@ class SyncEngine:
         logs the resulting summary.
 
         When *source_dir* is provided and *action* is ``INSTALL``, the
-        sync state file is updated after successful execution so that
-        subsequent ``compute_sync_plan`` calls can determine which items
-        have been synced.
+        sync state file is updated after successful execution.
         """
         plans = self.plan_sync(items, action=action)
         results = self.execute_plan(plans)
         report = self.aggregate(results)
         logger.info(report.summary())
 
-        # Persist sync state after pull operations so that bidirectional
-        # sync (compute_sync_plan) can track which items have been synced.
+        # Persist sync state after pull operations.
         if (
             source_dir is not None
             and not self._dry_run
@@ -651,9 +643,7 @@ class SyncEngine:
             items: Items to sync.
             source_dir: Root of the source repository.  When provided,
                 the sync state file (``.agentfiles.state.yaml``) is
-                updated after successful installation so that
-                ``compute_sync_plan`` can track which items have been
-                synced on subsequent runs.
+                updated after successful installation.
 
         Returns:
             Aggregated :class:`SyncReport`.
@@ -732,45 +722,6 @@ class SyncEngine:
             )
 
         return report
-
-    def compute_sync_plan(
-        self,
-        items: list[Item],
-        state: SyncState,
-        source_dir: Path,
-    ) -> list[tuple[Item, str]]:
-        """Compute what needs to be pulled, pushed, or is in conflict.
-
-        Checks each item against the target platform to determine whether
-        it needs to be pulled from the source repository.
-
-        Args:
-            items: Source items to evaluate.
-            state: Previously recorded sync state.
-            source_dir: Root directory of the source repository.
-
-        Returns:
-            List of ``(item, action)`` tuples where *action* is
-            :data:`_PLAN_PULL` or :data:`_PLAN_SKIP`.
-
-        Logic:
-            - item not at target → :data:`_PLAN_PULL`
-            - item exists at target → :data:`_PLAN_SKIP`
-
-        """
-        plan: list[tuple[Item, str]] = []
-
-        for item in items:
-            action = self._compute_item_action(item)
-            plan.append((item, action))
-
-        counts = Counter(action for _, action in plan)
-        logger.info(
-            "Sync plan: %d pull, %d skip",
-            counts[_PLAN_PULL],
-            counts[_PLAN_SKIP],
-        )
-        return plan
 
     # -- private helpers --------------------------------------------------
 
@@ -1196,26 +1147,6 @@ class SyncEngine:
                 )
 
         return files_copied, None
-
-    def _compute_item_action(
-        self,
-        item: Item,
-    ) -> str:
-        """Determine the sync action for a single item.
-
-        Checks if the item exists at the target.
-        Returns :data:`_PLAN_PULL` if not installed, :data:`_PLAN_SKIP`
-        if installed.
-        """
-        target_dir = self._target_manager.get_target_dir(item.item_type)
-        if target_dir is None:
-            return _PLAN_SKIP
-
-        target_path = get_item_dest_path(target_dir, item)
-        if not target_path.exists():
-            return _PLAN_PULL
-
-        return _PLAN_SKIP
 
     @staticmethod
     def aggregate(results: list[SyncResult]) -> SyncReport:

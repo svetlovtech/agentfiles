@@ -11,7 +11,6 @@ import pytest
 
 from agentfiles.interactive import (
     InputParser,
-    InteractiveRunner,
     InteractiveSession,
     MenuRenderer,
     _parse_comma_list,
@@ -245,14 +244,6 @@ class TestMenuRenderer:
         assert "Full sync" in captured.out
         assert "Load mode:" in captured.out
 
-    def test_show_main_menu_prints_all_options(
-        self, renderer: MenuRenderer, capsys: pytest.CaptureFixture
-    ) -> None:
-        renderer.show_main_menu()
-        captured = capsys.readouterr()
-        assert "Pull items" in captured.out
-        assert "Exit" in captured.out
-
     def test_show_no_plans_message(
         self, renderer: MenuRenderer, capsys: pytest.CaptureFixture
     ) -> None:
@@ -421,60 +412,6 @@ class TestInteractiveSessionColorAutoDetection:
         assert session._renderer._use_colors is False
 
 
-class TestInteractiveRunnerErrorHandling:
-    """Tests for InteractiveRunner error handling improvements."""
-
-    def test_run_handles_keyboard_interrupt(self, capsys: pytest.CaptureFixture) -> None:
-        """Ctrl+C during menu prompt exits cleanly."""
-        dispatch = MagicMock()
-        runner = InteractiveRunner(command_dispatch=dispatch, use_colors=False)
-
-        def _raise_interrupt(message: str) -> str:
-            raise KeyboardInterrupt
-
-        with patch.object(runner._session._parser, "prompt", side_effect=_raise_interrupt):
-            runner.run()
-
-        captured = capsys.readouterr()
-        assert "Goodbye" in captured.out
-
-    def test_run_handles_eof_on_continue(self, capsys: pytest.CaptureFixture) -> None:
-        """EOFError at 'Press Enter' prompt exits cleanly."""
-        dispatch = MagicMock()
-        runner = InteractiveRunner(command_dispatch=dispatch, use_colors=False)
-
-        # prompt returns "1" (pull), then input("Press Enter") raises EOFError
-        with (
-            patch.object(runner._session._parser, "prompt", return_value="1"),
-            patch("builtins.input", side_effect=EOFError),
-        ):
-            runner.run()
-
-        captured = capsys.readouterr()
-        assert "Goodbye" in captured.out
-
-    def test_run_handles_interrupt_on_continue(self, capsys: pytest.CaptureFixture) -> None:
-        """KeyboardInterrupt at 'Press Enter' prompt exits cleanly."""
-        dispatch = MagicMock()
-        runner = InteractiveRunner(command_dispatch=dispatch, use_colors=False)
-
-        # prompt returns "1" (pull), then input("Press Enter") raises KeyboardInterrupt
-        with (
-            patch.object(runner._session._parser, "prompt", return_value="1"),
-            patch("builtins.input", side_effect=KeyboardInterrupt),
-        ):
-            runner.run()
-
-        captured = capsys.readouterr()
-        assert "Goodbye" in captured.out
-
-    def test_run_color_auto_detection(self) -> None:
-        """InteractiveRunner auto-detects colors when use_colors is None."""
-        with patch.dict("os.environ", {"NO_COLOR": "1"}):
-            runner = InteractiveRunner(command_dispatch=MagicMock())
-        assert runner._session._renderer._use_colors is False
-
-
 # ---------------------------------------------------------------------------
 # Additional InputParser coverage — confirmation edge cases
 # ---------------------------------------------------------------------------
@@ -611,149 +548,6 @@ class TestSelectItemsExtended:
             pytest.raises(KeyboardInterrupt),
         ):
             session.select_items(sample_items)
-
-
-# ---------------------------------------------------------------------------
-# Additional InteractiveSession — welcome & main_menu
-# ---------------------------------------------------------------------------
-
-
-class TestSessionWelcomeAndMenu:
-    """Tests for InteractiveSession.welcome() and main_menu() delegation."""
-
-    def test_welcome_delegates_to_renderer(self, capsys: pytest.CaptureFixture) -> None:
-        """welcome() delegates to MenuRenderer.show_welcome()."""
-        session = InteractiveSession(use_colors=False)
-        session.welcome()
-        captured = capsys.readouterr()
-        assert "agentfiles" in captured.out
-
-    def test_main_menu_returns_pull(self, capsys: pytest.CaptureFixture) -> None:
-        """Main menu returns 'pull' for input '1'."""
-        session = InteractiveSession(use_colors=False)
-        with patch("builtins.input", return_value="1"):
-            result = session.main_menu()
-        assert result == "pull"
-
-    def test_main_menu_returns_status(self, capsys: pytest.CaptureFixture) -> None:
-        """Main menu returns 'status' for input '3'."""
-        session = InteractiveSession(use_colors=False)
-        with patch("builtins.input", return_value="3"):
-            result = session.main_menu()
-        assert result == "status"
-
-    def test_main_menu_returns_push(self, capsys: pytest.CaptureFixture) -> None:
-        """Main menu returns 'push' for input '2'."""
-        session = InteractiveSession(use_colors=False)
-        with patch("builtins.input", return_value="2"):
-            result = session.main_menu()
-        assert result == "push"
-
-    def test_main_menu_invalid_defaults_to_status(self, capsys: pytest.CaptureFixture) -> None:
-        """Main menu returns 'status' for unrecognized numeric input."""
-        session = InteractiveSession(use_colors=False)
-        with patch("builtins.input", return_value="9"):
-            result = session.main_menu()
-        assert result == "status"
-
-
-# ---------------------------------------------------------------------------
-# Additional InteractiveRunner — run loop command dispatch
-# ---------------------------------------------------------------------------
-
-
-class TestInteractiveRunnerRunLoop:
-    """Tests for InteractiveRunner.run() command dispatch and loop behavior."""
-
-    def test_run_dispatches_pull_command(self, capsys: pytest.CaptureFixture) -> None:
-        """Run loop dispatches 'pull' when user selects it from menu."""
-        dispatch = MagicMock()
-        runner = InteractiveRunner(command_dispatch=dispatch, use_colors=False)
-
-        # prompt() calls: first returns "1" (pull), second returns "0" (quit).
-        # builtins.input: "Press Enter" after dispatch (one call only).
-        with (
-            patch.object(runner._session._parser, "prompt", side_effect=["1", "0"]),
-            patch("builtins.input", side_effect=[""]),
-        ):
-            runner.run()
-
-        dispatch.assert_called_once_with("pull")
-        captured = capsys.readouterr()
-        assert "Goodbye" in captured.out
-
-    def test_run_handles_command_exception(
-        self,
-        capsys: pytest.CaptureFixture,
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """Run loop catches and logs exceptions from command_dispatch."""
-        caplog.set_level(logging.DEBUG, logger="agentfiles.interactive")
-        dispatch = MagicMock(side_effect=RuntimeError("test error"))
-        runner = InteractiveRunner(command_dispatch=dispatch, use_colors=False)
-
-        # prompt() calls: first "1" (triggers error), second "0" (quit).
-        with (
-            patch.object(runner._session._parser, "prompt", side_effect=["1", "0"]),
-            patch("builtins.input", side_effect=[""]),
-        ):
-            runner.run()
-
-        captured = capsys.readouterr()
-        # error() writes to stderr
-        assert "Command failed" in captured.err
-        assert any("Interactive command error" in r.message for r in caplog.records)
-
-    def test_run_quit_immediately(self, capsys: pytest.CaptureFixture) -> None:
-        """Choosing 'quit' on the first menu exits without dispatching."""
-        dispatch = MagicMock()
-        runner = InteractiveRunner(command_dispatch=dispatch, use_colors=False)
-
-        with patch.object(runner._session._parser, "prompt", return_value="0"):
-            runner.run()
-
-        dispatch.assert_not_called()
-        captured = capsys.readouterr()
-        assert "Goodbye" in captured.out
-
-    def test_run_multiple_commands_then_quit(self, capsys: pytest.CaptureFixture) -> None:
-        """Run loop dispatches multiple commands before quitting."""
-        dispatch = MagicMock()
-        runner = InteractiveRunner(command_dispatch=dispatch, use_colors=False)
-
-        # Simulate: prompt("Choose") returns pull, status, then quit
-        prompt_returns = ["1", "4", "0"]
-        # "Press Enter" input after each non-quit command
-        press_enter_returns = ["", ""]
-
-        with (
-            patch.object(runner._session._parser, "prompt", side_effect=prompt_returns),
-            patch(
-                "builtins.input",
-                side_effect=press_enter_returns,
-            ),
-        ):
-            runner.run()
-
-        assert dispatch.call_count == 2
-        assert dispatch.call_args_list[0][0][0] == "pull"
-        assert dispatch.call_args_list[1][0][0] == "status"
-
-    def test_run_eof_during_command_exits_cleanly(self, capsys: pytest.CaptureFixture) -> None:
-        """EOFError at 'Press Enter' after a command exits cleanly."""
-        dispatch = MagicMock()
-        runner = InteractiveRunner(command_dispatch=dispatch, use_colors=False)
-
-        # prompt returns "1" (pull), then input("Press Enter") raises EOFError
-        with (
-            patch.object(runner._session._parser, "prompt", return_value="1"),
-            patch("builtins.input", side_effect=EOFError),
-        ):
-            runner.run()
-
-        dispatch.assert_called_once_with("pull")
-        captured = capsys.readouterr()
-        assert "Goodbye" in captured.out
 
 
 # ---------------------------------------------------------------------------

@@ -14,7 +14,6 @@ from agentfiles.config import (
     _iter_config_search_paths,
     _read_yaml_file,
     _validate_config_dict,
-    clear_config_cache,
     load_sync_state,
     save_sync_state,
 )
@@ -156,10 +155,10 @@ class TestFromDict:
         assert config.cache_dir == "/tmp/cache"
 
     def test_custom_paths_copied_to_dict(self) -> None:
-        data = {"custom_paths": {"opencode": "/o", "claude_code": "/c"}}
+        data = {"custom_paths": {"opencode": "/o"}}
         config = AgentfilesConfig._from_dict(data)
         assert isinstance(config.custom_paths, dict)
-        assert config.custom_paths == {"opencode": "/o", "claude_code": "/c"}
+        assert config.custom_paths == {"opencode": "/o"}
 
     def test_none_cache_dir_uses_default(self) -> None:
         """A None value for cache_dir should use the default, not coerce to 'None'."""
@@ -674,36 +673,6 @@ class TestIterConfigSearchPaths:
 
         with pytest.raises(ConfigError, match="config file not found"):
             list(_iter_config_search_paths(directory))
-
-
-# ---------------------------------------------------------------------------
-# clear_config_cache
-# ---------------------------------------------------------------------------
-
-
-class TestClearConfigCache:
-    """Tests for clear_config_cache function."""
-
-    def test_clear_cache_allows_reload(self, tmp_path: Path) -> None:
-        """After clearing the cache, modified config is re-read from disk."""
-        cfg = tmp_path / ".agentfiles.yaml"
-        cfg.write_text(yaml.dump({"use_symlinks": False}), encoding="utf-8")
-
-        # First load — cached
-        config1 = AgentfilesConfig.load(cfg)
-        assert config1.use_symlinks is False
-
-        # Modify the file on disk
-        cfg.write_text(yaml.dump({"use_symlinks": True}), encoding="utf-8")
-
-        # Without clearing cache, the old value persists
-        config2 = AgentfilesConfig.load(cfg)
-        assert config2.use_symlinks is False
-
-        # After clearing cache, the new value is read
-        clear_config_cache()
-        config3 = AgentfilesConfig.load(cfg)
-        assert config3.use_symlinks is True
 
 
 # ---------------------------------------------------------------------------

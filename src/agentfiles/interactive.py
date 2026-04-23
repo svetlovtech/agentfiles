@@ -11,7 +11,6 @@ Single Responsibility Principle:
 - :class:`InputParser` — user input collection and parsing.
 - :class:`InteractiveSession` — thin facade that composes the two
   above and preserves the public API.
-- :class:`InteractiveRunner` — main interactive loop orchestration.
 
 Respects the ``NO_COLOR`` environment variable and automatically disables
 colours when stdout is not a TTY.
@@ -64,13 +63,6 @@ _SYNC_MODES: list[tuple[str, str]] = [
     ("update", "Update all (update changed items)"),
     ("full", "Full sync (install new + update changed)"),
     ("custom", "Custom (select items manually)"),
-]
-
-_MAIN_MENU: list[tuple[str, str, str]] = [
-    ("1", "pull", "Pull items from repo to local configs"),
-    ("2", "push", "Push local changes back to repo"),
-    ("3", "status", "Show installed items"),
-    ("0", "quit", "Exit"),
 ]
 
 
@@ -251,16 +243,6 @@ class MenuRenderer:
         lines.extend(f"  {idx}) {desc}" for idx, (_, desc) in enumerate(_SYNC_MODES, start=1))
         sys.stdout.write("\n".join(lines) + "\n")
 
-    def show_main_menu(self) -> None:
-        """Display the main action menu."""
-        lines = [
-            self._c("What would you like to do?", Colors.BOLD),
-            "",
-        ]
-        lines.extend(f"  {self._c(num, Colors.BOLD)}) {desc}" for num, _, desc in _MAIN_MENU)
-        lines.append("")
-        sys.stdout.write("\n".join(lines) + "\n")
-
     # -- plan summary ------------------------------------------------------
 
     def show_no_plans_message(self) -> None:
@@ -388,30 +370,6 @@ class InputParser:
 
         return "full"
 
-    def parse_main_menu_choice(self, raw: str) -> str:
-        """Parse user input into a main menu action key.
-
-        Returns ``"status"`` on empty or unrecognised input.
-        """
-        if not raw:
-            return "status"
-
-        try:
-            idx = int(raw)
-            if idx == 0:
-                return "quit"
-            for num, key, _ in _MAIN_MENU:
-                if num == str(idx):
-                    return key
-        except ValueError:
-            pass
-
-        for _, key, _ in _MAIN_MENU:
-            if key.startswith(raw.lower()):
-                return key
-
-        return "status"
-
 
 # ---------------------------------------------------------------------------
 # InteractiveSession — thin facade (preserves public API)
@@ -437,11 +395,6 @@ class InteractiveSession:
 
         confirm_action_or_abort(...)     → bool  # cmd_clean, cmd_init
         confirm_plans_or_abort(...)      → bool  # cmd_pull
-
-    **Navigation** — used by :class:`InteractiveRunner` only::
-
-        welcome()       → None   # banner display
-        main_menu()     → str    # menu choice dispatch
 
     **Conflict resolution** — used by push workflows::
 
@@ -647,23 +600,6 @@ class InteractiveSession:
         raw = self._parser.prompt("Choose mode [3]: ")
         return self._parser.parse_sync_mode(raw)
 
-    # -- public API: navigation (used by InteractiveRunner) ----------------
-
-    def welcome(self) -> None:
-        """Display a welcome banner."""
-        self._renderer.show_welcome()
-
-    def main_menu(self) -> str:
-        """Display the main menu and return the user's choice.
-
-        Returns:
-            One of: ``"pull"``, ``"push"``, ``"status"``, ``"quit"``.
-
-        """
-        self._renderer.show_main_menu()
-        raw = self._parser.prompt("Choose [1]: ")
-        return self._parser.parse_main_menu_choice(raw)
-
     # -- public API: conflict resolution (push) ---------------------------
 
     _PUSH_CONFLICT_MAP: dict[str, str] = {
@@ -783,94 +719,3 @@ class InteractiveSession:
                 print(f"  {self._renderer._c(line, Colors.RED)}")
             else:
                 print(f"  {line}")
-
-
-# ---------------------------------------------------------------------------
-# InteractiveRunner — main interactive loop
-# ---------------------------------------------------------------------------
-
-
-class InteractiveRunner:
-    """Orchestrates the main interactive menu loop.
-
-    Displays a welcome banner, status summary, and main menu; dispatches
-    the chosen command through a callback; then loops until the user
-    quits.
-
-    This class has a narrow public interface — only :meth:`run`.
-    Internally it delegates to :class:`InteractiveSession` but uses
-    only the ``welcome()`` and ``main_menu()`` navigation methods,
-    keeping its dependency surface small.
-
-    Args:
-        command_dispatch: Callable that takes a menu choice string
-            (e.g. ``"pull"``, ``"status"``) and executes the
-            corresponding command.
-        status_provider: Optional callable that returns a dict mapping
-            platform display names to installed item counts.
-        use_colors: When ``None`` (default), colour output is
-            automatically enabled based on terminal capabilities.
-            Pass ``True`` or ``False`` to override.
-
-    """
-
-    def __init__(
-        self,
-        *,
-        command_dispatch: Callable[[str], None],
-        status_provider: Callable[[], dict[str, int]] | None = None,
-        use_colors: bool | None = None,
-    ) -> None:
-        """Initialise the interactive TUI shell."""
-        if use_colors is None:
-            use_colors = should_use_colors()
-        self._session = InteractiveSession(use_colors)
-        self._command_dispatch = command_dispatch
-        self._status_provider = status_provider
-
-    def run(self) -> None:
-        """Run the interactive loop until the user quits.
-
-        Handles ``KeyboardInterrupt`` (Ctrl+C) at the loop level for
-        a clean exit.  Also handles ``EOFError`` when stdin is
-        exhausted (e.g. piped input) by breaking out of the loop.
-        """
-        try:
-            while True:
-                self._session.welcome()
-                self._show_status()
-
-                choice = self._session.main_menu()
-                if choice == "quit":
-                    info("Goodbye!")
-                    break
-
-                try:
-                    self._command_dispatch(choice)
-                except Exception as exc:
-                    error(f"Command failed: {exc}")
-                    logger.debug("Interactive command error", exc_info=True)
-
-                print()
-                try:
-                    input("Press Enter to continue...")
-                except (EOFError, KeyboardInterrupt):
-                    info("Goodbye!")
-                    break
-        except KeyboardInterrupt:
-            print()
-            info("Goodbye!")
-
-    def _show_status(self) -> None:
-        """Display a quick status summary if a provider is available."""
-        if self._status_provider is None:
-            return
-
-        try:
-            summary = self._status_provider()
-            for name, count in summary.items():
-                print(f"  {name}: {count} items installed")
-            if summary:
-                print()
-        except Exception:
-            logger.debug("Failed to display status", exc_info=True)

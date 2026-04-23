@@ -2,7 +2,7 @@
 
 Note: estimate_tokens_from_content is tested in test_token_estimate.py
 (alongside the models-level token helpers). This file covers only the
-tokens-module-specific functions: count_item_tokens and format_token_count.
+tokens-module-specific function: count_item_tokens.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from agentfiles.tokens import count_item_tokens, format_token_count
+from agentfiles.tokens import count_item_tokens
 
 
 class TestCountItemTokens:
@@ -104,37 +104,3 @@ class TestCountItemTokens:
         size_based = count_item_tokens(f)
         content_based = estimate_tokens_from_files([f])
         assert size_based == content_based == 10
-
-
-class TestFormatTokenCount:
-    """Tests for format_token_count function."""
-
-    @pytest.mark.parametrize(
-        ("count", "expected"),
-        [
-            (0, "0"),
-            (1, "1"),
-            (500, "500"),
-            (999, "999"),
-            (1000, "1.0k"),
-            (1234, "1.2k"),
-            (56789, "56.8k"),
-            (1_000_000, "1000.0k"),
-        ],
-        ids=[
-            "zero",
-            "one",
-            "small",
-            "just-below-1k",
-            "exactly-1k",
-            "with-decimal",
-            "large",
-            "one-million",
-        ],
-    )
-    def test_formats_count(self, count: int, expected: str) -> None:
-        assert format_token_count(count) == expected
-
-    def test_negative_count_formatted_as_string(self) -> None:
-        # Edge case: function doesn't guard against negatives
-        assert format_token_count(-1) == "-1"

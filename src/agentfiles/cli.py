@@ -1591,7 +1591,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     if config_path.exists():
         info(f"Config already exists: {config_path}")
     else:
-        config_content = "# agentfiles configuration\ndefault_platforms:\n  - opencode\n"
+        config_content = "# agentfiles configuration\nplatform: opencode\n"
         try:
             config_path.write_text(config_content)
         except OSError as exc:
@@ -1604,7 +1604,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         state_content = (
             "# Sync state — auto-generated, do not edit manually\n"
             "# Use 'agentfiles pull', 'agentfiles push', or 'agentfiles sync'\n"
-            'version: "1.0"\nlast_sync: ""\nplatforms: {}\n'
+            'version: "1.0"\nlast_sync: ""\nitems: {}\n'
         )
         try:
             state_path.write_text(state_content)

@@ -41,7 +41,6 @@ from agentfiles.models import (
     item_from_directory,
     item_from_file,
     parse_frontmatter,
-    resolve_platform,
     resolve_target_name,
 )
 from agentfiles.scanner import GitIgnoreMatcher, parse_gitignore
@@ -140,41 +139,6 @@ class TestPlatformConstants:
         assert TARGET_PLATFORM_DISPLAY == "OpenCode"
 
 
-class TestPlatformRegistry:
-    """Tests for resolve_platform and alias resolution."""
-
-    def test_resolve_canonical_names(self) -> None:
-        assert resolve_platform("opencode") == "opencode"
-
-    def test_resolve_short_aliases(self) -> None:
-        assert resolve_platform("oc") == "opencode"
-
-    def test_resolve_descriptive_aliases(self) -> None:
-        assert resolve_platform("open-code") == "opencode"
-        assert resolve_platform("open_code") == "opencode"
-
-    def test_resolve_is_case_insensitive(self) -> None:
-        assert resolve_platform("OpenCode") == "opencode"
-        assert resolve_platform("OPENCODE") == "opencode"
-        assert resolve_platform("OC") == "opencode"
-
-    def test_resolve_strips_whitespace(self) -> None:
-        assert resolve_platform("  opencode  ") == "opencode"
-        assert resolve_platform("\toc\n") == "opencode"
-
-    def test_resolve_unknown_raises(self) -> None:
-        with pytest.raises(ValueError, match="Unknown platform"):
-            resolve_platform("unknown_platform")
-
-    def test_resolve_empty_raises(self) -> None:
-        with pytest.raises(ValueError, match="Unknown platform"):
-            resolve_platform("")
-
-    def test_resolve_nonexistent_alias_raises(self) -> None:
-        with pytest.raises(ValueError, match="Unknown platform"):
-            resolve_platform("vscode")
-
-
 class TestSyncAction:
     """Tests for SyncAction enum."""
 
@@ -194,12 +158,10 @@ class TestDiffStatus:
     def test_values(self) -> None:
         assert DiffStatus.NEW.value == "new"
         assert DiffStatus.UPDATED.value == "updated"
-        assert DiffStatus.DELETED.value == "deleted"
         assert DiffStatus.UNCHANGED.value == "unchanged"
-        assert DiffStatus.CONFLICT.value == "conflict"
 
     def test_member_count(self) -> None:
-        assert len(DiffStatus) == 5
+        assert len(DiffStatus) == 3
 
 
 # ---------------------------------------------------------------------------
@@ -390,7 +352,6 @@ class TestSyncResult:
         assert result.is_success is True
         assert result.message == ""
         assert result.files_copied == 0
-        assert result.files_skipped == 0
 
     def test_mutable_fields(self) -> None:
         item = Item(item_type=ItemType.AGENT, name="x", source_path=Path("/x"))
@@ -399,11 +360,9 @@ class TestSyncResult:
         result.is_success = True
         result.message = "fixed"
         result.files_copied = 5
-        result.files_skipped = 2
         assert result.is_success is True
         assert result.message == "fixed"
         assert result.files_copied == 5
-        assert result.files_skipped == 2
 
 
 class TestDiffEntry:
@@ -1132,20 +1091,6 @@ class TestParseFrontmatterEdgeCases:
 # ---------------------------------------------------------------------------
 # Platform resolution edge cases
 # ---------------------------------------------------------------------------
-
-
-class TestPlatformResolutionEdgeCases:
-    """Additional edge cases for platform resolution."""
-
-    @pytest.mark.parametrize(
-        "input_val",
-        ["   ", "\t", "\n", "  \t  \n  "],
-        ids=["spaces", "tab", "newline", "mixed-whitespace"],
-    )
-    def test_whitespace_only_input_raises(self, input_val: str) -> None:
-        """Whitespace-only input is treated as unknown platform."""
-        with pytest.raises(ValueError, match="Unknown platform"):
-            resolve_platform(input_val)
 
 
 class TestPlatformDisplayNames:

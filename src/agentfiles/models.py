@@ -32,7 +32,7 @@ State tracking uses a two-level structure persisted as YAML::
 
 Diffing (comparing source to target) produces::
 
-    DiffEntry           Comparison result (NEW / UPDATED / DELETED / …).
+    DiffEntry           Comparison result (NEW / UPDATED / UNCHANGED).
 
 Token estimation (for context-window budgeting) produces::
 
@@ -86,7 +86,6 @@ __all__ = [
     # Helper functions
     "item_from_directory",
     "item_from_file",
-    "resolve_platform",
     "resolve_target_name",
 ]
 
@@ -178,37 +177,6 @@ TARGET_PLATFORM_DISPLAY: Final = "OpenCode"
 """Human-readable platform name for UI output."""
 
 
-# ---------------------------------------------------------------------------
-# Platform name resolution
-# ---------------------------------------------------------------------------
-
-_OPENCODE_ALIASES: Final[frozenset[str]] = frozenset(
-    {"opencode", "oc", "open-code", "open_code"},
-)
-
-
-def resolve_platform(name: str) -> str:
-    """Normalize a platform name or alias to its canonical value.
-
-    Accepts ``"opencode"`` and common aliases (``"oc"``, ``"open-code"``,
-    ``"open_code"``), returning the canonical ``TARGET_PLATFORM`` string.
-
-    Args:
-        name: Platform name or alias (case-insensitive).
-
-    Returns:
-        Canonical platform value string (always :data:`TARGET_PLATFORM`).
-
-    Raises:
-        ValueError: When *name* is not a recognized platform or alias.
-
-    """
-    n = name.lower().strip()
-    if n in _OPENCODE_ALIASES:
-        return TARGET_PLATFORM
-    raise ValueError(f"Unknown platform: {name!r}. Only 'opencode' is supported.")
-
-
 class SyncAction(Enum):
     """Action to perform during a sync operation."""
 
@@ -224,16 +192,12 @@ class DiffStatus(Enum):
     Members:
         NEW: Item exists in source but not at the target.
         UPDATED: Item exists at both; content differs.
-        DELETED: Item exists at target but no longer in source.
         UNCHANGED: Content matches — no action needed.
-        CONFLICT: Both sides changed independently since the last sync.
     """
 
     NEW = "new"
     UPDATED = "updated"
-    DELETED = "deleted"
     UNCHANGED = "unchanged"
-    CONFLICT = "conflict"
 
 
 class Scope(Enum):
@@ -463,7 +427,6 @@ class SyncResult:
         is_success: Whether the sync completed without errors.
         message: Human-readable status or error message.
         files_copied: Number of files successfully copied.
-        files_skipped: Number of files that were already up-to-date.
 
     """
 
@@ -471,7 +434,6 @@ class SyncResult:
     is_success: bool
     message: str = ""
     files_copied: int = 0
-    files_skipped: int = 0
     push_status: str = ""
     push_detail: str = ""
 

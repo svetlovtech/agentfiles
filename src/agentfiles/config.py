@@ -219,11 +219,6 @@ def _load_config_from_file(path: Path) -> AgentfilesConfig:
     return AgentfilesConfig._from_dict(data)
 
 
-def clear_config_cache() -> None:
-    """Invalidate the config file loading cache (call after on-disk changes)."""
-    _load_config_from_file.cache_clear()
-
-
 # ---------------------------------------------------------------------------
 # Sync State I/O
 # ---------------------------------------------------------------------------

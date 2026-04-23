@@ -136,46 +136,46 @@ class TestSubprocessGitBackendClone:
     """Tests for ``SubprocessGitBackend.clone`` sparse checkout integration."""
 
     @patch("agentfiles.source.sparse_checkout_init")
-    @patch("agentfiles.source.shallow_clone")
+    @patch("agentfiles.source.run_git")
     def test_default_clone_uses_sparse(
         self,
-        mock_shallow: MagicMock,
+        mock_run_git: MagicMock,
         mock_sparse: MagicMock,
         tmp_path: Path,
     ) -> None:
-        mock_shallow.return_value = subprocess.CompletedProcess(
+        mock_run_git.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
         backend = SubprocessGitBackend()
         target = tmp_path / "repo"
         backend.clone("https://example.com/repo.git", target)
-        mock_shallow.assert_called_once()
+        mock_run_git.assert_called_once()
         mock_sparse.assert_called_once_with(target, _SPARSE_CHECKOUT_DIRS)
 
     @patch("agentfiles.source.sparse_checkout_init")
-    @patch("agentfiles.source.shallow_clone")
+    @patch("agentfiles.source.run_git")
     def test_full_clone_skips_sparse(
         self,
-        mock_shallow: MagicMock,
+        mock_run_git: MagicMock,
         mock_sparse: MagicMock,
         tmp_path: Path,
     ) -> None:
-        mock_shallow.return_value = subprocess.CompletedProcess(
+        mock_run_git.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
         backend = SubprocessGitBackend()
         target = tmp_path / "repo"
         backend.clone("https://example.com/repo.git", target, full_clone=True)
-        mock_shallow.assert_called_once()
+        mock_run_git.assert_called_once()
         mock_sparse.assert_not_called()
 
-    @patch("agentfiles.source.shallow_clone")
+    @patch("agentfiles.source.run_git")
     def test_clone_failure_raises_source_error(
         self,
-        mock_shallow: MagicMock,
+        mock_run_git: MagicMock,
         tmp_path: Path,
     ) -> None:
-        mock_shallow.return_value = subprocess.CompletedProcess(
+        mock_run_git.return_value = subprocess.CompletedProcess(
             args=[], returncode=128, stdout="", stderr="repository not found"
         )
         backend = SubprocessGitBackend()

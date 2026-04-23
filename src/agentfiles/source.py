@@ -39,7 +39,7 @@ import subprocess
 from pathlib import Path
 from typing import Final, Protocol, runtime_checkable
 
-from agentfiles.git import GitError, is_git_repo, run_git, shallow_clone, sparse_checkout_init
+from agentfiles.git import GitError, is_git_repo, run_git, sparse_checkout_init
 from agentfiles.models import ItemType, SourceError, SourceInfo, SourceType
 
 logger = logging.getLogger(__name__)
@@ -116,13 +116,22 @@ def _classify_git_stderr(stderr: str) -> str | None:
     return None
 
 
+def _os_error_hint(exc: OSError) -> str:
+    """Return a human-readable hint suffix for common ``OSError`` errnos.
+
+    Handles ``errno 28`` (ENOSPC — no space left on device) and
+    ``errno 13`` (EACCES — permission denied).
+    """
+    if exc.errno == 28 or "no space left" in str(exc).lower():
+        return " — disk may be full, free up space and retry"
+    if exc.errno == 13:
+        return " — permission denied, check directory ownership"
+    return ""
+
+
 def _git_error_from_os_error(operation: str, url_or_path: str, exc: OSError) -> SourceError:
     """Build a :class:`SourceError` for a filesystem-level OSError."""
-    hint = ""
-    if exc.errno == 28 or "no space left" in str(exc).lower():
-        hint = " — disk may be full, free up space and retry"
-    elif exc.errno == 13:
-        hint = " — permission denied, check directory ownership"
+    hint = _os_error_hint(exc)
     return SourceError(f"git {operation} failed for '{url_or_path}': {exc}{hint}")
 
 
@@ -303,22 +312,16 @@ class SubprocessGitBackend:
         When *full_clone* is ``True``, performs a regular ``--depth 1``
         clone without sparse-checkout filtering.
         """
-        try:
-            result = shallow_clone(url, target, depth=1, timeout=self._CLONE_TIMEOUT)
-        except GitError as exc:
-            raise SourceError(str(exc)) from exc
-        except OSError as exc:
-            raise _git_error_from_os_error("clone", url, exc) from exc
-
-        if result.returncode != 0:
-            stderr = result.stderr.strip()
-            hint = _classify_git_stderr(stderr)
-            parts = [f"git clone failed for '{url}' (exit {result.returncode})"]
-            if stderr:
-                parts.append(stderr)
-            if hint:
-                parts.append(f"→ {hint}")
-            raise SourceError(": ".join(parts))
+        self._run_git_checked(
+            "clone",
+            url,
+            self._CLONE_TIMEOUT,
+            "clone",
+            "--depth",
+            "1",
+            url,
+            str(target),
+        )
 
         if not full_clone:
             sparse_checkout_init(target, _SPARSE_CHECKOUT_DIRS)
@@ -719,12 +722,9 @@ class SourceResolver:
         try:
             cache.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
-            hint = ""
-            if exc.errno == 13:
-                hint = " — permission denied, check directory ownership"
-            elif exc.errno == 28 or "no space left" in str(exc).lower():
-                hint = " — disk may be full, free up space and retry"
-            raise SourceError(f"cannot create cache directory '{cache}': {exc}{hint}") from exc
+            raise SourceError(
+                f"cannot create cache directory '{cache}': {exc}{_os_error_hint(exc)}"
+            ) from exc
 
         if target.exists() and self._is_git_repo_cached(target):
             logger.info("Updating existing clone: %s", target)

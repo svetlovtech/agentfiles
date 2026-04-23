@@ -563,21 +563,6 @@ class TestConflictStatus:
     formatted when it does appear.
     """
 
-    def test_conflict_entry_in_diff_results(
-        self,
-        target_manager: TargetManager,
-    ) -> None:
-        """Manually created CONFLICT entry passes through diff result flow."""
-        item = make_item(name="conflict-item")
-        conflict_entry = DiffEntry(
-            item=item,
-            status=DiffStatus.CONFLICT,
-            details="both modified",
-        )
-        # Verify the entry is properly formed
-        assert conflict_entry.status == DiffStatus.CONFLICT
-        assert conflict_entry.details == "both modified"
-
 
 # ---------------------------------------------------------------------------
 # compute_content_diff — unified diff between source and target

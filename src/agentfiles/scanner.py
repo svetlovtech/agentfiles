@@ -799,7 +799,7 @@ def _scan_config_dirs(
 ) -> list[Item]:
     """Scan *dir_path* for config files (``.json``).
 
-    Config items are flat files (e.g. ``opencode.json``, ``settings.json``)
+    Config items are flat files (e.g. ``opencode.json``)
     that live directly in the platform config root.
 
     Args:

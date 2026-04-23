@@ -71,7 +71,7 @@ class TestInitDirectories:
         config = tmp_path / "myrepo" / ".agentfiles.yaml"
         assert config.is_file()
         content = config.read_text()
-        assert "default_platforms:" in content
+        assert "platform:" in content
         assert "opencode" in content
 
     def test_creates_state_yaml(self, tmp_path: Path) -> None:

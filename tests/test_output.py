@@ -29,7 +29,6 @@ from agentfiles.output import (
     info,
     init_logging,
     print_banner,
-    print_section,
     print_table,
     should_use_colors,
     success,
@@ -415,130 +414,6 @@ class TestBold:
 
 
 # ---------------------------------------------------------------------------
-# setup_file_logging
-# ---------------------------------------------------------------------------
-
-
-class TestSetupFileLogging:
-    """Tests for setup_file_logging() file-based logging configuration."""
-
-    @pytest.fixture(autouse=True)
-    def _cleanup_loggers(self, tmp_path: object) -> Generator[None, None, None]:
-        """Remove any handlers we add during tests to avoid leaking state."""
-        yield
-        test_logger = logging.getLogger("agentfiles.test_file_logging")
-        test_logger.handlers.clear()
-        test_logger.setLevel(logging.WARNING)
-
-    def test_creates_log_directory(self, tmp_path: Path) -> None:
-        """setup_file_logging should create the log directory if missing."""
-        log_dir = tmp_path / "nested" / "logs"
-        from agentfiles.output import setup_file_logging
-
-        setup_file_logging(
-            log_dir=log_dir,
-            prefix="test",
-            module_names=("agentfiles.test_file_logging",),
-        )
-        assert log_dir.is_dir()
-
-    def test_creates_log_file(self, tmp_path: Path) -> None:
-        """A log file with the correct prefix should be created."""
-        from agentfiles.output import setup_file_logging
-
-        log_file = setup_file_logging(
-            log_dir=tmp_path,
-            prefix="mytest",
-            module_names=("agentfiles.test_file_logging",),
-        )
-        assert log_file.exists()
-        assert log_file.name.startswith("mytest-")
-        assert log_file.suffix == ".log"
-
-    def test_returns_log_file_path(self, tmp_path: Path) -> None:
-        """Return value should be a Path inside log_dir."""
-        from agentfiles.output import setup_file_logging
-
-        log_file = setup_file_logging(
-            log_dir=tmp_path,
-            prefix="test",
-            module_names=("agentfiles.test_file_logging",),
-        )
-        assert isinstance(log_file, Path)
-        assert log_file.parent == tmp_path
-
-    def test_attaches_handler_to_module_logger(self, tmp_path: Path) -> None:
-        """The specified module logger should receive a RotatingFileHandler."""
-        from logging.handlers import RotatingFileHandler
-
-        from agentfiles.output import setup_file_logging
-
-        setup_file_logging(
-            log_dir=tmp_path,
-            prefix="test",
-            module_names=("agentfiles.test_file_logging",),
-        )
-
-        test_logger = logging.getLogger("agentfiles.test_file_logging")
-        assert any(isinstance(h, RotatingFileHandler) for h in test_logger.handlers)
-
-    def test_sets_logger_to_debug_level(self, tmp_path: Path) -> None:
-        """Module logger level should be set to DEBUG."""
-        from agentfiles.output import setup_file_logging
-
-        setup_file_logging(
-            log_dir=tmp_path,
-            prefix="test",
-            module_names=("agentfiles.test_file_logging",),
-        )
-
-        test_logger = logging.getLogger("agentfiles.test_file_logging")
-        assert test_logger.level == logging.DEBUG
-
-    def test_writes_log_messages_to_file(self, tmp_path: Path) -> None:
-        """Log messages should appear in the created file."""
-        from agentfiles.output import setup_file_logging
-
-        log_file = setup_file_logging(
-            log_dir=tmp_path,
-            prefix="test",
-            module_names=("agentfiles.test_file_logging",),
-        )
-
-        test_logger = logging.getLogger("agentfiles.test_file_logging")
-        test_logger.info("hello from test")
-
-        # Flush handlers
-        for handler in test_logger.handlers:
-            handler.flush()
-
-        content = log_file.read_text()
-        assert "hello from test" in content
-
-    def test_attaches_to_multiple_modules(self, tmp_path: Path) -> None:
-        """Should attach the handler to all specified module loggers."""
-        from logging.handlers import RotatingFileHandler
-
-        from agentfiles.output import setup_file_logging
-
-        setup_file_logging(
-            log_dir=tmp_path,
-            prefix="multi",
-            module_names=("agentfiles.test_file_logging", "agentfiles.test_file_logging_other"),
-        )
-
-        logger_a = logging.getLogger("agentfiles.test_file_logging")
-        logger_b = logging.getLogger("agentfiles.test_file_logging_other")
-
-        assert any(isinstance(h, RotatingFileHandler) for h in logger_a.handlers)
-        assert any(isinstance(h, RotatingFileHandler) for h in logger_b.handlers)
-
-        # Cleanup second logger too
-        logger_b.handlers.clear()
-        logger_b.setLevel(logging.WARNING)
-
-
-# ---------------------------------------------------------------------------
 # _safe_write — resilient I/O
 # ---------------------------------------------------------------------------
 
@@ -835,8 +710,6 @@ class TestDiffStatusSymbol:
             (DiffStatus.NEW, "+"),
             (DiffStatus.UPDATED, "~"),
             (DiffStatus.UNCHANGED, "="),
-            (DiffStatus.DELETED, "-"),
-            (DiffStatus.CONFLICT, "!"),
         ],
     )
     def test_all_status_symbols(
@@ -939,21 +812,6 @@ class TestFormatDiff:
             entry = DiffEntry(item=make_item("x"), status=DiffStatus.NEW)
             result = format_diff([entry], use_colors=True)
         assert "\033[" in result
-
-    def test_deleted_status_in_diff(self) -> None:
-        """Deleted items should appear with '-' symbol."""
-        entry = DiffEntry(item=make_item("gone"), status=DiffStatus.DELETED)
-        result = format_diff([entry], use_colors=False)
-        assert "-" in result
-        assert "gone" in result
-        assert "deleted from source" in result
-
-    def test_conflict_status_in_diff(self) -> None:
-        """Conflicting items should appear with '!' symbol."""
-        entry = DiffEntry(item=make_item("clash"), status=DiffStatus.CONFLICT)
-        result = format_diff([entry], use_colors=False)
-        assert "!" in result
-        assert "clash" in result
 
     def test_mixed_item_types_in_summary(self) -> None:
         """Summary should group by item type."""
@@ -1123,7 +981,7 @@ class TestFormatDiffJson:
         """Multiple entries should all appear in JSON."""
         entries = [
             DiffEntry(item=make_item("a"), status=DiffStatus.NEW),
-            DiffEntry(item=make_item("b"), status=DiffStatus.DELETED),
+            DiffEntry(item=make_item("b"), status=DiffStatus.UPDATED),
         ]
         result = format_diff_json(entries)
         parsed = json.loads(result)
@@ -1387,66 +1245,3 @@ class TestPrintTableMaxWidth:
         separator = lines[1]
         # Separator should not exceed max_width
         assert len(separator) <= 15
-
-
-# ---------------------------------------------------------------------------
-# print_section
-# ---------------------------------------------------------------------------
-
-
-class TestPrintSection:
-    """Tests for print_section() styled section header."""
-
-    def test_prints_section_header(self, capsys: pytest.CaptureFixture) -> None:
-        """Should output a line starting with ── and containing the title."""
-        with (
-            patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))),
-            patch("agentfiles.output._use_colors", False),
-        ):
-            print_section("Scanning source")
-        captured = capsys.readouterr()
-        assert "Scanning source" in captured.out
-        assert captured.out.startswith("\u2500\u2500")
-
-    def test_pads_to_terminal_width(self, capsys: pytest.CaptureFixture) -> None:
-        """Line should span the terminal width (or 80, whichever is smaller)."""
-        with (
-            patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))),
-            patch("agentfiles.output._use_colors", False),
-        ):
-            print_section("Test")
-        captured = capsys.readouterr()
-        line = captured.out.rstrip("\n")
-        assert len(line) == 80
-
-    def test_limits_to_80_chars_on_wide_terminal(
-        self,
-        capsys: pytest.CaptureFixture,
-    ) -> None:
-        """Even on a 200-char terminal, section header caps at 80."""
-        with (
-            patch(
-                "shutil.get_terminal_size",
-                return_value=os.terminal_size((200, 24)),
-            ),
-            patch("agentfiles.output._use_colors", False),
-        ):
-            print_section("Wide terminal")
-        captured = capsys.readouterr()
-        line = captured.out.rstrip("\n")
-        assert len(line) == 80
-
-    def test_short_title_has_right_padding(
-        self,
-        capsys: pytest.CaptureFixture,
-    ) -> None:
-        """A short title should have ─ padding on the right."""
-        with (
-            patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))),
-            patch("agentfiles.output._use_colors", False),
-        ):
-            print_section("Go")
-        captured = capsys.readouterr()
-        line = captured.out.rstrip("\n")
-        # Line should end with ─ characters
-        assert line.endswith("\u2500")

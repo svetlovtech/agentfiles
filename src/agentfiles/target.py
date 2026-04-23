@@ -33,7 +33,6 @@ from agentfiles.models import (
     TARGET_PLATFORM,
     Item,
     ItemType,
-    Scope,
     TargetError,
     TargetPaths,
 )
@@ -386,61 +385,6 @@ class TargetManager:
             return target_paths.config_dir
         if item_type.plural in target_paths.subdirs:
             return target_paths.subdir_for(item_type)
-        return None
-
-    def get_target_dir_for_scope(
-        self,
-        item_type: ItemType,
-        scope: Scope,
-        project_dir: Path | None = None,
-    ) -> Path | None:
-        """Resolve target directory for a given item type and scope.
-
-        Combines scope awareness with the existing item-type resolution.
-        For **GLOBAL** scope the method delegates to the discovered global
-        target.  For **PROJECT** or **LOCAL** scope it resolves the expected
-        project-level path — the directory does **not** need to exist on
-        disk (useful for install-to targets).
-
-        Args:
-            item_type: The category of item (agent, skill, …).
-            scope: Configuration scope (``Scope.GLOBAL``,
-                ``Scope.PROJECT``, or ``Scope.LOCAL``).
-            project_dir: Root project directory — **required** for
-                PROJECT/LOCAL scope.  Ignored for GLOBAL scope.
-
-        Returns:
-            Absolute path to the target subdirectory, or ``None`` if
-            the scope cannot be resolved (e.g. missing *project_dir*).
-
-        Raises:
-            TargetError: When *scope* is GLOBAL and no target has been
-                discovered.
-
-        """
-        if scope == Scope.GLOBAL:
-            return self.get_target_dir(item_type)
-
-        # PROJECT or LOCAL scope — resolve relative to project_dir.
-        if project_dir is None:
-            logger.warning(
-                "project_dir is required for %s scope but was not provided",
-                scope.value,
-            )
-            return None
-
-        # OpenCode stores project-level config in <project>/.opencode/.
-        # The directory does NOT need to exist on disk — the caller may be
-        # installing for the first time.
-        config_dir = project_dir / ".opencode"
-
-        if item_type == ItemType.CONFIG:
-            return config_dir
-
-        subdirs = _opencode_subdirs(config_dir)
-        if item_type.plural in subdirs:
-            return subdirs[item_type.plural]
-
         return None
 
     def is_item_installed(self, item: Item) -> bool:

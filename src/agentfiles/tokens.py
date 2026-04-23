@@ -16,7 +16,6 @@ Public API
 :func:`token_estimate`                Full :class:`TokenEstimate` for an item.
 :func:`count_item_tokens`             Fast size-based estimate for an item.
 :func:`estimate_name_description_tokens`  Token count for name + description only.
-:func:`format_token_count`            Human-readable token display (``1.2k``).
 """
 
 from __future__ import annotations
@@ -259,24 +258,3 @@ def estimate_name_description_tokens(item: Item) -> int:
     if item.meta is not None and item.meta.description:
         parts.append(item.meta.description)
     return estimate_tokens_from_content(" ".join(parts))
-
-
-# ---------------------------------------------------------------------------
-# Display formatting
-# ---------------------------------------------------------------------------
-
-
-def format_token_count(count: int) -> str:
-    """Format a token count for compact display in a table column.
-
-    Args:
-        count: Raw token count.
-
-    Returns:
-        Human-readable string with ``k`` suffix for thousands
-        (e.g. ``"1.2k"``, ``"500"``).
-
-    """
-    if count >= 1000:
-        return f"{count / 1000:.1f}k"
-    return str(count)

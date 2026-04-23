@@ -789,7 +789,7 @@ class TestSubprocessGitBackendExceptionHandling:
         match: str,
     ) -> None:
         """clone() should raise SourceError for various git failures."""
-        with patch("agentfiles.source.shallow_clone", side_effect=side_effect):
+        with patch("agentfiles.source.run_git", side_effect=side_effect):
             backend = SubprocessGitBackend()
             with pytest.raises(SourceError, match=match):
                 backend.clone("https://example.com/repo.git", tmp_path / "repo")
@@ -848,7 +848,7 @@ class TestSubprocessGitBackendExceptionHandling:
         mock_result.returncode = 128
         mock_result.stderr = "fatal: could not read Username for 'https://github.com'"
 
-        with patch("agentfiles.source.shallow_clone", return_value=mock_result):
+        with patch("agentfiles.source.run_git", return_value=mock_result):
             backend = SubprocessGitBackend()
             with pytest.raises(SourceError, match="credentials|permissions") as exc_info:
                 backend.clone("https://github.com/private/repo.git", tmp_path / "repo")
@@ -860,7 +860,7 @@ class TestSubprocessGitBackendExceptionHandling:
         mock_result.returncode = 128
         mock_result.stderr = "fatal: unable to access 'https://github.com/': Could not resolve host"
 
-        with patch("agentfiles.source.shallow_clone", return_value=mock_result):
+        with patch("agentfiles.source.run_git", return_value=mock_result):
             backend = SubprocessGitBackend()
             with pytest.raises(SourceError, match="network") as exc_info:
                 backend.clone("https://github.com/user/repo.git", tmp_path / "repo")
@@ -872,7 +872,7 @@ class TestSubprocessGitBackendExceptionHandling:
         mock_result.returncode = 1
         mock_result.stderr = "some unknown error"
 
-        with patch("agentfiles.source.shallow_clone", return_value=mock_result):
+        with patch("agentfiles.source.run_git", return_value=mock_result):
             backend = SubprocessGitBackend()
             with pytest.raises(SourceError, match="git clone failed") as exc_info:
                 backend.clone("https://example.com/repo.git", tmp_path / "repo")

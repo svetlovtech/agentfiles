@@ -3,15 +3,14 @@
 This module provides the presentation layer for CLI output.  It handles:
 
 * **Logging setup** — :func:`init_logging` configures the root logger with
-  colour detection, and :func:`setup_file_logging` attaches rotating file
-  handlers for persistent debug logs.
+  colour detection.
 * **Colour management** — :class:`Colors` defines ANSI escape sequences,
   :func:`colorize` wraps text conditionally (respecting ``NO_COLOR`` /
   ``FORCE_COLOR`` env vars), and :func:`should_use_colors` encapsulates the
   terminal-capability heuristic.
 * **Convenience print helpers** — :func:`success`, :func:`error`,
-  :func:`warning`, :func:`info`, :func:`bold`, :func:`dim`,
-  and :func:`print_section` provide one-call coloured output routed
+  :func:`warning`, :func:`info`, :func:`bold`, and :func:`dim`
+  provide one-call coloured output routed
   through the resilient :func:`_safe_write` I/O layer.
 * **Table and banner formatting** — :func:`print_table` renders aligned
   columnar output with automatic terminal-width detection and column
@@ -37,9 +36,6 @@ import shutil
 import sys
 from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime
-from logging.handlers import RotatingFileHandler
-from pathlib import Path
 from typing import TextIO
 
 from agentfiles.models import DiffEntry, DiffStatus, ItemType
@@ -100,8 +96,6 @@ DIFF_STATUS_STYLES: dict[DiffStatus, StatusStyle] = {
     DiffStatus.NEW: StatusStyle(symbol="+", label="new", ansi_color=Colors.GREEN),
     DiffStatus.UPDATED: StatusStyle(symbol="~", label="updated", ansi_color=Colors.YELLOW),
     DiffStatus.UNCHANGED: StatusStyle(symbol="=", label="unchanged", ansi_color=Colors.DIM),
-    DiffStatus.DELETED: StatusStyle(symbol="-", label="deleted", ansi_color=Colors.RED),
-    DiffStatus.CONFLICT: StatusStyle(symbol="!", label="conflict", ansi_color=Colors.RED),
 }
 
 # Human-readable detail text for each DiffStatus value.
@@ -109,26 +103,20 @@ DIFF_STATUS_STYLES: dict[DiffStatus, StatusStyle] = {
 DIFF_STATUS_DETAILS: dict[DiffStatus, str] = {
     DiffStatus.NEW: "new",
     DiffStatus.UPDATED: "content differs",
-    DiffStatus.DELETED: "deleted from source",
     DiffStatus.UNCHANGED: "unchanged",
-    DiffStatus.CONFLICT: "conflict",
 }
 
 # Sort priority for DiffStatus values in formatted output.
 DIFF_STATUS_ORDER: dict[DiffStatus, int] = {
     DiffStatus.NEW: 0,
     DiffStatus.UPDATED: 1,
-    DiffStatus.DELETED: 2,
-    DiffStatus.UNCHANGED: 3,
-    DiffStatus.CONFLICT: 4,
+    DiffStatus.UNCHANGED: 2,
 }
 
 # Status values to include in summary counts (stable iteration order).
-# CONFLICT is excluded because it is surfaced separately, not tallied.
 _SUMMARY_STATUSES: tuple[DiffStatus, ...] = (
     DiffStatus.NEW,
     DiffStatus.UPDATED,
-    DiffStatus.DELETED,
     DiffStatus.UNCHANGED,
 )
 
@@ -188,67 +176,6 @@ def init_logging(verbose: bool = False, quiet: bool = False) -> None:
         format="%(levelname)s: %(message)s",
         stream=sys.stderr,
     )
-
-
-# ---------------------------------------------------------------------------
-# File logging
-# ---------------------------------------------------------------------------
-
-# Default directory for debug log files.
-_LOG_DIR = Path("/tmp/agentfiles")
-
-# Default formatter for file-based log output.
-_FILE_LOG_FORMAT = "%(asctime)s [%(levelname)-7s] %(name)s: %(message)s"
-_FILE_LOG_DATE_FORMAT = "%H:%M:%S"
-
-# Default rotation settings.
-_FILE_LOG_MAX_BYTES = 5 * 1024 * 1024  # 5 MB
-_FILE_LOG_BACKUP_COUNT = 3
-
-
-def setup_file_logging(
-    log_dir: Path = _LOG_DIR,
-    prefix: str = "app",
-    module_names: tuple[str, ...] = ("agentfiles",),
-    level: int = logging.DEBUG,
-) -> Path:
-    """Configure DEBUG-level file logging for one or more module loggers.
-
-    Creates a :class:`~logging.handlers.RotatingFileHandler` that writes
-    timestamped log files to *log_dir*.  The handler is attached to every
-    logger named in *module_names* (and their children via normal
-    propagation).
-
-    Args:
-        log_dir: Directory where log files are written.
-        prefix: Filename prefix (e.g. ``"tui"`` → ``tui-20260401-120000.log``).
-        module_names: Logger names to attach the file handler to.
-        level: Log level for the file handler.
-
-    Returns:
-        The :class:`Path` of the created log file.
-
-    """
-    log_dir.mkdir(parents=True, exist_ok=True)
-
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    log_file = log_dir / f"{prefix}-{timestamp}.log"
-
-    file_handler = RotatingFileHandler(
-        log_file,
-        maxBytes=_FILE_LOG_MAX_BYTES,
-        backupCount=_FILE_LOG_BACKUP_COUNT,
-        encoding="utf-8",
-    )
-    file_handler.setLevel(level)
-    file_handler.setFormatter(logging.Formatter(_FILE_LOG_FORMAT, datefmt=_FILE_LOG_DATE_FORMAT))
-
-    for module_name in module_names:
-        module_logger = logging.getLogger(module_name)
-        module_logger.setLevel(logging.DEBUG)
-        module_logger.addHandler(file_handler)
-
-    return log_file
 
 
 # ---------------------------------------------------------------------------
@@ -512,29 +439,6 @@ def format_item_count(count: int, singular: str, plural: str | None = None) -> s
     if plural is None:
         plural = singular + "s"
     return f"{count} {singular if count == 1 else plural}"
-
-
-# ---------------------------------------------------------------------------
-# Section headers and item status
-# ---------------------------------------------------------------------------
-
-
-def print_section(title: str) -> None:
-    """Print a styled section header like ``── Scanning source ──``.
-
-    The line spans up to 80 characters (or the terminal width, whichever
-    is smaller), padded with ``─`` on the right.  Output is rendered in
-    :data:`Colors.DIM` for visual de-emphasis.
-
-    Args:
-        title: Section title text.
-
-    """
-    width = min(shutil.get_terminal_size().columns, 80)
-    box_char = "\u2500"
-    content = f"\u2500\u2500 {title} "
-    padding = max(0, width - len(content))
-    dim(f"{content}{box_char * padding}")
 
 
 # ---------------------------------------------------------------------------

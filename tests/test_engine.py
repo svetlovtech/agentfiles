@@ -852,68 +852,6 @@ class TestAggregate:
 
 
 # ---------------------------------------------------------------------------
-# SyncEngine — compute_sync_plan
-# ---------------------------------------------------------------------------
-
-
-class TestComputeSyncPlan:
-    """Tests for sync plan computation (existence-based)."""
-
-    def test_new_item_in_source(
-        self,
-        target_manager: TargetManager,
-        fake_home: SimpleNamespace,
-        tmp_path: Path,
-    ) -> None:
-        """Item exists in source but not in target -> pull."""
-        item = Item(
-            item_type=ItemType.AGENT,
-            name="new-agent",
-            source_path=Path("/src/new-agent.md"),
-        )
-        state = SyncState()
-
-        engine = SyncEngine(target_manager)
-        plan = engine.compute_sync_plan(
-            [item],
-            state,
-            tmp_path / "src",
-        )
-
-        assert len(plan) == 1
-        assert plan[0][1] == "pull"
-
-    def test_installed_item_skip(
-        self,
-        target_manager: TargetManager,
-        fake_home: SimpleNamespace,
-        tmp_path: Path,
-    ) -> None:
-        """Item exists at target -> skip."""
-        agent_dir = fake_home.opencode / "agent"
-        target_file = agent_dir / "existing.md"
-        target_file.write_text("# Existing")
-
-        item = Item(
-            item_type=ItemType.AGENT,
-            name="existing",
-            source_path=Path("/src/existing.md"),
-        )
-
-        state = SyncState()
-
-        engine = SyncEngine(target_manager)
-        plan = engine.compute_sync_plan(
-            [item],
-            state,
-            tmp_path / "src",
-        )
-
-        assert len(plan) == 1
-        assert plan[0][1] == "skip"
-
-
-# ---------------------------------------------------------------------------
 # SyncEngine — _dest_path
 # ---------------------------------------------------------------------------
 
@@ -1310,19 +1248,6 @@ class TestEmptyItemList:
         )
         assert report.is_success
         assert report.summary() == "No operations performed"
-
-    def test_compute_sync_plan_empty(
-        self,
-        target_manager: TargetManager,
-        tmp_path: Path,
-    ) -> None:
-        engine = SyncEngine(target_manager)
-        plan = engine.compute_sync_plan(
-            [],
-            SyncState(),
-            tmp_path,
-        )
-        assert plan == []
 
 
 # ---------------------------------------------------------------------------
@@ -1952,86 +1877,6 @@ class TestSyncReportEdgeCases:
         )
         report = SyncEngine.aggregate([result])
         assert len(report.skipped) == 1
-
-
-# ---------------------------------------------------------------------------
-# compute_sync_plan — platform with no state
-# ---------------------------------------------------------------------------
-
-
-class TestComputeSyncPlanEdgeCases:
-    """Additional edge cases for compute_sync_plan."""
-
-    def test_platform_not_in_state(
-        self,
-        target_manager: TargetManager,
-        tmp_path: Path,
-    ) -> None:
-        """When platform has no entry in state, plan should be 'pull'."""
-        item = Item(
-            item_type=ItemType.AGENT,
-            name="new-agent",
-            source_path=Path("/src/new-agent.md"),
-        )
-        # Empty state — no platform info at all.
-        state = SyncState()
-
-        engine = SyncEngine(target_manager)
-        plan = engine.compute_sync_plan(
-            [item],
-            state,
-            tmp_path,
-        )
-
-        assert len(plan) == 1
-        assert plan[0][1] == "pull"
-
-    def test_item_not_in_platform_state(
-        self,
-        target_manager: TargetManager,
-        tmp_path: Path,
-    ) -> None:
-        """When item has no entry in platform state, plan should be 'pull'."""
-        item = Item(
-            item_type=ItemType.AGENT,
-            name="missing-agent",
-            source_path=Path("/src/missing-agent.md"),
-        )
-        # State exists but item does not.
-        state = SyncState()
-
-        engine = SyncEngine(target_manager)
-        plan = engine.compute_sync_plan(
-            [item],
-            state,
-            tmp_path,
-        )
-
-        assert len(plan) == 1
-        assert plan[0][1] == "pull"
-
-    def test_existing_target_dir_produces_pull(
-        self,
-        target_manager: TargetManager,
-        tmp_path: Path,
-    ) -> None:
-        """Item whose type has a target dir on the platform produces a pull plan."""
-        item = Item(
-            item_type=ItemType.COMMAND,
-            name="my-cmd",
-            source_path=Path("/src/my-cmd.md"),
-        )
-        state = SyncState()
-
-        engine = SyncEngine(target_manager)
-        plan = engine.compute_sync_plan(
-            [item],
-            state,
-            tmp_path,
-        )
-
-        assert len(plan) == 1
-        assert plan[0][1] == "pull"
 
 
 # ---------------------------------------------------------------------------
