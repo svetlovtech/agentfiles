@@ -17,7 +17,6 @@ from agentfiles.models import (
     SyncAction,
     SyncPlan,
     SyncResult,
-    SyncState,
 )
 from agentfiles.target import TargetManager
 

@@ -34,7 +34,6 @@ from agentfiles.models import (
 from agentfiles.output import (
     Colors,
     colorize,
-    error,
     info,
     print_banner,
     should_use_colors,

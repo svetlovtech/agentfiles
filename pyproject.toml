@@ -43,6 +43,7 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.0",
     "types-PyYAML>=6.0",
+    "bandit[toml]>=1.7",
     "commitizen",
 ]
 
@@ -77,6 +78,10 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM"]
 [tool.mypy]
 python_version = "3.10"
 strict = true
+
+[tool.bandit]
+exclude_dirs = ["tests"]
+skips = ["B101", "B105", "B404", "B603", "B607"]  # B101: assert for type narrowing; B105: false positive on empty string; B404/B603/B607: CLI tool wrapping git/gh
 
 [tool.commitizen]
 name = "cz_conventional_commits"

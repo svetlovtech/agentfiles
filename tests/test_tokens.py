@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from agentfiles.tokens import count_item_tokens
 
 
