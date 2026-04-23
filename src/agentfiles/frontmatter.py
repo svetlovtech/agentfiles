@@ -57,7 +57,7 @@ _KNOWN_FRONTMATTER_KEYS = frozenset(
 )
 """Recognised frontmatter keys.  Unknown keys are collected into ``extra``."""
 
-_SCALAR_FIELD_TYPES: dict[str, type | tuple[type, ...]] = {
+_FIELD_TYPES: dict[str, type | tuple[type, ...]] = {
     "name": str,
     "description": str,
     "version": str,
@@ -145,8 +145,6 @@ def parse_frontmatter(content: str) -> dict[str, Any]:
             ) from exc
 
     if not isinstance(parsed, dict):
-        from agentfiles.models import AgentfilesError
-
         raise AgentfilesError(
             f"frontmatter must be a YAML mapping (key: value pairs), "
             f"got {type(parsed).__name__}. "
@@ -191,7 +189,7 @@ def _meta_from_frontmatter(raw: dict[str, Any]) -> ItemMeta:
     """
     from agentfiles.models import _DEFAULT_VERSION, ItemMeta
 
-    for field_name, expected in _SCALAR_FIELD_TYPES.items():
+    for field_name, expected in _FIELD_TYPES.items():
         _validate_field_type(raw, field_name, expected)
 
     tools_raw: dict[str, Any] | None = raw.get("tools")

@@ -8,6 +8,7 @@ from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
+from agentfiles.git import GitError, GitNotFoundError
 from agentfiles.models import SourceError, SourceInfo, SourceType
 from agentfiles.source import (
     GitBackend,
@@ -16,9 +17,7 @@ from agentfiles.source import (
     _classify_git_stderr,
     _count_source_dirs,
     _find_source_dir,
-    _git_error_from_file_not_found,
     _git_error_from_os_error,
-    _git_error_from_timeout,
     _is_git_url,
     _repo_name_from_url,
 )
@@ -744,24 +743,7 @@ class TestClassifyGitStderr:
 
 
 class TestGitErrorBuilders:
-    """Tests for the _git_error_from_* helper functions."""
-
-    def test_timeout_error_message(self) -> None:
-        err = _git_error_from_timeout("clone", "https://example.com/repo", 120)
-        assert isinstance(err, SourceError)
-        msg = str(err)
-        assert "timed out" in msg
-        assert "120s" in msg
-        assert "clone" in msg
-        assert "network" in msg.lower()
-
-    def test_file_not_found_error_message(self) -> None:
-        err = _git_error_from_file_not_found("clone", "https://example.com/repo")
-        assert isinstance(err, SourceError)
-        msg = str(err)
-        assert "git" in msg
-        assert "not found" in msg
-        assert "install" in msg.lower()
+    """Tests for the _git_error_from_os_error helper function."""
 
     def test_os_error_generic(self) -> None:
         exc = OSError("something broke")
@@ -794,8 +776,8 @@ class TestSubprocessGitBackendExceptionHandling:
     @pytest.mark.parametrize(
         ("side_effect", "match"),
         [
-            (subprocess.TimeoutExpired(cmd=["git"], timeout=120), "timed out"),
-            (FileNotFoundError("git not found"), "not found"),
+            (GitError("git clone timed out after 120s"), "timed out"),
+            (GitNotFoundError("git is not installed or not found"), "not found"),
             (OSError("disk full"), "disk full"),
         ],
         ids=["timeout", "git-not-installed", "os-error"],
@@ -806,7 +788,7 @@ class TestSubprocessGitBackendExceptionHandling:
         side_effect: Exception,
         match: str,
     ) -> None:
-        """clone() should raise SourceError for various subprocess failures."""
+        """clone() should raise SourceError for various git failures."""
         with patch("agentfiles.source.shallow_clone", side_effect=side_effect):
             backend = SubprocessGitBackend()
             with pytest.raises(SourceError, match=match):
@@ -815,8 +797,8 @@ class TestSubprocessGitBackendExceptionHandling:
     @pytest.mark.parametrize(
         ("side_effect", "match"),
         [
-            (subprocess.TimeoutExpired(cmd=["git"], timeout=120), "timed out"),
-            (FileNotFoundError("git"), "not found"),
+            (GitError("git fetch timed out after 120s"), "timed out"),
+            (GitNotFoundError("git is not installed or not found"), "not found"),
             (OSError(28, "No space left on device"), "space"),
         ],
         ids=["timeout", "git-not-installed", "os-error"],
@@ -827,7 +809,7 @@ class TestSubprocessGitBackendExceptionHandling:
         side_effect: Exception,
         match: str,
     ) -> None:
-        """pull() should raise SourceError for various subprocess failures."""
+        """pull() should raise SourceError for various git failures."""
         with patch("agentfiles.source.run_git", side_effect=side_effect):
             backend = SubprocessGitBackend()
             with pytest.raises(SourceError, match=match):
@@ -853,7 +835,7 @@ class TestSubprocessGitBackendExceptionHandling:
                 mock_fetch,
                 mock_head,
                 mock_fetch_head,
-                subprocess.TimeoutExpired(cmd=["git"], timeout=30),
+                GitError("git reset --hard FETCH_HEAD timed out after 30s"),
             ],
         ):
             backend = SubprocessGitBackend()
@@ -1463,8 +1445,8 @@ class TestRunGitChecked:
     @pytest.mark.parametrize(
         ("side_effect", "match"),
         [
-            (subprocess.TimeoutExpired(cmd=["git"], timeout=30), "timed out"),
-            (FileNotFoundError("git"), "not found"),
+            (GitError("git fetch timed out after 30s"), "timed out"),
+            (GitNotFoundError("git is not installed or not found"), "not found"),
             (OSError(28, "No space left"), "space"),
         ],
         ids=["timeout", "git-not-installed", "os-error"],
@@ -1474,7 +1456,7 @@ class TestRunGitChecked:
         side_effect: Exception,
         match: str,
     ) -> None:
-        """Subprocess exceptions should be translated to SourceError."""
+        """GitError / OSError should be translated to SourceError."""
         with patch("agentfiles.source.run_git", side_effect=side_effect):
             backend = SubprocessGitBackend()
             with pytest.raises(SourceError, match=match):

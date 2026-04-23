@@ -90,7 +90,7 @@ if TYPE_CHECKING:
     from agentfiles.scanner import SourceScanner
     from agentfiles.target import TargetManager
 
-from agentfiles.cli_format import (  # noqa: F401
+from agentfiles.cli_format import (
     _format_list_json,
     _format_plan_json,
     _format_results_json,

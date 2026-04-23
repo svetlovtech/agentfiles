@@ -39,7 +39,7 @@ import subprocess
 from pathlib import Path
 from typing import Final, Protocol, runtime_checkable
 
-from agentfiles.git import is_git_repo, run_git, shallow_clone, sparse_checkout_init
+from agentfiles.git import GitError, is_git_repo, run_git, shallow_clone, sparse_checkout_init
 from agentfiles.models import ItemType, SourceError, SourceInfo, SourceType
 
 logger = logging.getLogger(__name__)
@@ -114,22 +114,6 @@ def _classify_git_stderr(stderr: str) -> str | None:
         return "clone target directory already exists — remove it and retry"
 
     return None
-
-
-def _git_error_from_timeout(operation: str, url_or_path: str, timeout: int) -> SourceError:
-    """Build a :class:`SourceError` for a git timeout."""
-    return SourceError(
-        f"git {operation} timed out after {timeout}s for '{url_or_path}'. "
-        f"Check your network connection or increase the timeout"
-    )
-
-
-def _git_error_from_file_not_found(operation: str, url_or_path: str) -> SourceError:
-    """Build a :class:`SourceError` for missing git binary."""
-    return SourceError(
-        f"git {operation} failed: 'git' command not found. "
-        f"Please install git and ensure it is on your PATH"
-    )
 
 
 def _git_error_from_os_error(operation: str, url_or_path: str, exc: OSError) -> SourceError:
@@ -285,10 +269,9 @@ class SubprocessGitBackend:
         """
         try:
             result = run_git(*git_args, cwd=cwd, timeout=timeout)
-        except subprocess.TimeoutExpired:
-            raise _git_error_from_timeout(operation, url_or_path, timeout) from None
-        except FileNotFoundError:
-            raise _git_error_from_file_not_found(operation, url_or_path) from None
+        except GitError as exc:
+            # run_git converts TimeoutExpired/FileNotFoundError into GitError
+            raise SourceError(str(exc)) from exc
         except OSError as exc:
             raise _git_error_from_os_error(operation, url_or_path, exc) from exc
 
@@ -322,10 +305,8 @@ class SubprocessGitBackend:
         """
         try:
             result = shallow_clone(url, target, depth=1, timeout=self._CLONE_TIMEOUT)
-        except subprocess.TimeoutExpired:
-            raise _git_error_from_timeout("clone", url, self._CLONE_TIMEOUT) from None
-        except FileNotFoundError:
-            raise _git_error_from_file_not_found("clone", url) from None
+        except GitError as exc:
+            raise SourceError(str(exc)) from exc
         except OSError as exc:
             raise _git_error_from_os_error("clone", url, exc) from exc
 
@@ -418,7 +399,7 @@ class SubprocessGitBackend:
                 cwd=str(repo_path),
                 timeout=SubprocessGitBackend._REV_PARSE_TIMEOUT,
             )
-        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        except (GitError, OSError):
             return ""
         if result.returncode != 0:
             return ""

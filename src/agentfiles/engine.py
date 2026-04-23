@@ -235,11 +235,12 @@ def _remove_item(dest: Path) -> tuple[bool, str | None]:
 
 def _human_size(size_bytes: int) -> str:
     """Format bytes as human-readable size."""
+    value = float(size_bytes)
     for unit in ("B", "KB", "MB", "GB"):
-        if abs(size_bytes) < 1024:
-            return f"{size_bytes:.1f} {unit}" if unit != "B" else f"{size_bytes} {unit}"
-        size_bytes /= 1024  # type: ignore[assignment]
-    return f"{size_bytes:.1f} TB"
+        if abs(value) < 1024:
+            return f"{value:.1f} {unit}" if unit != "B" else f"{int(value)} {unit}"
+        value /= 1024
+    return f"{value:.1f} TB"
 
 
 def _compare_push_item(local_path: Path, dest_path: Path) -> str:
