@@ -154,8 +154,8 @@ def test_source_scanner_discovers_workflows(tmp_path: Path) -> None:
 
 
 @pytest.mark.integration
-def test_source_scanner_workflow_platforms(tmp_path: Path) -> None:
-    """Discovered workflow items carry all four supported platforms."""
+def test_source_scanner_discovers_workflow_items(tmp_path: Path) -> None:
+    """SourceScanner discovers workflow items from workflows/ subdirectory."""
     source_dir = tmp_path / "source"
     source_dir.mkdir()
     workflows_dir = source_dir / "workflows"

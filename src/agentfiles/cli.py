@@ -1,19 +1,18 @@
 """Command-line interface for the agentfiles tool.
 
 Exposes a single ``agentfiles`` CLI entry-point that orchestrates scanning,
-synchronisation, and interactive workflows for AI tool platforms
-(OpenCode).
+synchronisation, and interactive workflows for the OpenCode platform.
 
 Subcommands:
 
 - ``agentfiles pull``       — Install/update items from a source repository to
-  local platform configs.  Interactive by default; pass ``--yes`` for
+  local OpenCode config.  Interactive by default; pass ``--yes`` for
   non-interactive mode.  Use ``--update`` to run ``git pull`` on the source
   before syncing.
 - ``agentfiles push``       — Push locally-installed items back into the source
-  repository.  Discovers items from target platforms so it works even when
+  repository.  Discovers items from the target platform so it works even when
   the source repo is empty.
-- ``agentfiles status``     — Show installed-item counts per discovered
+- ``agentfiles status``     — Show installed-item counts for the discovered
   platform.  Use ``--list`` to list source items, ``--diff`` to compare
   source vs installed.
 - ``agentfiles clean``      — Remove orphaned items (installed items whose
@@ -24,7 +23,7 @@ Subcommands:
 - ``agentfiles verify``     — CI-friendly drift detection: compare source vs
   installed items, exit 0 if no drift, exit 1 if drift detected.  Supports
   ``--format json`` and ``--quiet``.
-- ``agentfiles doctor``     — Run environment diagnostics (config, platforms,
+- ``agentfiles doctor``     — Run environment diagnostics (config, platform,
   git, state file, tool binaries).
 - ``agentfiles completion``  — Generate shell completion scripts for bash, zsh,
   or fish.
@@ -323,7 +322,7 @@ def _apply_color_env(color: str) -> None:
 def _discover_targets(
     config: AgentfilesConfig,
 ) -> TargetManager:
-    """Discover installed AI tool platforms and build a ``TargetManager``.
+    """Discover the installed AI tool (OpenCode) and build a ``TargetManager``.
 
     Scans common install paths for OpenCode.  Custom paths from the config
     override the defaults.
@@ -332,10 +331,10 @@ def _discover_targets(
         config: Loaded ``AgentfilesConfig`` (may provide ``custom_paths``).
 
     Returns:
-        A ``TargetManager`` with a discovered platform.
+        A ``TargetManager`` with the discovered OpenCode target.
 
     Raises:
-        AgentfilesError: When no platforms are discovered on the system.
+        AgentfilesError: When OpenCode is not found on the system.
 
     """
     from agentfiles.models import AgentfilesError
@@ -345,8 +344,8 @@ def _discover_targets(
 
     if target_manager.targets is None:
         raise AgentfilesError(
-            "No target platforms found. Install OpenCode (https://opencode.ai). "
-            "Alternatively, use --config to specify custom_paths for your platform"
+            "OpenCode not found. Install it from https://opencode.ai. "
+            "Alternatively, use --config to specify custom_paths for your installation"
         )
 
     return target_manager
@@ -478,7 +477,7 @@ def _build_context(
     """Build shared command context from CLI arguments.
 
     Resolves config, source directory, sync pipeline (scanner, target
-    manager, engine), platform list, item type filter, and ``--only``/
+    manager, engine), item type filter, and ``--only``/
     ``--except`` name filters from the parsed CLI namespace.
 
     Args:
@@ -540,7 +539,6 @@ def _build_context(
 def _filter_items_by_installed(
     items: list[Item],
     target_manager: TargetManager,
-    platforms: list[str],
     *,
     installed: bool,
 ) -> list[Item]:
@@ -549,7 +547,6 @@ def _filter_items_by_installed(
     Args:
         items: Items to evaluate.
         target_manager: Provides access to installed-item lookups.
-        platforms: Target platforms to check against.
         installed: If True, return only already-installed items.
                    If False, return only not-yet-installed items.
 
@@ -572,18 +569,16 @@ def _filter_items_by_installed(
 
 def _discover_installed_from_targets(
     target_manager: TargetManager,
-    platforms: list[str],
     item_types: list[ItemType],
 ) -> list[Item]:
-    """Discover installed items directly from target platforms.
+    """Discover installed items directly from the target platform.
 
     Unlike scanning the source repository, this method finds items that
-    exist on disk in the target platform directories.  This allows push
+    exist on disk in the target platform directory.  This allows push
     to work even when the source repository is empty.
 
     Args:
         target_manager: Configured target manager.
-        platforms: Platforms to scan.
         item_types: Item types to include.
 
     Returns:
@@ -646,21 +641,19 @@ def _discover_installed_from_targets(
 def _run_pull_interactive(
     items: list[Item],
     target_manager: TargetManager,
-    platforms: list[str],
-) -> tuple[list[Item], list[str], str] | None:
+) -> tuple[list[Item], str] | None:
     """Run an interactive pull session to let the user choose what to install.
 
     Presents a mode chooser (``full``, ``install``, ``update``, ``custom``)
-    and progressively filters items and platforms based on the selection.
+    and progressively filters items based on the selection.
 
     Args:
         items: All items scanned from the source repository.
-        target_manager: Used to check per-platform installation status.
-        platforms: Candidate platforms for installation.
+        target_manager: Used to check installation status.
 
     Returns:
-        ``(filtered_items, filtered_platforms, mode)`` when the user made a
-        valid selection, or ``None`` if the user aborted or nothing matched.
+        ``(filtered_items, mode)`` when the user made a valid selection,
+        or ``None`` if the user aborted or nothing matched.
 
     """
     from agentfiles.interactive import InteractiveSession
@@ -675,17 +668,6 @@ def _run_pull_interactive(
         return None
 
     if mode == "custom":
-        try:
-            selected_platforms = session.select_platforms(platforms)
-        except KeyboardInterrupt:
-            print()
-            warning("Aborted.")
-            return None
-        if not selected_platforms:
-            warning("No platforms selected.")
-            return None
-        platforms = selected_platforms
-
         try:
             selected_types = session.select_item_types()
         except KeyboardInterrupt:
@@ -707,18 +689,18 @@ def _run_pull_interactive(
             warning("No items selected.")
             return None
     elif mode == "install":
-        items = _filter_items_by_installed(items, target_manager, platforms, installed=False)
+        items = _filter_items_by_installed(items, target_manager, installed=False)
         if not items:
             info("All items are already up-to-date.")
             return None
     elif mode == "update":
-        items = _filter_items_by_installed(items, target_manager, platforms, installed=True)
+        items = _filter_items_by_installed(items, target_manager, installed=True)
         if not items:
             info("No items need updating.")
             return None
     # mode == "full": use all items as-is
 
-    return items, platforms, mode
+    return items, mode
 
 
 def _print_token_summary(
@@ -878,19 +860,19 @@ def _display_update_indicators(plans: list[SyncPlan]) -> None:
 
 
 def cmd_pull(args: argparse.Namespace) -> int:
-    """Install or update items from a source repository onto target platforms.
+    """Install or update items from a source repository onto the target platform.
 
-    Scans the source for available items, optionally filters by type and
-    platform, then copies (or symlinks) files to each target's config
-    directory.  By default an interactive session guides the user through
-    mode selection (full / install-only / update-only / custom); pass
+    Scans the source for available items, optionally filters by type,
+    then copies (or symlinks) files to the target's config directory.
+    By default an interactive session guides the user through mode
+    selection (full / install-only / update-only / custom); pass
     ``--yes`` (``non_interactive``) to skip all prompts.
 
     With ``--update`` / ``-u``, runs ``git pull`` on the source repository
     before scanning and syncing items.
 
     Args:
-        args: Parsed CLI namespace.  Relevant flags: ``source``, ``target``,
+        args: Parsed CLI namespace.  Relevant flags: ``source``,
             ``item_type``, ``scope``, ``project_dir``, ``non_interactive``,
             ``dry_run``, ``symlinks``, ``config``, ``cache_dir``, ``update``.
 
@@ -937,10 +919,6 @@ def cmd_pull(args: argparse.Namespace) -> int:
     items = _filter_items(all_items, ctx.item_types)
     items = _filter_items_by_scope(items, ctx.scopes)
 
-    from agentfiles.models import TARGET_PLATFORM
-
-    platforms = [TARGET_PLATFORM]
-
     # Apply --only / --except item-name filters
     items = _apply_item_filter(items, ctx.only_set, ctx.except_set)
 
@@ -950,10 +928,10 @@ def cmd_pull(args: argparse.Namespace) -> int:
     # Interactive by default, non-interactive with --yes
     pull_mode: str = "full"
     if not args.non_interactive:
-        result = _run_pull_interactive(items, target_manager, platforms)
+        result = _run_pull_interactive(items, target_manager)
         if result is None:
             return 0
-        items, platforms, pull_mode = result
+        items, pull_mode = result
 
     # For "update" and "full" modes, use UPDATE action so existing items
     # are reinstalled from source instead of being skipped.
@@ -1208,12 +1186,12 @@ def _create_pull_request(
 def cmd_push(args: argparse.Namespace) -> int:
     """Push locally-installed items back into the source repository.
 
-    Discovers items directly from target platform directories (not from the
+    Discovers items directly from the target platform directory (not from the
     source scanner) so that push works even when the source repo is empty or
     out of date.
 
     Args:
-        args: Parsed CLI namespace.  Relevant flags: ``source``, ``target``,
+        args: Parsed CLI namespace.  Relevant flags: ``source``,
             ``item_type``, ``non_interactive``, ``dry_run``, ``config``,
             ``cache_dir``.
 
@@ -1234,14 +1212,9 @@ def cmd_push(args: argparse.Namespace) -> int:
 
     item_types = _resolve_item_types(args.item_type)
 
-    from agentfiles.models import TARGET_PLATFORM
-
-    platforms = [TARGET_PLATFORM]
-
-    # Discover items from target platforms, not from the source scanner.
+    # Discover items from the target platform, not from the source scanner.
     installed_items = _discover_installed_from_targets(
         target_manager,
-        platforms,
         item_types,
     )
 
@@ -1357,10 +1330,10 @@ def cmd_push(args: argparse.Namespace) -> int:
 
 
 def cmd_status(args: argparse.Namespace) -> int:
-    """Display a table of installed-item counts per discovered platform.
+    """Display a table of installed-item counts for the discovered platform.
 
     Shows the platform name, config directory path, and number of agents,
-    skills, commands, and plugins installed for each platform found on the
+    skills, commands, and plugins installed for the platform found on the
     system.
 
     With ``--list``, lists items available in the source repository instead
@@ -1368,13 +1341,13 @@ def cmd_status(args: argparse.Namespace) -> int:
     estimates and ``--format json`` for machine-readable output.
 
     With ``--diff``, shows differences between source items and their
-    installed counterparts on target platforms.  Supports ``--verbose``
+    installed counterparts on the target platform.  Supports ``--verbose``
     for content-level diffs.
 
     Args:
         args: Parsed CLI namespace.  Relevant flags: ``config``,
             ``list_items``, ``tokens``, ``show_diff``, ``verbose_diff``,
-            ``item_type``, ``source``, ``target``, ``format``.
+            ``item_type``, ``source``, ``format``.
 
     Returns:
         ``0`` on success.
@@ -1492,7 +1465,7 @@ def cmd_clean(args: argparse.Namespace) -> int:
     """Remove orphaned items that are installed but no longer exist in source.
 
     Compares the set of items in the source repository against items installed
-    on target platforms.  Any installed item whose source no longer exists is
+    on the target platform.  Any installed item whose source no longer exists is
     considered orphaned and eligible for removal.
 
     The command prompts for confirmation before removing anything, unless
@@ -1500,7 +1473,7 @@ def cmd_clean(args: argparse.Namespace) -> int:
     be removed.
 
     Args:
-        args: Parsed CLI namespace.  Relevant flags: ``source``, ``target``,
+        args: Parsed CLI namespace.  Relevant flags: ``source``,
             ``item_type``, ``non_interactive``, ``dry_run``, ``config``,
             ``cache_dir``.
 
@@ -1525,14 +1498,9 @@ def cmd_clean(args: argparse.Namespace) -> int:
     target_manager = _discover_targets(config)
     item_types = _resolve_item_types(args.item_type)
 
-    from agentfiles.models import TARGET_PLATFORM
-
-    platforms = [TARGET_PLATFORM]
-
-    # Discover all installed items across target platforms.
+    # Discover all installed items on the target platform.
     installed_items = _discover_installed_from_targets(
         target_manager,
-        platforms,
         item_types,
     )
 
@@ -1748,7 +1716,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 def cmd_verify(args: argparse.Namespace) -> int:
     """CI-friendly drift detection between source and installed items.
 
-    Compares source items against installed items on target platforms and
+    Compares source items against installed items on the target platform and
     returns a meaningful exit code:
 
     * ``0`` — no drift (all items UNCHANGED).
@@ -1759,7 +1727,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
     Args:
         args: Parsed CLI namespace.  Relevant flags: ``config``, ``source``,
-            ``target``, ``item_type``, ``format``, ``quiet``.
+            ``item_type``, ``format``, ``quiet``.
 
     Returns:
         ``0`` if no drift, ``1`` if drift detected.
@@ -2009,19 +1977,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="agentfiles",
         description=(
-            "Sync AI tool configurations (agents, skills, commands, plugins) across platforms."
+            "Sync AI tool configurations (agents, skills, commands, plugins) with OpenCode."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 examples:
-  agentfiles pull                    Sync all items to all platforms
+  agentfiles pull                    Sync all items to OpenCode
   agentfiles pull --update           Git pull source, then sync
   agentfiles pull --type agent       Sync only agents
   agentfiles pull --scope global     Sync only global-scope items
   agentfiles pull --only coder       Sync only the coder agent
   agentfiles pull --dry-run          Preview what would change
   agentfiles push                    Push local items back to source
-  agentfiles status                  Show installed items per platform
+  agentfiles status                  Show installed items for platform
   agentfiles status --list --tokens  List source items with token counts
   agentfiles status --list --scope project  List project-scope items
   agentfiles status --diff           Compare source vs installed
@@ -2052,7 +2020,7 @@ examples:
     pull_p = subs.add_parser(
         "pull",
         help="Pull items from repository to local configs",
-        description="Scan source repository and sync items to target platforms.",
+        description="Scan source repository and sync items to the target platform.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 examples:
@@ -2089,7 +2057,7 @@ examples:
     push_p = subs.add_parser(
         "push",
         help="Push items from local configs back to the source repository",
-        description="Discover installed items from target platforms and push them back to source.",
+        description="Discover installed items from the target platform and push them back to source.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 examples:
@@ -2133,11 +2101,11 @@ examples:
     status_p = subs.add_parser(
         "status",
         help="Show status of installed items",
-        description="Display a table of installed-item counts per discovered platform.",
+        description="Display a table of installed-item counts for the discovered platform.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 examples:
-  agentfiles status                            Show all platforms
+  agentfiles status                            Show platform status
   agentfiles status --list                     List source items
   agentfiles status --list --tokens            List items with token counts
   agentfiles status --list --scope global      List only global-scope items
@@ -2201,7 +2169,7 @@ examples:
         "clean",
         help="Remove orphaned items that no longer exist in source",
         description=(
-            "Remove items installed on target platforms that have been deleted from source."
+            "Remove items installed on the target platform that have been deleted from source."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\

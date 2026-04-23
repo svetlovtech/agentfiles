@@ -38,7 +38,7 @@ def get_item_dest_path(target_dir: Path, item: Item) -> Path:
     """Return the on-disk destination path for *item* within *target_dir*.
 
     Delegates to :func:`agentfiles.models.resolve_target_name` to determine
-    the correct filename (which handles platform-specific naming rules).
+    the correct filename for the item type.
 
     Args:
         target_dir: Platform configuration directory (e.g.

@@ -398,7 +398,6 @@ class TestFilterItemsByInstalled:
         result = _filter_items_by_installed(
             items,
             tm,
-            [],
             installed=True,
         )
         assert len(result) == 1
@@ -412,7 +411,6 @@ class TestFilterItemsByInstalled:
         result = _filter_items_by_installed(
             items,
             tm,
-            [],
             installed=False,
         )
         assert len(result) == 1
@@ -420,7 +418,7 @@ class TestFilterItemsByInstalled:
 
     def test_empty_items_returns_empty(self) -> None:
         tm = self._make_mock_target_manager()
-        result = _filter_items_by_installed([], tm, [], installed=True)
+        result = _filter_items_by_installed([], tm, installed=True)
         assert result == []
 
     def test_all_installed_returns_all_when_filter_installed(self) -> None:
@@ -429,7 +427,6 @@ class TestFilterItemsByInstalled:
         result = _filter_items_by_installed(
             items,
             tm,
-            [],
             installed=True,
         )
         assert len(result) == 2
@@ -670,7 +667,6 @@ class TestDiscoverInstalledFromTargets:
 
         items = _discover_installed_from_targets(
             tm,
-            [],
             list(ItemType),
         )
         assert len(items) == 1
@@ -688,7 +684,6 @@ class TestDiscoverInstalledFromTargets:
 
         items = _discover_installed_from_targets(
             tm,
-            [],
             list(ItemType),
         )
         assert items == []
@@ -720,7 +715,6 @@ class TestDiscoverInstalledFromTargets:
         # Filter to only AGENT type
         items = _discover_installed_from_targets(
             tm,
-            [],
             [ItemType.AGENT],
         )
         assert len(items) == 1
@@ -734,7 +728,6 @@ class TestDiscoverInstalledFromTargets:
 
         items = _discover_installed_from_targets(
             tm,
-            [],
             list(ItemType),
         )
         assert items == []
@@ -745,12 +738,11 @@ class TestDiscoverInstalledFromTargets:
 
         items = _discover_installed_from_targets(
             tm,
-            [],
             list(ItemType),
         )
         assert items == []
 
-    def test_deduplicates_across_platforms(self, tmp_path: Path) -> None:
+    def test_deduplicates_items(self, tmp_path: Path) -> None:
         """Same item discovered multiple times is returned once."""
         agent_dir = tmp_path / "agents"
         agent_dir.mkdir()
@@ -764,7 +756,6 @@ class TestDiscoverInstalledFromTargets:
 
         items = _discover_installed_from_targets(
             tm,
-            [],
             list(ItemType),
         )
         # Single item

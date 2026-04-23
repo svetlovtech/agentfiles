@@ -146,12 +146,12 @@ def build_target_manager(
 
 
 # ---------------------------------------------------------------------------
-# Platform candidate resolvers
+# OpenCode candidate resolver
 # ---------------------------------------------------------------------------
-# Each resolver returns a list of candidate config directories in **priority
-# order** — the first existing candidate wins (see :func:`_find_existing`).
-# All resolvers receive a pre-computed ``home`` Path so that ``Path.home()``
-# is called only once per discovery cycle.
+# Returns candidate config directories in **priority order** — the first
+# existing candidate wins (see :func:`_find_existing`).  Receives a
+# pre-computed ``home`` Path so that ``Path.home()`` is called only once
+# per discovery cycle.
 
 
 def _opencode_candidates(home: Path) -> list[Path]:
@@ -184,7 +184,7 @@ def _opencode_candidates(home: Path) -> list[Path]:
 
 
 # ---------------------------------------------------------------------------
-# Platform PROJECT candidate resolvers
+# OpenCode project candidate resolver
 # ---------------------------------------------------------------------------
 
 
@@ -201,7 +201,7 @@ def _opencode_project_candidates(project_dir: Path) -> list[Path]:
 
 
 # ---------------------------------------------------------------------------
-# Platform subdir resolvers
+# OpenCode subdir resolver
 # ---------------------------------------------------------------------------
 
 
@@ -243,7 +243,7 @@ def _find_existing(candidates: list[Path]) -> Path | None:
 
     Permission errors and other OS-level failures for individual
     candidates are logged as warnings and skipped so that a single
-    inaccessible directory does not prevent discovering other platforms.
+    inaccessible directory does not prevent discovering the platform.
     """
     for candidate in candidates:
         try:
@@ -276,10 +276,10 @@ def _find_existing(candidates: list[Path]) -> Path | None:
 
 
 class TargetDiscovery:
-    """Discovers configuration directories for supported platforms.
+    """Discovers the OpenCode configuration directory.
 
-    Computes ``Path.home()`` once per instance and reuses it across
-    all platform candidate resolvers to avoid redundant lookups.
+    Computes ``Path.home()`` once per instance and reuses it for
+    candidate resolution to avoid redundant lookups.
 
     Usage::
 
@@ -316,7 +316,7 @@ class TargetDiscovery:
             :class:`TargetPaths` if the config directory exists, else ``None``.
 
         """
-        candidates = self._get_candidates()
+        candidates = _opencode_candidates(self._home)
 
         try:
             config_dir = _find_existing(candidates)
@@ -352,10 +352,6 @@ class TargetDiscovery:
 
     # -- private ---------------------------------------------------------
 
-    def _get_candidates(self) -> list[Path]:
-        """Return candidate directories for OpenCode."""
-        return _opencode_candidates(self._home)
-
 
 # ---------------------------------------------------------------------------
 # TargetManager
@@ -386,7 +382,7 @@ class TargetManager:
     """
 
     def __init__(self, targets: TargetPaths | None) -> None:
-        """Initialise the manager with discovered platform targets."""
+        """Initialise the manager with the discovered target."""
         self._targets = targets
         if targets is not None:
             logger.info(
@@ -669,10 +665,7 @@ class TargetManager:
         """
         if self._targets is None:
             return False
-        td = self.get_target_dir(item_type)
-        if td is not None and td == target_dir:
-            return True
-        return False
+        return self.get_target_dir(item_type) == target_dir
 
     # -- private helpers --------------------------------------------------
 

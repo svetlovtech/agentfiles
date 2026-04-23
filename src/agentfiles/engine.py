@@ -447,7 +447,7 @@ class SyncTarget(Protocol):
 
 
 class SyncEngine:
-    """Plans and executes sync operations across target platforms.
+    """Plans and executes sync operations on the target platform.
 
     Args:
         target_manager: Provides target directory resolution.  Accepts any
@@ -634,7 +634,7 @@ class SyncEngine:
         *,
         source_dir: Path | None = None,
     ) -> SyncReport:
-        """Plan and execute installation of items to target platforms.
+        """Plan and execute installation of items to the target platform.
 
         Args:
             items: Items to sync.
@@ -654,7 +654,7 @@ class SyncEngine:
         self,
         items: list[Item],
     ) -> SyncReport:
-        """Plan and execute removal of items from target platforms.
+        """Plan and execute removal of items from the target platform.
 
         Args:
             items: Items to uninstall.
@@ -739,7 +739,7 @@ class SyncEngine:
 
         Returns:
             List of ``(item, action)`` tuples where *action* is
-            ``"pull"``, ``"push"``, ``"conflict"``, or ``"skip"``.
+            ``"pull"`` or ``"skip"``.
 
         Logic:
             - item not at target → ``"pull"``
@@ -749,19 +749,13 @@ class SyncEngine:
         plan: list[tuple[Item, str]] = []
 
         for item in items:
-            action = self._compute_item_action(
-                item,
-                state,
-                source_dir,
-            )
+            action = self._compute_item_action(item)
             plan.append((item, action))
 
         counts = Counter(action for _, action in plan)
         logger.info(
-            "Sync plan: %d pull, %d push, %d conflict, %d skip",
+            "Sync plan: %d pull, %d skip",
             counts["pull"],
-            counts["push"],
-            counts["conflict"],
             counts["skip"],
         )
         return plan
@@ -1225,13 +1219,11 @@ class SyncEngine:
     def _compute_item_action(
         self,
         item: Item,
-        state: SyncState,
-        source_dir: Path,
     ) -> str:
         """Determine the sync action for a single item.
 
-        Without checksums, checks if the item exists at the target.
-        Returns "pull" if not installed, "skip" if installed.
+        Checks if the item exists at the target.
+        Returns ``"pull"`` if not installed, ``"skip"`` if installed.
         """
         target_dir = self._target_manager.get_target_dir(item.item_type)
         if target_dir is None:

@@ -21,7 +21,7 @@ from tests.conftest import make_item
 
 @pytest.fixture
 def fake_home(tmp_path: Path) -> SimpleNamespace:
-    """Create a fake home with platform config directories."""
+    """Create a fake home with OpenCode config directories."""
     home = tmp_path / "home"
     home.mkdir()
 
@@ -31,13 +31,7 @@ def fake_home(tmp_path: Path) -> SimpleNamespace:
     (oc_dir / "command").mkdir(parents=True)
     (oc_dir / "plugin").mkdir(parents=True)
 
-    cc_dir = home / ".claude"
-    (cc_dir / "agents").mkdir(parents=True)
-    (cc_dir / "skills").mkdir(parents=True)
-    (cc_dir / "plugins").mkdir(parents=True)
-    (cc_dir / "commands").mkdir(parents=True)
-
-    return SimpleNamespace(home=home, opencode=oc_dir, claude=cc_dir)
+    return SimpleNamespace(home=home, opencode=oc_dir)
 
 
 @pytest.fixture
@@ -62,7 +56,8 @@ def source_repo(tmp_path: Path) -> Path:
 
     # Config file so agentfiles clean can load it.
     (repo / ".agentfiles.yaml").write_text(
-        "version: '1.0'\ndefault_platforms:\n  - opencode\n  - claude_code\n",
+        "version: '1.0'\n",
+        encoding="utf-8",
     )
 
     return repo

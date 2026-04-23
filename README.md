@@ -1,7 +1,7 @@
 <h1 align="center">agentfiles</h1>
 
 <p align="center">
-  <strong>Sync AI tool configurations across platforms</strong>
+  <strong>Sync AI tool configurations for OpenCode</strong>
 </p>
 
 <p align="center">
@@ -25,41 +25,23 @@
 
 ---
 
-`agentfiles` is a CLI that keeps your AI coding assistant configurations — agents, skills, commands, and plugins — consistent across multiple platforms. It treats a source repository as the single source of truth and propagates changes to wherever you need them.
+`agentfiles` is a CLI that keeps your OpenCode AI coding assistant configurations — agents, skills, commands, and plugins — in sync. Treat a source repository as the single source of truth and propagate changes to your local OpenCode config.
 
 ## Why?
 
-You use multiple AI coding tools. Each stores its config in a different place:
+You manage OpenCode agents, skills, commands, and plugins across multiple machines or projects. `agentfiles` lets you maintain **one repository** and sync everywhere:
 
 ```
-~/.config/opencode/       # OpenCode
-~/.claude/                # Claude Code
-~/.codeium/windsurf/      # Windsurf
-~/.cursor/rules/          # Cursor
-.github/copilot/          # GitHub Copilot
-.aider/                   # Aider
-.continue/                # Continue.dev
-```
-
-`agentfiles` lets you maintain **one repository** and sync everywhere:
-
-```
-                    ┌─── OpenCode
-                    ├─── Claude Code
-source repo ────────┼─── Windsurf
-(agentfiles pull)   ├─── Cursor
-                    ├─── GitHub Copilot
-                    ├─── Aider
-                    └─── Continue.dev
+source repo ──────── OpenCode (~/.config/opencode/)
+(agents/skills/
+ commands/plugins)
 ```
 
 ## Features
 
-- **7 platforms** — OpenCode, Claude Code, Windsurf, Cursor + GitHub Copilot, Aider, Continue.dev
-- **6 item types** — agents, skills, commands, plugins, configs, workflows
+- **OpenCode support** — agents, skills, commands, plugins, configs, and workflows
 - **Bidirectional sync** — pull and push with conflict detection
-- **Surgical filtering** — `--only`, `--except`, `--type`, `--target`, `--item agent/coder`
-- **Platform groups** — define profiles in config (`dev: [claude_code, cursor]`), use with `--target dev`
+- **Surgical filtering** — `--only`, `--except`, `--type`, `--item agent/coder`, `--scope`
 - **PR creation** — `push --create-pr` to auto-create a pull request via `gh`
 - **Smart cloning** — shallow clone + sparse checkout for remote sources
 - **Dry-run** — preview changes without applying
@@ -76,11 +58,11 @@ pip install agentfiles
 # Initialize a new repository
 agentfiles init
 
-# Pull to all platforms
+# Pull to OpenCode
 agentfiles pull /path/to/source-repo
 
-# Pull only agents to OpenCode
-agentfiles pull --target opencode --type agent
+# Pull only agents
+agentfiles pull --type agent
 
 # Preview without applying
 agentfiles pull --dry-run
@@ -90,9 +72,9 @@ agentfiles pull --dry-run
 
 | Command | Description |
 |---------|-------------|
-| [`pull`](#pull) | Install/update items from source to local configs |
+| [`pull`](#pull) | Install/update items from source to local OpenCode config |
 | [`push`](#push) | Push local items back to source (with conflict detection) |
-| [`status`](#status) | Show installed items per platform (`--list`, `--diff`) |
+| [`status`](#status) | Show installed items (`--list`, `--diff`) |
 | [`clean`](#clean) | Remove orphaned items |
 | [`init`](#init) | Scaffold a new repository |
 | [`verify`](#verify) | CI-friendly drift detection (exit 1 if drift) |
@@ -101,18 +83,20 @@ agentfiles pull --dry-run
 
 ### `pull`
 
-Install or update items from a source repository to local platform configs.
+Install or update items from a source repository to your local OpenCode config.
 
 ```bash
 agentfiles pull                                    # interactive (default)
 agentfiles pull --yes                              # non-interactive
 agentfiles pull --update                           # git pull source, then sync
-agentfiles pull --target opencode --type agent     # only agents → OpenCode
+agentfiles pull --type agent                       # only agents
 agentfiles pull --only coder,solid-principles      # specific items
 agentfiles pull --item agent/coder                 # single item by key
 agentfiles pull --dry-run --verbose                # preview with details
 agentfiles pull --symlinks                         # use symlinks instead of copies
 agentfiles pull --full-clone                       # disable shallow clone optimization
+agentfiles pull --scope global                     # only global-scope items
+agentfiles pull --scope project --project-dir .    # project-scope items to current dir
 ```
 
 ### `push`
@@ -123,7 +107,6 @@ Push locally-installed items back into the source repository. Useful when you've
 agentfiles push                         # interactive (with conflict detection)
 agentfiles push --yes                   # non-interactive (skips conflicts)
 agentfiles push --dry-run               # preview
-agentfiles push --target opencode       # push only from OpenCode
 agentfiles push --item agent/coder      # push a single item
 agentfiles push --create-pr             # auto-create PR via gh
 agentfiles push --create-pr --pr-title "Update agents" --pr-branch my-branch
@@ -131,13 +114,13 @@ agentfiles push --create-pr --pr-title "Update agents" --pr-branch my-branch
 
 ### `status`
 
-Show installed-item counts per discovered platform. Supports two sub-modes via flags:
+Show installed-item information. Supports two sub-modes via flags:
 
 - `--list` — list items available in the source repository
 - `--diff` — compare source vs installed items
 
 ```bash
-agentfiles status                            # show platforms
+agentfiles status                            # show overview
 agentfiles status --format json              # JSON output
 
 # --list mode: list source items
@@ -148,7 +131,6 @@ agentfiles status --list --format json       # machine-readable
 # --diff mode: compare source vs installed
 agentfiles status --diff                     # show differences
 agentfiles status --diff --verbose           # content-level diffs
-agentfiles status --diff --target opencode   # diff for one platform
 agentfiles status --diff --format json       # machine-readable
 ```
 
@@ -183,7 +165,7 @@ agentfiles verify --quiet            # silent, exit code only
 
 ### `doctor`
 
-Run environment diagnostics — checks config, source dir, git, platform directories, state file, and tool binaries.
+Run environment diagnostics — checks config, source dir, git, platform directory, state file, and tool binaries.
 
 ```bash
 agentfiles doctor
@@ -216,11 +198,11 @@ eval "$(agentfiles completion bash)"
 Most commands support surgical filtering:
 
 ```bash
---target {platform,group,all}                          Target platform or group name
 --type {agent,skill,command,plugin,config,workflow,all} Item type
 --only coder,solid-principles                          Only these items (by name)
 --except old-plugin,deprecated                         Exclude these items
 --item agent/coder                                     Specific item by type/name key
+--scope {global,project,local,all}                     Filter by scope
 ```
 
 ## Source Repository Structure
@@ -251,34 +233,11 @@ my-agents/
 └── .agentfiles.yaml              # Config (auto-generated)
 ```
 
-## Supported Platforms
+## Supported Platform
 
 | Platform | Config path | Agents | Skills | Commands | Plugins | Configs | Workflows |
 |----------|------------|--------|--------|----------|---------|---------|-----------|
 | **OpenCode** | `~/.config/opencode/` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Claude Code** | `~/.claude/` | ✅ | ✅ | ✅ | — | ✅ | ✅ |
-| **Windsurf** | `~/.codeium/windsurf/` | — | ✅ | — | — | — | ✅ |
-| **Cursor** | `~/.cursor/rules/` | — | ✅ | — | — | — | ✅ |
-| **GitHub Copilot** | `.github/copilot/` | ✅ | — | — | — | ✅ | — |
-| **Aider** | `.aider/` | ✅ | — | — | — | ✅ | — |
-| **Continue.dev** | `.continue/` | ✅ | — | ✅ | — | ✅ | — |
-
-## Platform Groups
-
-Define named groups in `.agentfiles.yaml` to avoid repeating `--target` flags:
-
-```yaml
-source: ./
-platform_groups:
-  dev: [claude_code, cursor]
-  ci: [opencode]
-  editors: [copilot, aider, continue]
-```
-
-```bash
-agentfiles pull --target dev       # → claude_code + cursor
-agentfiles push --target editors   # → copilot + aider + continue
-```
 
 ## Architecture
 
@@ -302,17 +261,11 @@ agentfiles push --target editors   # → copilot + aider + continue
 | `scanner.py` | Walk source dirs → `list[Item]` |
 | `differ.py` | Compare source vs installed: existence → metadata → SHA-256 |
 | `engine.py` | Plan actions (INSTALL/UPDATE/SKIP) → execute → collect results |
-| `target.py` | Discover platforms, manage installed items |
+| `target.py` | Discover OpenCode config directory, manage installed items |
 | `config.py` | YAML config + sync-state persistence |
 | `cli.py` | Argparse CLI with all subcommands |
 
 ### Extending
-
-**Add a new platform:**
-
-1. Add `Platform` enum value in `models.py`
-2. Add discovery logic in `target.py` (`_DISCOVERY_TABLE`)
-3. Add alias in `PLATFORM_ALIASES`
 
 **Add a new item type:**
 

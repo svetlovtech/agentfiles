@@ -81,7 +81,7 @@ def _format_status_json(
     """Format status output as JSON and print to stdout.
 
     Args:
-        target_manager: Provides access to discovered platform paths.
+        target_manager: Provides access to the discovered target platform.
         summary: Item counts from ``platform_summary()``.
 
     Returns:
@@ -114,7 +114,7 @@ def _format_status_json(
 
 def _format_plan_json(
     plans: list[SyncPlan],
-    target_manager: Any,
+    _target_manager: Any,
     *,
     dry_run: bool,
 ) -> int:
@@ -122,7 +122,7 @@ def _format_plan_json(
 
     Args:
         plans: Planned sync operations from the engine.
-        target_manager: Used to resolve platforms from target directories.
+        _target_manager: Unused.  Kept for call-site compatibility.
         dry_run: Whether this is a dry-run preview.
 
     Returns:

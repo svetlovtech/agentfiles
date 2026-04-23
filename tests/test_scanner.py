@@ -1437,11 +1437,11 @@ class TestScandirSorted:
 
 
 # ---------------------------------------------------------------------------
-# Platform assignment
+# Item type assignment
 # ---------------------------------------------------------------------------
 
 
-class TestPlatformAssignment:
+class TestItemTypeAssignment:
     """Tests that discovered items have correct item_type and scope."""
 
     def test_all_items_have_correct_type(self, tmp_path: Path) -> None:

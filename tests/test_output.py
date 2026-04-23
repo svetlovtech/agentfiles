@@ -969,7 +969,7 @@ class TestFormatDiff:
         assert "alpha" in entry_lines[1]
         assert "beta" in entry_lines[2]
 
-    def test_multiple_platforms(self) -> None:
+    def test_multiple_item_types(self) -> None:
         """Multiple item types should produce combined output."""
         entry_oc = DiffEntry(item=_make_item("agent-a"), status=DiffStatus.NEW)
         entry_oc2 = DiffEntry(item=_make_item("agent-b"), status=DiffStatus.UPDATED)

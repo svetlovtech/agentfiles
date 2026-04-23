@@ -251,9 +251,6 @@ _PLUGIN_SCAN_MAX_DEPTH = 10
 # ``SourceScanner.scan_type`` looks up the dispatch table
 # automatically with safe defaults for unregistered types.
 
-# Single source of truth: each ItemType maps to its scanner function.
-# New types only require a ``_register_scanner()`` call — no other code
-# in this module needs modification.
 _SCANNER_REGISTRY: dict[ItemType, Callable[..., list[Item]]] = {}
 
 

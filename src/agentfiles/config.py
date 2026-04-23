@@ -221,8 +221,8 @@ class AgentfilesConfig:
 def _validate_config_dict(data: dict[str, Any], path: Path) -> None:
     """Validate config value types before coercion.
 
-    Catches common mistakes like providing a string where a list is
-    expected (``default_platforms: opencode`` instead of a list),
+    Catches common mistakes like providing a value of the wrong type
+    (e.g. a string where a mapping is expected for ``custom_paths``),
     which would otherwise silently produce wrong results.
 
     Args:

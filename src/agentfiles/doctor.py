@@ -239,7 +239,7 @@ def run_doctor(
     report.results.append(_check_source_directory(source_dir))
     report.results.append(_check_git())
 
-    # Use TargetDiscovery to find platforms instead of hardcoding paths.
+    # Use TargetDiscovery to find the target platform directory.
     discovery = TargetDiscovery()
     discovered = discovery.discover_all()
     if discovered is not None:
@@ -251,7 +251,7 @@ def run_doctor(
         )
     else:
         report.results.append(
-            CheckResult("Platforms", CheckStatus.WARNING, "no platform directories found")
+            CheckResult("Platform", CheckStatus.WARNING, "no platform directory found")
         )
 
     report.results.append(_check_state_file(source_dir))

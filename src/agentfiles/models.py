@@ -140,28 +140,7 @@ class SourceType(Enum):
 
 
 class ItemType(Enum):
-    """Categories of content that agentfiles manages.
-
-    EXTENSION POINT — Adding a new ItemType
-    ========================================
-    To add a new item type (e.g. ``WORKFLOW``):
-
-    1. **Here (models.py)**: Add the enum member (e.g. ``WORKFLOW = "workflow"``).
-       Then update two properties:
-       - ``plural``: add the mapping  ``ItemType.WORKFLOW: "workflows"``.
-       - ``is_file_based``: include/exclude the new type depending on whether
-         items are stored as flat files (``True``) or directories (``False``).
-
-    2. **scanner.py**: Write a scanner function (e.g. ``_scan_workflows_dir``)
-       and call ``_register_scanner(ItemType.WORKFLOW, _scan_workflows_dir, ...)``.
-
-    3. **target.py**: If the new type uses a non-standard subdirectory layout,
-       update the subdir resolvers.
-
-    No other files need modification — the ``_PLURAL_TO_ITEM_TYPE`` reverse
-    lookup in ``target.py``, the ``resolve_target_name`` function, and the
-    ``SyncEngine`` dispatch tables all derive their behaviour from the enum.
-    """
+    """Categories of content that agentfiles manages."""
 
     AGENT = "agent"
     SKILL = "skill"
@@ -233,27 +212,7 @@ def resolve_platform(name: str) -> str:
 
 
 class SyncAction(Enum):
-    """Action to perform during a sync operation.
-
-    EXTENSION POINT — Adding a new SyncAction
-    ==========================================
-    To add a new sync action (e.g. ``BACKUP``):
-
-    1. **Here (models.py)**: Add the enum member: ``BACKUP = "backup"``.
-
-    2. **engine.py**:
-       - Write a plan handler method (e.g. ``_plan_backup``) with signature
-         ``(item, target_dir, requested_action) -> SyncPlan | None``.
-       - Write an execute handler method (e.g. ``_execute_backup``) with
-         signature ``(plan) -> SyncResult``.
-       - Register both in ``__init__``: add to ``_plan_handlers`` and
-         ``_action_handlers`` dicts.
-       - Optionally update ``aggregate()`` in ``SyncReport`` to include the
-         new action in its classification.
-
-    The dispatch-based design means no if/elif chains need modification —
-    only the registration dicts in ``SyncEngine.__init__`` change.
-    """
+    """Action to perform during a sync operation."""
 
     INSTALL = "install"
     UPDATE = "update"
@@ -291,7 +250,7 @@ class SyncDirection(Enum):
 class Scope(Enum):
     """Installation scope for items.
 
-    Determines where items are installed on target platforms:
+    Determines where items are installed on the target platform:
 
     - GLOBAL: User-level configs shared across all projects
       (e.g. ~/.config/opencode/)

@@ -799,14 +799,14 @@ class TestMetadataDiffEdgeCases:
 
 
 # ---------------------------------------------------------------------------
-# Multi-platform diff across 3+ platforms
+# Single-platform diff
 # ---------------------------------------------------------------------------
 
 
-class TestMultiPlatformDiff:
-    """Tests for diff across the single supported platform."""
+class TestSinglePlatformDiff:
+    """Tests for diff against the single supported platform (OpenCode)."""
 
-    def test_single_platform_item_only_on_that_platform(
+    def test_item_on_target_appears_in_results(
         self,
         manager: TargetManager,
     ) -> None:
