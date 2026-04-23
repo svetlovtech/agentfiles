@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import agentfiles.output as _output_module
-from agentfiles.models import DiffEntry, DiffStatus, Item, ItemType
+from agentfiles.models import DiffEntry, DiffStatus, ItemType
 from agentfiles.output import (
     Colors,
     _diff_status_symbol,

@@ -17,7 +17,6 @@ from agentfiles.cli import (
     _apply_item_key_filter,
     build_parser,
 )
-from agentfiles.models import Item
 from tests.conftest import make_items
 
 # ---------------------------------------------------------------------------

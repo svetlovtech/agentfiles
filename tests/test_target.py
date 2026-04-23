@@ -10,7 +10,13 @@ from unittest import mock
 
 import pytest
 
-from agentfiles.models import Item, ItemType, TARGET_PLATFORM, Scope, TargetError, TargetPaths
+from agentfiles.models import (
+    TARGET_PLATFORM,
+    ItemType,
+    Scope,
+    TargetError,
+    TargetPaths,
+)
 from agentfiles.target import (
     TargetDiscovery,
     TargetManager,

@@ -24,7 +24,6 @@ from agentfiles.cli import (
 )
 from agentfiles.models import (
     AgentfilesError,
-    Item,
     ItemType,
     TargetPaths,
     TokenEstimate,

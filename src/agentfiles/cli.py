@@ -815,11 +815,7 @@ def _create_init_structure(base: Path) -> tuple[list[str], list[str]]:
                 subdir.mkdir(parents=True, exist_ok=True)
                 (subdir / ".gitkeep").touch()
             except OSError as exc:
-                raise AgentfilesError(
-                    f"Failed to create directory '{subdir}': {exc}. "
-                    f"Check that the parent directory exists and is writable, "
-                    f"or run with appropriate permissions"
-                ) from exc
+                raise AgentfilesError(f"Failed to create directory '{subdir}': {exc}") from exc
             created_dirs.append(subdir_name)
 
     return created_dirs, skipped_dirs
@@ -1588,11 +1584,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     try:
         base.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        raise AgentfilesError(
-            f"Failed to create directory '{base}': {exc}. "
-            f"Check that the parent path exists and is writable, "
-            f"or run with appropriate permissions (e.g. no sudo if needed)"
-        ) from exc
+        raise AgentfilesError(f"Failed to create directory '{base}': {exc}") from exc
 
     created_dirs, skipped_dirs = _create_init_structure(base)
 
@@ -1604,10 +1596,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         try:
             config_path.write_text(config_content)
         except OSError as exc:
-            raise AgentfilesError(
-                f"Failed to write config file '{config_path}': {exc}. "
-                f"Check that the directory is writable and there is sufficient disk space"
-            ) from exc
+            raise AgentfilesError(f"Failed to write config file '{config_path}': {exc}") from exc
 
     state_path = base / ".agentfiles.state.yaml"
     if state_path.exists():
@@ -1621,10 +1610,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         try:
             state_path.write_text(state_content)
         except OSError as exc:
-            raise AgentfilesError(
-                f"Failed to write state file '{state_path}': {exc}. "
-                f"Check that the directory is writable and there is sufficient disk space"
-            ) from exc
+            raise AgentfilesError(f"Failed to write state file '{state_path}': {exc}") from exc
 
     success(f"Initialized agentfiles repository at {base}")
     print()

@@ -21,13 +21,6 @@ from agentfiles.models import (
 )
 from agentfiles.target import TargetManager
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
-# fake_home and target_manager are provided by conftest.py.
-
 
 def _make_dir_item(
     name: str,

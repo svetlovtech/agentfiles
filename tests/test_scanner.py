@@ -1503,7 +1503,7 @@ class TestScopeAwareScanning:
         agents_dir.mkdir()
         _write_md(agents_dir, "base.md", "---\nname: base-agent\n---\nbody")
 
-        for scope_dir_name, scope in [
+        for scope_dir_name, _scope in [
             ("global", Scope.GLOBAL),
             ("project", Scope.PROJECT),
             ("local", Scope.LOCAL),

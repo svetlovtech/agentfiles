@@ -401,7 +401,8 @@ class TargetManager:
         project-level path — the directory does **not** need to exist on
         disk (useful for install-to targets).
 
-        Args:            item_type: The category of item (agent, skill, …).
+        Args:
+            item_type: The category of item (agent, skill, …).
             scope: Configuration scope (``Scope.GLOBAL``,
                 ``Scope.PROJECT``, or ``Scope.LOCAL``).
             project_dir: Root project directory — **required** for
@@ -494,8 +495,6 @@ class TargetManager:
         individual subdirectories are logged as warnings and skipped
         so that a single inaccessible directory does not prevent listing
         items from other subdirectories.
-
-        Args:
 
         Returns:
             List of ``(item_type, name)`` tuples.

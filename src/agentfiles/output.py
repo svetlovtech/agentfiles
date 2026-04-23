@@ -71,6 +71,7 @@ class Colors:
     RED = "\033[91m"
     YELLOW = "\033[93m"
     BLUE = "\033[94m"
+    CYAN = "\033[96m"
     BOLD = "\033[1m"
     DIM = "\033[2m"
     RESET = "\033[0m"
@@ -702,14 +703,13 @@ def _format_content_diff_lines(
         List of formatted, colourised lines ready for output.
 
     """
-    _cyan = "\033[96m"
     formatted: list[str] = []
 
     for line in diff_lines:
         if line.startswith("---") or line.startswith("+++"):
             color = Colors.BOLD
         elif line.startswith("@@"):
-            color = _cyan
+            color = Colors.CYAN
         elif line.startswith("+"):
             color = Colors.GREEN
         elif line.startswith("-"):

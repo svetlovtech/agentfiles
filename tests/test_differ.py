@@ -7,8 +7,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-import pytest
-
 from agentfiles.differ import (
     Differ,
     _resolve_target_path,
@@ -22,14 +20,6 @@ from agentfiles.models import (
 )
 from agentfiles.target import TargetDiscovery, TargetManager
 from tests.conftest import make_item
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
-# fake_home and target_manager are provided by conftest.py.
-
 
 # ---------------------------------------------------------------------------
 # Differ.diff

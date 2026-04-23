@@ -261,6 +261,7 @@ class Scope(Enum):
 
     @property
     def display_name(self) -> str:
+        """Human-readable scope name for display (e.g. ``"Global"``)."""
         _names: dict[Scope, str] = {
             Scope.GLOBAL: "Global",
             Scope.PROJECT: "Project",
@@ -638,8 +639,7 @@ def item_from_directory(
             f"in '{path}'. Expected {expected_file}."
         )
 
-    meta, resolved_name = _parse_item_meta(main_md, resolved)
-    name = resolved_name
+    meta, name = _parse_item_meta(main_md, resolved)
 
     files = _collect_relative_files(resolved)
     if not files:

@@ -154,17 +154,18 @@ def test_source_scanner_discovers_workflows(tmp_path: Path) -> None:
 
 
 @pytest.mark.integration
-def test_source_scanner_discovers_workflow_items(tmp_path: Path) -> None:
-    """SourceScanner discovers workflow items from workflows/ subdirectory."""
+def test_source_scanner_discovers_multiple_workflows(tmp_path: Path) -> None:
+    """SourceScanner discovers multiple workflow items from workflows/ subdirectory."""
     source_dir = tmp_path / "source"
     source_dir.mkdir()
     workflows_dir = source_dir / "workflows"
     workflows_dir.mkdir()
-    _make_workflow_dir(workflows_dir, "my-workflow")
+    _make_workflow_dir(workflows_dir, "workflow-a")
+    _make_workflow_dir(workflows_dir, "workflow-b")
 
     scanner = SourceScanner(source_dir)
     items = scanner.scan()
 
     workflow_items = [i for i in items if i.item_type == ItemType.WORKFLOW]
-    assert len(workflow_items) == 1
-    assert workflow_items[0].name == "my-workflow"
+    names = {i.name for i in workflow_items}
+    assert names == {"workflow-a", "workflow-b"}

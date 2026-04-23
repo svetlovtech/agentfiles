@@ -84,8 +84,8 @@ def _parse_comma_list(input_str: str) -> list[str]:
 
     Empty tokens are discarded.  Returns an empty list for blank input.
     """
-    raw = input_str.replace(",", " ").split()
-    return [token.strip().lower() for token in raw if token.strip()]
+    # split() without args already discards empties and strips whitespace.
+    return [token.lower() for token in input_str.replace(",", " ").split()]
 
 
 def _parse_ranges(input_str: str, max_value: int) -> list[int]:
@@ -363,7 +363,8 @@ class InputParser:
     ) -> list[ItemType]:
         """Parse a range expression into selected item types."""
         indices = _parse_ranges(raw, len(types))
-        return [types[i - 1] for i in indices if 1 <= i <= len(types)]
+        # _parse_ranges guarantees indices are within [1, len(types)].
+        return [types[i - 1] for i in indices]
 
     def parse_sync_mode(self, raw: str) -> str:
         """Parse user input into a sync mode key.

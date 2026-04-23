@@ -19,7 +19,7 @@ from enum import Enum
 from pathlib import Path
 
 from agentfiles.config import _iter_config_search_paths, _read_yaml_file, get_state_path
-from agentfiles.models import TARGET_PLATFORM_DISPLAY, ConfigError
+from agentfiles.models import TARGET_PLATFORM_DISPLAY, ConfigError, ItemType
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +108,8 @@ def _check_source_directory(source_dir: Path | None) -> CheckResult:
     if not source_dir.is_dir():
         return CheckResult(label, CheckStatus.ERROR, f"{_short(source_dir)} (NOT FOUND)")
 
-    item_dirs = ["agents", "skills", "commands", "plugins", "configs"]
+    # Derive expected directory names from ItemType so new types are never missed.
+    item_dirs = [t.plural for t in ItemType]
     found = sum(1 for d in item_dirs if (source_dir / d).is_dir())
     return CheckResult(label, CheckStatus.OK, f"{_short(source_dir)} ({found} item dirs)")
 

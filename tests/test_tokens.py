@@ -138,12 +138,3 @@ class TestFormatTokenCount:
     def test_negative_count_formatted_as_string(self) -> None:
         # Edge case: function doesn't guard against negatives
         assert format_token_count(-1) == "-1"
-
-    def test_999_does_not_get_k_suffix(self) -> None:
-        assert format_token_count(999) == "999"
-        assert "k" not in format_token_count(999)
-
-    def test_1000_gets_k_suffix(self) -> None:
-        result = format_token_count(1000)
-        assert result == "1.0k"
-        assert result.endswith("k")

@@ -334,10 +334,7 @@ def _parse_sync_state(data: dict[str, Any]) -> SyncState:
 
 def _serialize_item_state(item: ItemState) -> dict[str, str]:
     """Convert an ItemState to a YAML-serializable dictionary."""
-    result: dict[str, str] = {}
-    if item.synced_at:
-        result["synced_at"] = item.synced_at
-    return result
+    return {"synced_at": item.synced_at} if item.synced_at else {}
 
 
 def _serialize_sync_state(state: SyncState) -> dict[str, Any]:

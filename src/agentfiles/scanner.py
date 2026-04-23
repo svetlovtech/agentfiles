@@ -158,6 +158,12 @@ class GitIgnoreMatcher:
 
         The path is resolved relative to :attr:`root_dir` before matching.
         Negation patterns (``!``) take priority and un-ignore a path.
+
+        Args:
+            path: Filesystem path to test.
+
+        Returns:
+            ``True`` when the path matches an ignore pattern.
         """
         try:
             rel = path.resolve().relative_to(self._root)
@@ -177,6 +183,12 @@ class GitIgnoreMatcher:
         """Create a matcher from ``.gitignore`` in *root_dir*.
 
         Returns ``None`` when no ``.gitignore`` file is found.
+
+        Args:
+            root_dir: Directory containing a ``.gitignore`` file.
+
+        Returns:
+            A :class:`GitIgnoreMatcher` instance, or ``None``.
         """
         gitignore = root_dir / ".gitignore"
         if not gitignore.is_file():
@@ -192,7 +204,17 @@ class GitIgnoreMatcher:
         parts: tuple[str, ...],
         patterns: list[str],
     ) -> bool:
-        """Check whether *rel_str* or any path part matches a pattern."""
+        """Check whether *rel_str* or any path part matches a pattern.
+
+        Args:
+            rel_str: Relative path as a string.
+            parts: Individual path components of the relative path.
+            patterns: Gitignore patterns to match against.
+
+        Returns:
+            ``True`` when any pattern matches.
+
+        """
         for pat in patterns:
             stripped = pat.rstrip("/")
             # Directory pattern (ends with /) — match against path parts.
@@ -273,7 +295,14 @@ def _register_scanner(
 
 
 def _should_skip(name: str) -> bool:
-    """Return ``True`` when *name* is hidden or an internal file/dir."""
+    """Return ``True`` when *name* is hidden or an internal file/dir.
+
+    Args:
+        name: File or directory basename to check.
+
+    Returns:
+        ``True`` when *name* starts with ``.`` or is in the skip list.
+    """
     return name.startswith(".") or name in _SKIP_NAMES
 
 
@@ -284,6 +313,13 @@ def _scandir_sorted(dir_path: Path) -> list[os.DirEntry[str]]:
     calls on each entry reuse the cached ``d_type`` from the kernel, avoiding
     extra ``stat()`` syscalls.  Returns an empty list on OS errors (e.g. the
     directory does not exist or is not readable).
+
+    Args:
+        dir_path: Directory to scan.
+
+    Returns:
+        Sorted list of :class:`os.DirEntry` objects, or an empty list on
+        error.
     """
     try:
         return sorted(os.scandir(dir_path), key=lambda e: e.name)
@@ -296,6 +332,13 @@ def _resolve_content_dir(source_dir: Path, item_type: ItemType) -> Path | None:
 
     Checks ``source_dir / item_type.plural`` then ``source_dir / item_type.value``,
     returning the first one that exists on disk.
+
+    Args:
+        source_dir: Root source directory to search.
+        item_type: The item category to locate.
+
+    Returns:
+        Path to the content directory, or ``None`` when neither candidate exists.
     """
     for candidate in (source_dir / item_type.plural, source_dir / item_type.value):
         if candidate.is_dir():
@@ -494,6 +537,14 @@ def _scan_agents_dir(
 
     Flat files take priority: if both ``coder.md`` and ``coder/coder.md``
     exist, only the flat file is included.
+
+    Args:
+        dir_path: Directory containing agent definitions.
+        gitignore: Optional gitignore matcher to exclude ignored paths.
+
+    Returns:
+        List of discovered agent :class:`Item` instances.
+
     """
     return _scan_with_subdirs(dir_path, ItemType.AGENT, gitignore=gitignore)
 
@@ -553,6 +604,14 @@ def _scan_commands_dir(
 
     Flat files take priority: if both ``deploy.md`` and ``deploy/deploy.md``
     exist, only the flat file is included.
+
+    Args:
+        dir_path: Directory containing command definitions.
+        gitignore: Optional gitignore matcher to exclude ignored paths.
+
+    Returns:
+        List of discovered command :class:`Item` instances.
+
     """
     return _scan_with_subdirs(dir_path, ItemType.COMMAND, gitignore=gitignore)
 
@@ -572,6 +631,14 @@ def _has_plugin_file(directory: Path, *, _depth: int = 0) -> bool:
 
     A depth limit prevents runaway recursion caused by pathological
     nesting or filesystem oddities (e.g. bind mounts).
+
+    Args:
+        directory: Directory to scan recursively.
+        _depth: Current recursion depth (internal; callers omit this).
+
+    Returns:
+        ``True`` when at least one plugin file is found.
+
     """
     if _depth > _PLUGIN_SCAN_MAX_DEPTH:
         logger.debug("Max depth (%d) reached scanning %s", _PLUGIN_SCAN_MAX_DEPTH, directory)
@@ -969,6 +1036,14 @@ class SourceScanner:
         the registered scanner function.  Returns an empty list with a
         warning when the item type has no registered scanner, preventing
         a ``KeyError`` from propagating.
+
+        Args:
+            item_type: Category of items to scan for.
+            dir_path: Directory to scan.
+
+        Returns:
+            List of discovered items, or an empty list on failure.
+
         """
         scanner = _SCANNER_REGISTRY.get(item_type)
         if scanner is None:

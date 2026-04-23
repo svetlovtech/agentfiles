@@ -361,8 +361,7 @@ def _check_push_conflict(
         return None
 
     # Check if source repo version was modified after last sync.
-    item_key = item.item_key
-    item_state = state.items.get(item_key)
+    item_state = state.items.get(item.item_key)
     if item_state is None or not item_state.synced_at:
         return None
 
@@ -416,8 +415,8 @@ def _format_size_diff(local_path: Path, dest_path: Path) -> str:
             dest_size = dest_path.stat().st_size
             return f"({_human_size(dest_size)} -> {_human_size(local_size)})"
         if local_path.is_dir() and dest_path.is_dir():
-            local_count = sum(1 for _ in local_path.rglob("*") if _.is_file())
-            dest_count = sum(1 for _ in dest_path.rglob("*") if _.is_file())
+            local_count = sum(1 for p in local_path.rglob("*") if p.is_file())
+            dest_count = sum(1 for p in dest_path.rglob("*") if p.is_file())
             return f"({dest_count} files -> {local_count} files)"
     except OSError:
         pass
@@ -962,7 +961,7 @@ class SyncEngine:
 
         removed, error = _remove_item(dest)
         if not removed:
-            return SyncResult(plan=plan, is_success=False, message=error)
+            return SyncResult(plan=plan, is_success=False, message=error or "unknown error")
 
         return SyncResult(
             plan=plan,
