@@ -49,11 +49,11 @@ Thumbs.db
 agentfiles-output-*
 .opencode/
 
-# Push artefacts — local content directories
-agents/
-skills/
-commands/
-plugins/
-configs/
+# Push artefacts — local content directories (uncomment to ignore)
+# agents/
+# skills/
+# commands/
+# plugins/
+# configs/
 
 uv.lock

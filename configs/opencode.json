@@ -1,0 +1,171 @@
+{
+    "$schema": "https://opencode.ai/config.json",
+    "permission": "allow",
+
+    "model": "litellm-svetlovtech/GLM-5.1",
+    "small_model": "litellm-svetlovtech/GLM-4.7-flash",
+
+    "mcp": {
+        "Context7": {
+            "type": "local",
+            "command": [
+                "npx",
+                "-y",
+                "@upstash/context7-mcp"
+            ],
+            "enabled": false
+        },
+        "web-search-prime": {
+            "type": "remote",
+            "url": "https://api.z.ai/api/mcp/web_search_prime/mcp",
+            "headers": {
+                "Authorization": "Bearer {env:OPENCODE_Z_AI_API_KEY}"
+            },
+            "enabled": true
+        },
+        "web-reader": {
+            "type": "remote",
+            "url": "https://api.z.ai/api/mcp/web_reader/mcp",
+            "headers": {
+                "Authorization": "Bearer {env:OPENCODE_Z_AI_API_KEY}"
+            },
+            "enabled": true
+        },
+        "zai-mcp-server": {
+            "type": "local",
+            "command": [
+                "npx",
+                "-y",
+                "@z_ai/mcp-server"
+            ],
+            "environment": {
+                "Z_AI_API_KEY": "{env:OPENCODE_Z_AI_API_KEY}",
+                "Z_AI_MODE": "ZAI"
+            },
+            "enabled": true
+        },
+        "zread": {
+            "type": "remote",
+            "url": "https://api.z.ai/api/mcp/zread/mcp",
+            "headers": {
+                "Authorization": "Bearer {env:OPENCODE_Z_AI_API_KEY}"
+            },
+            "enabled": false
+        },
+        "playwright": {
+            "type": "local",
+            "command": [
+                "npx",
+                "-y",
+                "@playwright/mcp@latest"
+            ],
+            "enabled": false
+        },
+        "search-aggregator": {
+            "type": "remote",
+            "url": "http://57.129.81.64:8004/mcp",
+            "headers": {
+                "x-auth-token": "{env:OPENCODE_SEARCH_AGGREGATOR_TOKEN}"
+            },
+            "timeout": 3600000,
+            "enabled": false
+        }
+    },
+
+    "provider": {
+        "litellm-svetlovtech": {
+            "npm": "@ai-sdk/openai-compatible",
+            "name": "LiteLLM SvetlovTech",
+            "options": {
+                "baseURL": "http://57.129.81.64:4000/v1",
+                "apiKey": "{env:OPENCODE_LITELLM_API_KEY}"
+            },
+            "models": {
+                "GLM-5-Turbo": {
+                    "name": "GLM-5 Turbo",
+                    "limit": {
+                        "context": 200000,
+                        "output": 128000
+                    },
+                    "options": {
+                        "thinking": {
+                            "type": "enabled",
+                            "budgetTokens": 10000
+                        }
+                    }
+                },
+                "GLM-5.1": {
+                    "name": "GLM-5.1",
+                    "limit": {
+                        "context": 200000,
+                        "output": 128000
+                    },
+                    "options": {
+                        "thinking": {
+                            "type": "enabled",
+                            "budgetTokens": 10000
+                        }
+                    }
+                },
+                "GLM-5V-Turbo": {
+                    "name": "GLM-5V Turbo (Vision)",
+                    "limit": {
+                        "context": 200000,
+                        "output": 128000
+                    },
+                    "options": {
+                        "thinking": {
+                            "type": "enabled",
+                            "budgetTokens": 10000
+                        }
+                    }
+                },
+                "GLM-4.7": {
+                    "name": "GLM-4.7",
+                    "limit": {
+                        "context": 200000,
+                        "output": 128000
+                    },
+                    "options": {
+                        "thinking": {
+                            "type": "enabled",
+                            "budgetTokens": 10000
+                        }
+                    }
+                },
+                "GLM-4.7-flash": {
+                    "name": "GLM-4.7 Flash",
+                    "limit": {
+                        "context": 128000,
+                        "output": 128000
+                    },
+                    "options": {
+                        "thinking": {
+                            "type": "enabled",
+                            "budgetTokens": 10000
+                        }
+                    }
+                },
+                "GLM-4.6V": {
+                    "name": "GLM-4.6V (Vision)",
+                    "limit": {
+                        "context": 128000,
+                        "output": 32000
+                    },
+                    "options": {
+                        "thinking": {
+                            "type": "enabled",
+                            "budgetTokens": 10000
+                        }
+                    }
+                }
+            }
+        },
+        "zai-coding-plan": {
+            "name": "Z.AI Coding Plan",
+            "options": {
+                "apiKey": "{env:OPENCODE_Z_AI_API_KEY}"
+            }
+        }
+    }
+}

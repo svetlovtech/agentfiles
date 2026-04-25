@@ -1,0 +1,25 @@
+{
+  "name": "opencode-plugin-template",
+  "version": "0.0.1",
+  "description": "OpenCode plugin template",
+  "type": "module",
+  "main": "./plugin.ts",
+  "exports": "./plugin.ts",
+  "keywords": [
+    "opencode",
+    "plugin",
+    "ai",
+    "assistant"
+  ],
+  "author": "",
+  "license": "MIT",
+  "peerDependencies": {
+    "@opencode-ai/plugin": "*"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest"
+  }
+}
