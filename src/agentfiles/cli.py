@@ -582,7 +582,7 @@ def _discover_installed_from_targets(
         pointing to the on-disk location at the target platform.
 
     """
-    from agentfiles.models import Item, ItemType, TargetError, _PLUGIN_EXTENSIONS
+    from agentfiles.models import _PLUGIN_EXTENSIONS, Item, ItemType, TargetError
     from agentfiles.paths import get_installed_item_path
 
     items: list[Item] = []
