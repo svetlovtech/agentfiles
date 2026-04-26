@@ -582,7 +582,7 @@ def _discover_installed_from_targets(
         pointing to the on-disk location at the target platform.
 
     """
-    from agentfiles.models import Item, ItemType, TargetError
+    from agentfiles.models import Item, ItemType, TargetError, _PLUGIN_EXTENSIONS
     from agentfiles.paths import get_installed_item_path
 
     items: list[Item] = []
@@ -610,6 +610,17 @@ def _discover_installed_from_targets(
             if dir_path.is_dir():
                 item_path = dir_path
 
+        # Plugins are stored with their original extension (e.g.
+        # "security-damage-control.ts"), but get_installed_item_path
+        # returns the bare stem without extension.  Probe known plugin
+        # extensions to find the actual file on disk.
+        if not item_path.exists() and item_type == ItemType.PLUGIN:
+            for ext in _PLUGIN_EXTENSIONS:
+                candidate = item_path.with_suffix(ext)
+                if candidate.exists():
+                    item_path = candidate
+                    break
+
         if not item_path.exists():
             continue
 
@@ -617,7 +628,7 @@ def _discover_installed_from_targets(
         # over the compiled extensionless file so that push preserves
         # the original filename with extension.
         if item_type == ItemType.PLUGIN and item_path.is_file() and not item_path.suffix:
-            for ext in (".ts", ".yaml", ".yml", ".py", ".js"):
+            for ext in _PLUGIN_EXTENSIONS:
                 src_path = item_path.with_suffix(ext)
                 if src_path.exists():
                     item_path = src_path
