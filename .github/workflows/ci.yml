@@ -33,7 +33,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --extra dev
 
       - name: Ruff check
         run: uv run ruff check src/ tests/
@@ -59,7 +59,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --extra dev
 
       - name: Mypy
         run: uv run mypy src/
@@ -82,7 +82,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --extra dev
 
       - name: Bandit
         run: uv run bandit -r src/ -c pyproject.toml
@@ -110,7 +110,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --extra dev
 
       - name: Run tests
         run: uv run pytest tests/ -v --tb=short --cov=agentfiles --cov-report=term-missing
