@@ -256,7 +256,7 @@ class TestPlanSync:
         self, target_manager: TargetManager, fake_home: SimpleNamespace
     ) -> None:
         # Pre-install a skill directory — engine sees it as already installed.
-        skill_dir = fake_home.opencode / "skill" / "existing-skill"
+        skill_dir = fake_home.opencode / "skills" / "existing-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text("content")
 
@@ -278,7 +278,7 @@ class TestPlanSync:
         self, target_manager: TargetManager, fake_home: SimpleNamespace
     ) -> None:
         # Pre-install with different content — engine only checks existence.
-        skill_dir = fake_home.opencode / "skill" / "changed-skill"
+        skill_dir = fake_home.opencode / "skills" / "changed-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text("old content")
 
@@ -304,7 +304,7 @@ class TestPlanSync:
     def test_plan_uninstall_installed(
         self, target_manager: TargetManager, fake_home: SimpleNamespace
     ) -> None:
-        skill_dir = fake_home.opencode / "skill" / "to-remove"
+        skill_dir = fake_home.opencode / "skills" / "to-remove"
         skill_dir.mkdir()
 
         engine = SyncEngine(target_manager)
@@ -601,7 +601,7 @@ class TestUninstall:
         target_manager: TargetManager,
         fake_home: SimpleNamespace,
     ) -> None:
-        skill_dir = fake_home.opencode / "skill" / "removable"
+        skill_dir = fake_home.opencode / "skills" / "removable"
         skill_dir.mkdir()
 
         item = _make_dir_item("removable")
@@ -640,7 +640,7 @@ class TestPush:
     ) -> None:
         """Push a file-based item (agent) from target into an empty source."""
         # Create an agent file on the OpenCode target.
-        agent_dir = fake_home.opencode / "agent"
+        agent_dir = fake_home.opencode / "agents"
         agent_dir.mkdir(parents=True, exist_ok=True)
         (agent_dir / "coder.md").write_text("# Coder Agent\n")
 
@@ -673,7 +673,7 @@ class TestPush:
     ) -> None:
         """Push a directory-based item (skill) from target into empty source."""
         # Create a skill directory on the OpenCode target.
-        skill_dir = fake_home.opencode / "skill" / "my-skill"
+        skill_dir = fake_home.opencode / "skills" / "my-skill"
         skill_dir.mkdir(parents=True)
         (skill_dir / "SKILL.md").write_text("# My Skill\n")
 
@@ -705,7 +705,7 @@ class TestPush:
     ) -> None:
         """Push overwrites an existing item in source with newer content."""
         # Create agent on target.
-        agent_dir = fake_home.opencode / "agent"
+        agent_dir = fake_home.opencode / "agents"
         agent_dir.mkdir(parents=True, exist_ok=True)
         (agent_dir / "coder.md").write_text("updated content")
 
@@ -737,7 +737,7 @@ class TestPush:
         tmp_path: Path,
     ) -> None:
         """Dry-run push does not create or modify files in source."""
-        agent_dir = fake_home.opencode / "agent"
+        agent_dir = fake_home.opencode / "agents"
         agent_dir.mkdir(parents=True, exist_ok=True)
         (agent_dir / "coder.md").write_text("content")
 
@@ -864,9 +864,9 @@ class TestDestPath:
             name="coder",
             source_path=Path("/src/coder.md"),
         )
-        target_dir = Path("/target/agent")
+        target_dir = Path("/target/agents")
         result = SyncEngine._dest_path(item, target_dir)
-        assert result == Path("/target/agent/coder.md")
+        assert result == Path("/target/agents/coder.md")
 
     def test_directory_item(self) -> None:
         item = Item(
@@ -874,9 +874,9 @@ class TestDestPath:
             name="python",
             source_path=Path("/src/python"),
         )
-        target_dir = Path("/target/skill")
+        target_dir = Path("/target/skills")
         result = SyncEngine._dest_path(item, target_dir)
-        assert result == Path("/target/skill/python")
+        assert result == Path("/target/skills/python")
 
 
 # ---------------------------------------------------------------------------
@@ -1264,7 +1264,7 @@ class TestMixedActionBatch:
         tmp_path: Path,
     ) -> None:
         """A single execute_plan call handles install, update, skip, uninstall."""
-        skill_dir = fake_home.opencode / "skill"
+        skill_dir = fake_home.opencode / "skills"
         skill_dir.mkdir(parents=True, exist_ok=True)
 
         # -- Item 1: INSTALL (brand-new skill) --
@@ -1503,7 +1503,7 @@ class TestPlanSyncUpdateAction:
         fake_home: SimpleNamespace,
     ) -> None:
         """Installed items should be planned for UPDATE (force reinstall)."""
-        skill_dir = fake_home.opencode / "skill" / "diff-skill"
+        skill_dir = fake_home.opencode / "skills" / "diff-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text("old")
 
@@ -1523,7 +1523,7 @@ class TestPlanSyncUpdateAction:
         fake_home: SimpleNamespace,
     ) -> None:
         """Installed items should be UPDATE even if content is identical."""
-        skill_dir = fake_home.opencode / "skill" / "same-skill"
+        skill_dir = fake_home.opencode / "skills" / "same-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text("content")
 
@@ -1668,7 +1668,7 @@ class TestPushEdgeCases:
         tmp_path: Path,
     ) -> None:
         """Push multiple items from different types in one call."""
-        agent_dir = fake_home.opencode / "agent"
+        agent_dir = fake_home.opencode / "agents"
         agent_dir.mkdir(parents=True, exist_ok=True)
         (agent_dir / "agent-a.md").write_text("Agent A")
         (agent_dir / "agent-b.md").write_text("Agent B")
@@ -2057,7 +2057,7 @@ class TestUpdateSyncState:
         """Skipped items (already up-to-date) are recorded in state."""
         from agentfiles.config import load_sync_state
 
-        skill_dir = fake_home.opencode / "skill" / "existing"
+        skill_dir = fake_home.opencode / "skills" / "existing"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text("content")
 

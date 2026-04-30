@@ -512,7 +512,13 @@ def _scan_with_subdirs(
             if not main_md.is_file():
                 continue
 
-            item = item_from_directory(child, item_type)
+            # Official OpenCode format: agents and commands are installed
+            # as flat .md files (agents/coder.md, not agents/coder/coder.md).
+            # Other types (skills, workflows) remain directory-based.
+            if item_type in (ItemType.AGENT, ItemType.COMMAND):
+                item = item_from_file(main_md, item_type)
+            else:
+                item = item_from_directory(child, item_type)
             items.append(item)
         except (AgentfilesError, OSError) as exc:
             logger.warning(

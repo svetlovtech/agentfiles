@@ -761,7 +761,7 @@ class TestResolvePlatformFor:
         return TargetManager(targets)
 
     def test_finds_matching_platform(self, tmp_path: Path) -> None:
-        target_dir = tmp_path / "agent"
+        target_dir = tmp_path / "agents"
         target_dir.mkdir()
         tp = TargetPaths(config_dir=tmp_path, subdirs={"agents": target_dir})
         tm = self._make_target_manager(tp)

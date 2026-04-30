@@ -87,7 +87,7 @@ def make_args(*, command: str, **overrides) -> SimpleNamespace:
 def fake_home(tmp_path: Path) -> SimpleNamespace:
     """Create a fake home directory with OpenCode config directories.
 
-    Creates all standard subdirectories (agent, skill, command, plugin) under
+    Creates all standard subdirectories (agents, skills, commands, plugins) under
     the OpenCode config dir so that TargetDiscovery and TargetManager work
     correctly without touching the real filesystem.
 
@@ -98,10 +98,10 @@ def fake_home(tmp_path: Path) -> SimpleNamespace:
     home.mkdir()
 
     oc_dir = home / ".config" / "opencode"
-    (oc_dir / "agent").mkdir(parents=True)
-    (oc_dir / "skill").mkdir(parents=True)
-    (oc_dir / "command").mkdir(parents=True)
-    (oc_dir / "plugin").mkdir(parents=True)
+    (oc_dir / "agents").mkdir(parents=True)
+    (oc_dir / "skills").mkdir(parents=True)
+    (oc_dir / "commands").mkdir(parents=True)
+    (oc_dir / "plugins").mkdir(parents=True)
 
     return SimpleNamespace(
         home=home,

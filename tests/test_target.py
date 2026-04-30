@@ -124,7 +124,7 @@ class TestTargetDiscoveryDiscover:
 class TestSubdirectoryResolution:
     """Tests for platform-specific subdirectory layouts."""
 
-    def test_opencode_subdirs_are_singular(self, fake_home: SimpleNamespace) -> None:
+    def test_opencode_subdirs_are_plural(self, fake_home: SimpleNamespace) -> None:
         with (
             mock.patch.object(Path, "home", return_value=fake_home.home),
             mock.patch.dict(os.environ, {}, clear=True),
@@ -132,10 +132,10 @@ class TestSubdirectoryResolution:
             result = TargetDiscovery().discover()
 
         assert result is not None
-        assert result.subdirs["agents"] == fake_home.opencode / "agent"
-        assert result.subdirs["skills"] == fake_home.opencode / "skill"
-        assert result.subdirs["commands"] == fake_home.opencode / "command"
-        assert result.subdirs["plugins"] == fake_home.opencode / "plugin"
+        assert result.subdirs["agents"] == fake_home.opencode / "agents"
+        assert result.subdirs["skills"] == fake_home.opencode / "skills"
+        assert result.subdirs["commands"] == fake_home.opencode / "commands"
+        assert result.subdirs["plugins"] == fake_home.opencode / "plugins"
 
     def test_opencode_subdir_for_returns_existing(self, fake_home: SimpleNamespace) -> None:
         with (
@@ -146,7 +146,7 @@ class TestSubdirectoryResolution:
 
         assert result is not None
         path = result.subdir_for(ItemType.AGENT)
-        assert path == fake_home.opencode / "agent"
+        assert path == fake_home.opencode / "agents"
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +171,7 @@ class TestTargetManager:
         result = manager.get_target_dir(ItemType.AGENT)
 
         assert result is not None
-        assert result == fake_home.opencode / "agent"
+        assert result == fake_home.opencode / "agents"
 
     def test_get_target_dir_raises_for_missing_platform(self) -> None:
         manager = TargetManager(None)
@@ -180,7 +180,7 @@ class TestTargetManager:
             manager.get_target_dir(ItemType.AGENT)
 
     def test_is_item_installed_true(self, fake_home: SimpleNamespace) -> None:
-        (fake_home.opencode / "agent" / "python-reviewer.md").write_text("# agent")
+        (fake_home.opencode / "agents" / "python-reviewer.md").write_text("# agent")
 
         with (
             mock.patch.object(Path, "home", return_value=fake_home.home),
@@ -212,9 +212,9 @@ class TestTargetManager:
         assert manager.is_item_installed(item) is False
 
     def test_get_installed_items(self, fake_home: SimpleNamespace) -> None:
-        (fake_home.opencode / "agent" / "reviewer.md").write_text("# agent")
-        (fake_home.opencode / "agent" / "orchestrator.md").write_text("# agent")
-        (fake_home.opencode / "skill" / "python-stylist").mkdir()
+        (fake_home.opencode / "agents" / "reviewer.md").write_text("# agent")
+        (fake_home.opencode / "agents" / "orchestrator.md").write_text("# agent")
+        (fake_home.opencode / "skills" / "python-stylist").mkdir()
 
         with (
             mock.patch.object(Path, "home", return_value=fake_home.home),
@@ -237,8 +237,8 @@ class TestTargetManager:
             manager.get_installed_items()
 
     def test_get_installed_items_skips_hidden(self, fake_home: SimpleNamespace) -> None:
-        (fake_home.opencode / "agent" / "visible.md").write_text("# agent")
-        (fake_home.opencode / "agent" / ".hidden.md").write_text("# agent")
+        (fake_home.opencode / "agents" / "visible.md").write_text("# agent")
+        (fake_home.opencode / "agents" / ".hidden.md").write_text("# agent")
 
         with (
             mock.patch.object(Path, "home", return_value=fake_home.home),
@@ -254,9 +254,9 @@ class TestTargetManager:
         assert ".hidden" not in names
 
     def test_platform_summary(self, fake_home: SimpleNamespace) -> None:
-        (fake_home.opencode / "agent" / "a1.md").write_text("# agent")
-        (fake_home.opencode / "agent" / "a2.md").write_text("# agent")
-        (fake_home.opencode / "skill" / "s1").mkdir()
+        (fake_home.opencode / "agents" / "a1.md").write_text("# agent")
+        (fake_home.opencode / "agents" / "a2.md").write_text("# agent")
+        (fake_home.opencode / "skills" / "s1").mkdir()
 
         with (
             mock.patch.object(Path, "home", return_value=fake_home.home),
@@ -519,7 +519,7 @@ class TestPermissionErrorHandling:
         fake_home: SimpleNamespace,
     ) -> None:
         """get_installed_items skips subdirs that raise PermissionError on iterdir."""
-        (fake_home.opencode / "agent" / "visible-agent.md").write_text("# agent")
+        (fake_home.opencode / "agents" / "visible-agent.md").write_text("# agent")
 
         with (
             mock.patch.object(Path, "home", return_value=fake_home.home),
@@ -533,7 +533,7 @@ class TestPermissionErrorHandling:
 
         def _patched_is_dir(self: Path) -> bool:
             # The skill subdir raises PermissionError on is_dir
-            if self.name == "skill":
+            if self.name == "skills":
                 raise PermissionError("denied")
             return original_is_dir(self)
 
@@ -549,7 +549,7 @@ class TestPermissionErrorHandling:
         fake_home: SimpleNamespace,
     ) -> None:
         """get_installed_items skips subdirs that raise OSError on iterdir."""
-        (fake_home.opencode / "agent" / "a1.md").write_text("# agent")
+        (fake_home.opencode / "agents" / "a1.md").write_text("# agent")
 
         with (
             mock.patch.object(Path, "home", return_value=fake_home.home),
@@ -560,7 +560,7 @@ class TestPermissionErrorHandling:
         manager = TargetManager(targets)
 
         # Patch iterdir on the agents subdir to raise OSError.
-        agent_dir = fake_home.opencode / "agent"
+        agent_dir = fake_home.opencode / "agents"
         original_iterdir = Path.iterdir
 
         def _patched_iterdir(self: Path) -> object:
@@ -580,8 +580,8 @@ class TestPermissionErrorHandling:
         fake_home: SimpleNamespace,
     ) -> None:
         """get_installed_items skips entries that raise OSError on is_file."""
-        (fake_home.opencode / "agent" / "good-agent.md").write_text("# agent")
-        (fake_home.opencode / "agent" / "broken-agent.md").write_text("# agent")
+        (fake_home.opencode / "agents" / "good-agent.md").write_text("# agent")
+        (fake_home.opencode / "agents" / "broken-agent.md").write_text("# agent")
 
         with (
             mock.patch.object(Path, "home", return_value=fake_home.home),
@@ -729,11 +729,11 @@ class TestPlatformSubdirResolvers:
         subdirs = _opencode_subdirs(config_dir)
 
         assert subdirs == {
-            "agents": config_dir / "agent",
-            "skills": config_dir / "skill",
-            "commands": config_dir / "command",
-            "plugins": config_dir / "plugin",
-            "workflows": config_dir / "workflow",
+            "agents": config_dir / "agents",
+            "skills": config_dir / "skills",
+            "commands": config_dir / "commands",
+            "plugins": config_dir / "plugins",
+            "workflows": config_dir / "workflows",
         }
 
 
@@ -747,7 +747,7 @@ class TestInstalledItemsEdgeCases:
 
     def test_file_based_item_uses_stem(self, fake_home: SimpleNamespace) -> None:
         """File-based items (agents) report stem without extension."""
-        agent_dir = fake_home.opencode / "agent"
+        agent_dir = fake_home.opencode / "agents"
         (agent_dir / "my-agent.md").write_text("# agent")
 
         with (
@@ -785,7 +785,7 @@ class TestInstalledItemsEdgeCases:
         targets = TargetPaths(
             config_dir=bare_oc,
             subdirs={
-                "agents": bare_oc / "agent",  # does not exist
+                "agents": bare_oc / "agents",  # does not exist
             },
         )
         manager = TargetManager(targets)
@@ -799,7 +799,7 @@ class TestInstalledItemsEdgeCases:
 
         targets = TargetPaths(
             config_dir=Path("/fake"),
-            subdirs={"skills": Path("/fake/skill")},
+            subdirs={"skills": Path("/fake/skills")},
         )
         manager = TargetManager(targets)
         item = make_item("test", ItemType.AGENT)
@@ -812,7 +812,7 @@ class TestInstalledItemsEdgeCases:
         fake_home: SimpleNamespace,
     ) -> None:
         """get_installed_items only picks up files for file-based types."""
-        agent_dir = fake_home.opencode / "agent"
+        agent_dir = fake_home.opencode / "agents"
         # A file-based agent — should be discovered.
         (agent_dir / "file-agent.md").write_text("# file agent")
         # A directory-based agent — should NOT be discovered (agents are file-based).
@@ -852,7 +852,7 @@ class TestFindExistingEdgeCases:
         fake_home: SimpleNamespace,
     ) -> None:
         """get_installed_items skips subdirs where is_dir() raises OSError."""
-        (fake_home.opencode / "agent" / "a1.md").write_text("# agent")
+        (fake_home.opencode / "agents" / "a1.md").write_text("# agent")
 
         with (
             mock.patch.object(Path, "home", return_value=fake_home.home),
@@ -865,7 +865,7 @@ class TestFindExistingEdgeCases:
         original_is_dir = Path.is_dir
 
         def _flaky_is_dir(self: Path) -> bool:
-            if self.name == "skill":
+            if self.name == "skills":
                 raise OSError("I/O error")
             return original_is_dir(self)
 

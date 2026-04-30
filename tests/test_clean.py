@@ -50,13 +50,13 @@ def source_repo(tmp_path: Path) -> Path:
 
 def _install_agent(fake_home: SimpleNamespace, name: str, content: str = "# Agent\n") -> None:
     """Create an agent file on the OpenCode target."""
-    agent_file = fake_home.opencode / "agent" / f"{name}.md"
+    agent_file = fake_home.opencode / "agents" / f"{name}.md"
     agent_file.write_text(content)
 
 
 def _install_skill(fake_home: SimpleNamespace, name: str, content: str = "# Skill\n") -> None:
     """Create a skill directory on the OpenCode target."""
-    skill_dir = fake_home.opencode / "skill" / name
+    skill_dir = fake_home.opencode / "skills" / name
     skill_dir.mkdir(exist_ok=True)
     (skill_dir / "SKILL.md").write_text(content)
 
@@ -83,7 +83,7 @@ class TestCleanEngineUninstall:
 
         assert report.is_success
         assert len(report.uninstalled) >= 1
-        assert not (fake_home.opencode / "agent" / "old-reviewer.md").exists()
+        assert not (fake_home.opencode / "agents" / "old-reviewer.md").exists()
 
     def test_uninstall_orphan_skill(
         self,
@@ -99,7 +99,7 @@ class TestCleanEngineUninstall:
 
         assert report.is_success
         assert len(report.uninstalled) >= 1
-        assert not (fake_home.opencode / "skill" / "deprecated-skill").exists()
+        assert not (fake_home.opencode / "skills" / "deprecated-skill").exists()
 
     def test_uninstall_multiple_orphans(
         self,
@@ -138,8 +138,8 @@ class TestCleanEngineUninstall:
         engine.uninstall([orphan])
 
         # Coder should still exist.
-        assert (fake_home.opencode / "agent" / "coder.md").exists()
-        assert not (fake_home.opencode / "agent" / "orphan-agent.md").exists()
+        assert (fake_home.opencode / "agents" / "coder.md").exists()
+        assert not (fake_home.opencode / "agents" / "orphan-agent.md").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -216,9 +216,9 @@ class TestCmdCleanCLI:
         assert "Removed 1 items" in output
 
         # Verify the orphan was actually removed.
-        assert not (fake_home.opencode / "agent" / "old-reviewer.md").exists()
+        assert not (fake_home.opencode / "agents" / "old-reviewer.md").exists()
         # But coder should still be there.
-        assert (fake_home.opencode / "agent" / "coder.md").exists()
+        assert (fake_home.opencode / "agents" / "coder.md").exists()
 
     def test_clean_detects_orphaned_skill(
         self,
@@ -257,7 +257,7 @@ class TestCmdCleanCLI:
         assert "Dry-run mode" in output
 
         # File should still exist after dry-run.
-        assert (fake_home.opencode / "agent" / "phantom-agent.md").exists()
+        assert (fake_home.opencode / "agents" / "phantom-agent.md").exists()
 
     def test_clean_type_filter(
         self,

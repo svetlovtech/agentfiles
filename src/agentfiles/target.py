@@ -166,27 +166,18 @@ def _opencode_candidates(home: Path) -> list[Path]:
 
 
 def _opencode_subdirs(config_dir: Path) -> dict[str, Path]:
-    """OpenCode uses singular directory names on disk.
+    """Official OpenCode directory layout uses plural directory names.
 
     Maps plural item-type keys (``"agents"``, ``"skills"``, etc.) to the
-    singular on-disk names (``agent/``, ``skill/``, etc.) beneath
-    *config_dir*.  All four item types are supported.
+    on-disk directory names beneath *config_dir*.  All item types are
+    supported.
 
     Args:
         config_dir: Root OpenCode configuration directory.
 
     """
-    singular_map: dict[str, str] = {
-        "agents": "agent",
-        "skills": "skill",
-        "commands": "command",
-        "plugins": "plugin",
-        "workflows": "workflow",
-    }
-    return {
-        plural_key: (config_dir / singular_name)
-        for plural_key, singular_name in singular_map.items()
-    }
+    plural_keys = ("agents", "skills", "commands", "plugins", "workflows")
+    return {key: config_dir / key for key in plural_keys}
 
 
 # ---------------------------------------------------------------------------

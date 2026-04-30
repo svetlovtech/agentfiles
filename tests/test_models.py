@@ -297,10 +297,10 @@ class TestTargetPaths:
     def test_subdir_for_known_key(self, tmp_path: Path) -> None:
         tp = TargetPaths(
             config_dir=tmp_path,
-            subdirs={"agents": tmp_path / "agent"},
+            subdirs={"agents": tmp_path / "agents"},
         )
         result = tp.subdir_for(ItemType.AGENT)
-        assert result == tmp_path / "agent"
+        assert result == tmp_path / "agents"
 
     def test_subdir_for_unknown_key_falls_back(self, tmp_path: Path) -> None:
         tp = TargetPaths(config_dir=tmp_path)
